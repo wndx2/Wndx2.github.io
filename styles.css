@@ -82,6 +82,7 @@ p {
 
 .button:hover { 
     background-color: #181828;
+<<<<<<< HEAD
     opacity: 0.8; 
     cursor: pointer;
 }
@@ -95,3 +96,6 @@ p {
     opacity: 0.5;
     cursor: pointer;
 }
+=======
+} 
+>>>>>>> b56f98c2a699a306a20bcfc309a877b510c4a9d4
