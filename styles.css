@@ -20,6 +20,13 @@
     src: url(./css/fonts/SUITE-Regular.ttf);
 }
 
+@font-face {
+    font-family: 'HS-Regular';
+    src: url('https://gcore.jsdelivr.net/gh/projectnoonnu/noonfonts_2201-2@1.0/HS-Regular.woff') format('woff');
+    font-weight: normal;
+    font-style: normal;
+}
+
 body {
     background-color: #121212;
     color: #ffffff;
@@ -31,6 +38,12 @@ body {
 
 nav {
     height: 64px;
+}
+
+p {
+  color: #696969;
+  font-size: 24px;
+  font-family: Raleway;  
 }
 
 .grid-container2 {
@@ -61,11 +74,24 @@ nav {
     color: #ffffff;
     border: none;
     border-radius: 50px;
-    cursor: pointer;
-    margin-right: 20px; /* Adds a horizontal gap between buttons */
+    margin-right: 20px; 
     margin-left: 20px;
+    opacity: 1; 
+    transition: background-color 0.5s ease, opacity 0.5s ease;
 }
 
 .button:hover { 
     background-color: #181828;
+    opacity: 0.8; 
+    cursor: pointer;
+}
+
+.icon {
+    opacity: 1;
+    transition: opacity 0.5s ease;
+}
+
+.icon:hover {
+    opacity: 0.5;
+    cursor: pointer;
 }
