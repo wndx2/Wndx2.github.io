@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>
+      {% if page.title %}
+        {{ page.title }} | {{ site.title }}
+      {% else %}
+        {{ site.title }}
+      {% endif %}
+    </title>
+
+    <meta name="description" content="{{ site.description }}">
+    <link rel="stylesheet" href="/assets/main.css">
+    <link type="application/atom+xml" rel="alternate" href="/feed.xml" title="{{ site.title }}" />
+  </head>
+  <body>
+    <header class="site-header" role="banner">
+      <div class="wrapper">
+        <a class="site-title" rel="author" href="/">{{ site.title }}</a>
+        <nav class="site-nav">
+          <a class="page-link" href="/about/">About</a>
+        </nav>
+      </div>
+    </header>
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        {{ content }}
+      </div>
+    </main>
+    <footer class="site-footer h-card">
+      <div class="wrapper">
+        <h2 class="footer-heading">{{ site.title }}</h2>
+        <div class="footer-col-wrapper">
+          <div class="footer-col footer-col-1">
+            <ul class="contact-list">
+              <li class="p-name">{{ site.title }}</li>
+              <li><a class="u-email" href="mailto:{{ site.email }}">{{ site.email }}</a></li>
+            </ul>
+          </div>
+          <div class="footer-col footer-col-2">
+            <ul class="social-media-list">
+              <li><a href="https://github.com/{{ site.github_username }}">GitHub</a></li>
+            </ul>
+          </div>
+          <div class="footer-col footer-col-3">
+            <p>{{ site.description }}</p>
+          </div>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

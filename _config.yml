@@ -20,10 +20,7 @@
 
 title: wndx2
 email: 22222w@duck.com
-description: >- # this means to ignore newlines until "baseurl:"
-  this is wndud's blog -- also the only place that you can legally download wndnotes
-baseurl: "" # the subpath of your site, e.g. /blog
-url: "" # the base hostname & protocol for your site, e.g. http://example.com
+description: wndud blog using jekyllrb
 github_username:  wndx2
 
 # Build settings
