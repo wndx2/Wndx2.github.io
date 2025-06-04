@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "LaTeX on JekyllRB"
+title:  "Testing LaTeX on JekyllRB"
 date:   2025-06-03
 ---
 

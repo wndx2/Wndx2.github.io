@@ -20,16 +20,13 @@
 
 title: wndx2
 email: 22222w@duck.com
-description: wndud blog using jekyllrb
+description: blog using jekyllrb
 github_username:  wndx2
 
 # Build settings
 theme: minima
 plugins:
   - jekyll-feed
-
-kramdown:
-  math_engine: mathjax
 
 # Exclude from processing.
 # The following items will not be processed, by default.
