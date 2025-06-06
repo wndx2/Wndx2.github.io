@@ -5,5 +5,6 @@ date:   2025-06-03
 ---
 
 
-LaTeX:\
-$$a=-(\frac{\log(1)}{\log(3.5)}-4.3)$$
+LaTeX:
+
+$$x=\frac{b\pm \sqrt {b^2-4ac} }{2a}$$

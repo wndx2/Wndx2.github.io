@@ -25,8 +25,6 @@ github_username:  wndx2
 
 # Build settings
 theme: minima
-minima:
-  skin: dark
 plugins:
   - jekyll-feed
 
