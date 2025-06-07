@@ -1,8 +1,8 @@
 ---
 layout:     post
-title:      testing
+title:      testing LaTeX with Jekyll
 date:       07.06.2025
-categories: testing
+categories: misc
 ---
 
 $$
