@@ -26,10 +26,10 @@ plainwhite:
   social_links:
     #twitter: jekyll
     github:  wndx2
-    #linkedIn: in/jekyll
+    linkedIn: in/james-park-31428336a/
     #dribbble: jekyll
     #flickr:   jekyll
-    #instagram: jekyll
+    instagram: sleepywndud
     #pinterest: jekyll
     #youtube: jekyll
     #facebook: jekyll
@@ -37,13 +37,6 @@ plainwhite:
     #telegram: jekyll
     #gitlab: jekyll
     email: 22222w@duck.com
-
-    # Mastodon instances
-    # mastodon:
-    # - username: jekyll
-    #   instance: example.com
-    # - username: jekyll2
-    #   instance: example.com
 
 # If you want to link only specific pages in your header, uncomment
 # this and add the path to the pages in order as they should show up
