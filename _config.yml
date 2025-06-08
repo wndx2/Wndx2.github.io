@@ -1,4 +1,4 @@
-title: wndud blog
+title: wndud's archive
 author: wndx2
 email: 22222w@duck.com
 description: > # this means to ignore newlines until "show_exerpts:"
@@ -10,8 +10,8 @@ show_excerpts: true # set to true to show excerpts on the homepage
 sass:
   sass_dir: _sass
 plainwhite:
-  name: wndud
-  tagline: Student
+  name: wndud's archive
+  tagline: 2025!
   date_format: "%d.%m.%Y"
   sitemap: true # set to true to generate sitemap.xml content
   search: true # set to true to enable searchbar
