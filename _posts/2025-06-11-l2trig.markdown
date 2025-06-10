@@ -1,0 +1,17 @@
+---
+layout:     post
+title:      L2 Trigonometry [ZIP]
+date:       11.06.2025
+categories: Mathematics
+---
+
+The zip file goes over the fundamental knowledge of the Trigonometry Standard (AS91259).
+
+- Sine Rules to find Angles & Sides
+- Cosine Rules to find Angles & Sides
+- Area of non-right angled Triangles using Trigonometry
+- Length of Arcs
+- Area of a Sector
+
+The Vault (downloadable below), is **licensed under my RESTRICTED USE LICENSE**. This can be found inside the Vault.\
+[Download Here](/PDFS/package-91259.zip)

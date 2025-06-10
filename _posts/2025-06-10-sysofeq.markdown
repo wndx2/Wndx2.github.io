@@ -1,0 +1,15 @@
+---
+layout:     post
+title:      Systems of Equations [ZIP]
+date:       10.06.2025
+categories: Mathematics
+---
+
+The zip file goes over the fundamental knowledge of the standard Systems of Equations (AS91269).
+
+- Common Graphs: Linear Lines, Parabolas, Hyperbolas, Circles
+- Discriminants & Inequalities
+- Little bit of Recap in Simultaneous Equations
+
+The Vault (downloadable below), is **licensed under my RESTRICTED USE LICENSE**. This can be found inside the Vault.\
+[Download Here](/PDFS/package-91269.zip)
