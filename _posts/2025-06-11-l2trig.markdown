@@ -5,7 +5,7 @@ date:       11.06.2025
 categories: Mathematics
 ---
 
-The zip file goes over the fundamental knowledge of the Trigonometry Standard (AS91259).
+The zip file explains the fundamental knowledge of the L2 Trigonometry (AS91259) standard in my own words.
 
 - Sine Rules to find Angles & Sides
 - Cosine Rules to find Angles & Sides
