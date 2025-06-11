@@ -1,8 +1,8 @@
 ---
 layout:     post
-title:      MacOS Tahoe 26 솔직한 후기
+title:      MacOS Tahoe 26
 date:       11.06.2025
 categories: System
 ---
 
-7일 써보고 알려드림
+7일만 써보고 후기? 같은거 올림
