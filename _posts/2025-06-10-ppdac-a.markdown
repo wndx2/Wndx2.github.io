@@ -21,14 +21,44 @@ https://creativecommons.org/licenses/by-nd/4.0/legalcode.txt
 
 NOTE: Confidence Intervals ("C-I") & (sampling) variability go in the conclusion.
 
-wndud's sample on Cluster & Outlier: \
+My sample (not graded yet): \
 *(context being age of survivors from the Titanic Ship)*
 
 ```
+In this sample, I can see that both graphs are not symmetrical, 
+but skewed to the right. The bottom sample is less skewed in 
+terms of shape, while the top sample is more skewed. Being 
+right skewed means that the data is more distributed towards
+the right hand side. This makes sense for the top sample 
+since people tend to save the young people first when it comes 
+to dangerous situations. This also makes sense for the bottom 
+sample as this graph shows that a lot of young aged people 
+survived.
+
+I can also see from my sample that the non-survivor’s graph is 
+a unimodal-graph, while for the bottom sample this is a 
+bimodal-graph. This also makes sense in terms of survival as, 
+again, people tend to prioritize saving the young people, then 
+the older people.
+
+I can see from this sample that the median age of the 
+non-survivors is 29.5, while the median age of the survivors is 
+around 24. There is a difference of 5.5 from the survivors to 
+the non-survivors. This makes sense like the other shapes, 
+representing the human behaviour of trying to save the young 
+people first. 
+
+For the top sample representing the non-survivors, the IQR is 
+39-24=15, while for the bottom sample, the IQR is 
+32.25-17.5=14.75. The range of the top graph is 66-16=50, while 
+for the bottom graph, the range is 62-0.83=61.17. This makes 
+sense as the survivors would have a more distributed graph since 
+we try to save the young, then the old people in these situations. 
+
 For the non-survivors, there is no obvious outlier or cluster. 
 However, for the bottom sample, even though there is no outlier, 
-there is a cluster among the 0~10 group (age), and the rest. 
-Again, this may be because we always try to save the young people 
-first when it comes to difficult situations.
+there is a cluster among the 0~10 group, and the rest. Again, 
+this may be because we always try to save the young people first 
+when it comes to difficult situations.
 ```
 
