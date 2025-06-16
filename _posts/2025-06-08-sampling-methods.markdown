@@ -5,8 +5,7 @@ date:       08.06.2025
 categories: L2STATS
 ---
 
-Licensed under the CC BY-NC-ND License\
-https://creativecommons.org/licenses/by-nc-nd/4.0/
+[LICENSE](https://gist.github.com/Wndx2/b1a571678b7249e9d32305b4864c9bc4)
 
 <u>Reasons of Taking a Sample:</u>
 - Destructive (eg: cannot eat all chocolates in a factory because you will die)

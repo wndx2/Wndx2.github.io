@@ -1,6 +1,18 @@
 [
   
     {
+      "title"    : "Stratified Sampling",
+      "title-lower"    : "stratified sampling",
+      "sub-titile" : "",
+      "sub-titile-lower" : "",
+      "categories" : "L2STATS",
+      "tags"     : "",
+      "url"      : "/l2stats/2025/06/11/stratified-sampling.html",
+      "date"     : "2025-06-11 00:00:00 +1200",
+      "content"     : "LICENSE"
+    } ,
+  
+    {
       "title"    : "AS91264 Analysis from PPDAC Cycle",
       "title-lower"    : "as91264 analysis from ppdac cycle",
       "sub-titile" : "",
@@ -9,7 +21,7 @@
       "tags"     : "",
       "url"      : "/l2stats/2025/06/10/ppdac-a.html",
       "date"     : "2025-06-10 00:00:00 +1200",
-      "content"     : "Licensed under the CC BY-NC-ND Licensehttps://creativecommons.org/licenses/by-nc-nd/4.0/All of these features must be linked to the context for a MRT/EXC, including what the feature from your sampl..."
+      "content"     : "LICENSEAll of these features must be linked to the context for a MRT/EXC, including what the feature from your sample means (often comes from common sense), and if they make sense with regards to t..."
     } ,
   
     {
@@ -21,7 +33,7 @@
       "tags"     : "",
       "url"      : "/l2stats/2025/06/08/sampling-methods.html",
       "date"     : "2025-06-08 00:00:00 +1200",
-      "content"     : "Licensed under the CC BY-NC-ND Licensehttps://creativecommons.org/licenses/by-nc-nd/4.0/Reasons of Taking a Sample:  Destructive (eg: cannot eat all chocolates in a factory because you will die)  T..."
+      "content"     : "LICENSEReasons of Taking a Sample:  Destructive (eg: cannot eat all chocolates in a factory because you will die)  Time Consuming  Expensive  Condition Change (eg: environmental)  Not all populatio..."
     } ,
   
     {
@@ -31,9 +43,9 @@
       "sub-titile-lower" : "",
       "categories" : "MISC",
       "tags"     : "",
-      "url"      : "/misc/2025/06/07/wndx2.html",
-      "date"     : "2025-06-07 00:00:00 +1200",
-      "content"     : "Licensed under the CC BY-NC-ND Licensehttps://creativecommons.org/licenses/by-nc-nd/4.0/\[ax^2+bx+c\]\[x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}\]"
+      "url"      : "/misc/2025/05/25/wndx2.html",
+      "date"     : "2025-05-25 00:00:00 +1200",
+      "content"     : "LICENSE\[ax^2+bx+c\]\[x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}\]"
     } 
   
 ]

@@ -5,8 +5,7 @@ date:       10.06.2025
 categories: L2STATS
 ---
 
-Licensed under the CC BY-NC-ND License\
-https://creativecommons.org/licenses/by-nc-nd/4.0/
+[LICENSE](https://gist.github.com/Wndx2/b1a571678b7249e9d32305b4864c9bc4)
 
 **All** of these features *must be linked to the context* for a MRT/EXC, including what the feature from your sample **means** (often comes from common sense), and if they **make sense** with regards to the context, and **extended thinking** (which also often comes from common sense).\
 (pretty sure you only have to talk about 3~4)
