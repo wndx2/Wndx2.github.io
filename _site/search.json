@@ -1,0 +1,51 @@
+[
+  
+    {
+      "title"    : "L2Trig",
+      "title-lower"    : "l2trig",
+      "sub-titile" : "",
+      "sub-titile-lower" : "",
+      "categories" : "Mathematics",
+      "tags"     : "",
+      "url"      : "/mathematics/2025/06/11/l2trig.html",
+      "date"     : "2025-06-11 00:00:00 +1200",
+      "content"     : "f"
+    } ,
+  
+    {
+      "title"    : "MacOS Tahoe 26",
+      "title-lower"    : "macos tahoe 26",
+      "sub-titile" : "",
+      "sub-titile-lower" : "",
+      "categories" : "System",
+      "tags"     : "",
+      "url"      : "/system/2025/06/11/tahoe.html",
+      "date"     : "2025-06-11 00:00:00 +1200",
+      "content"     : "7일만 써보고 후기? 같은거 올림"
+    } ,
+  
+    {
+      "title"    : "AS91264 Analysis from PPDAC Cycle",
+      "title-lower"    : "as91264 analysis from ppdac cycle",
+      "sub-titile" : "",
+      "sub-titile-lower" : "",
+      "categories" : "Statistics",
+      "tags"     : "",
+      "url"      : "/statistics/2025/06/10/ppdac-a.html",
+      "date"     : "2025-06-10 00:00:00 +1200",
+      "content"     : "Licensed under the CC BY-ND 4.0 License.https://creativecommons.org/licenses/by-nd/4.0/legalcode.txtAll of these features must be linked to the context for a MRT/EXC, including what the feature fro..."
+    } ,
+  
+    {
+      "title"    : "testing LaTeX with Jekyll",
+      "title-lower"    : "testing latex with jekyll",
+      "sub-titile" : "",
+      "sub-titile-lower" : "",
+      "categories" : "Misc",
+      "tags"     : "",
+      "url"      : "/misc/2025/06/07/wndx2.html",
+      "date"     : "2025-06-07 00:00:00 +1200",
+      "content"     : "\[\int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}\]"
+    } 
+  
+]

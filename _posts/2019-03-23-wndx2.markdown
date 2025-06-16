@@ -1,0 +1,10 @@
+---
+layout:     post
+title:      testing LaTeX with Jekyll
+date:       07.06.2025
+categories: Misc
+---
+
+$$
+\int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}
+$$
