@@ -105,4 +105,8 @@ inconsistent sleep hours, leading to the two schedules, while
 for the people who do not have their devices in bed tend to 
 have a consistent sleep hours between themselves, leading to 
 only one cluster in the sample. 
+
+Author: 영
+Source: wndnotes
+Link: https://discord.gg/yHdQrahnAJ
 ```
