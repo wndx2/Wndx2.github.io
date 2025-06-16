@@ -2,10 +2,9 @@
 layout:     post
 title:      AS91264 Analysis from PPDAC Cycle
 date:       10.06.2025
-categories: Statistics
+categories: L2STATS
 ---
 
-Copyright (c) 2025 James Park
 Licensed under the CC BY-NC-ND License\
 https://creativecommons.org/licenses/by-nc-nd/4.0/
 

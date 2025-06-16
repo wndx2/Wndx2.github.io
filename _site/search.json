@@ -5,11 +5,23 @@
       "title-lower"    : "as91264 analysis from ppdac cycle",
       "sub-titile" : "",
       "sub-titile-lower" : "",
-      "categories" : "Statistics",
+      "categories" : "L2STATS",
       "tags"     : "",
-      "url"      : "/statistics/2025/06/10/ppdac-a.html",
+      "url"      : "/l2stats/2025/06/10/ppdac-a.html",
       "date"     : "2025-06-10 00:00:00 +1200",
-      "content"     : "Copyright (c) 2025 James ParkLicensed under the CC BY-NC-ND Licensehttps://creativecommons.org/licenses/by-nc-nd/4.0/All of these features must be linked to the context for a MRT/EXC, including wha..."
+      "content"     : "Licensed under the CC BY-NC-ND Licensehttps://creativecommons.org/licenses/by-nc-nd/4.0/All of these features must be linked to the context for a MRT/EXC, including what the feature from your sampl..."
+    } ,
+  
+    {
+      "title"    : "Sampling Methods",
+      "title-lower"    : "sampling methods",
+      "sub-titile" : "",
+      "sub-titile-lower" : "",
+      "categories" : "L2STATS",
+      "tags"     : "",
+      "url"      : "/l2stats/2025/06/08/sampling-methods.html",
+      "date"     : "2025-06-08 00:00:00 +1200",
+      "content"     : "Licensed under the CC BY-NC-ND Licensehttps://creativecommons.org/licenses/by-nc-nd/4.0/Reasons of Taking a Sample:  Destructive (eg: cannot eat all chocolates in a factory because you will die)  T..."
     } ,
   
     {
@@ -17,11 +29,11 @@
       "title-lower"    : "latex testing on jekyll",
       "sub-titile" : "",
       "sub-titile-lower" : "",
-      "categories" : "Misc",
+      "categories" : "MISC",
       "tags"     : "",
       "url"      : "/misc/2025/06/07/wndx2.html",
       "date"     : "2025-06-07 00:00:00 +1200",
-      "content"     : "\[\int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}\]"
+      "content"     : "Licensed under the CC BY-NC-ND Licensehttps://creativecommons.org/licenses/by-nc-nd/4.0/\[ax^2+bx+c\]\[x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}\]"
     } 
   
 ]
