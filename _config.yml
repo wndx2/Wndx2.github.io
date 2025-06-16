@@ -10,8 +10,8 @@ show_excerpts: true # set to true to show excerpts on the homepage
 sass:
   sass_dir: _sass
 plainwhite:
-  name: wndud's archive
-  tagline: hello
+  name: 영의 아카이브
+  tagline: wndud's archive
   date_format: "%d.%m.%Y"
   sitemap: false # set to true to generate sitemap.xml content
   search: false # set to true to enable searchbar
