@@ -27,13 +27,13 @@
         {% endif %}
       </a>
       <h2 id="title">
-        <a href="{{ "/" | relative_url }}">{{ site.plainwhite.name }}</a>
+        <a style="font-family: NanumHandwriting; font-size: 36px;" href="{{ "/" | relative_url }}">{{ site.plainwhite.name }}</a>
       </h2>
       </div>
       {%- if site.plainwhite.tagline -%}
-      <p class="tagline">{{ site.plainwhite.tagline }}</p>
+      <p style="font-family: JenkerFont;" class="tagline">{{ site.plainwhite.tagline }}</p>
       {%- endif -%}
-      <p style="text-align: center;"><a href="https://discord.gg/yHdQrahnAJ">https://discord.gg/yHdQrahnAJ</a></p>
+      <p style="text-align: center; font-family: JenkerFont; font-size: 16px;"><a href="https://discord.gg/yHdQrahnAJ">https://discord.gg/yHdQrahnAJ</a></p>
       </div>
       {% capture footer %}
       {%- if site.plainwhite.social_links != '' -%}
@@ -149,11 +149,11 @@
         </ul>
       </nav>
       {%- endif -%}
-      <p class="about-footer {{condensed_class}}">&copy;
+      <p style="font-family: JenkerFont; font-size: 18px;" class="about-footer {{condensed_class}}">&copy;
         {{ "now" | date: "%Y" }}</p>
       {%- if site.plainwhite.dark_mode -%}
       <div class="about-footer {{condensed_class}}">
-        <p>Dark Mode
+        <p style="font-family: JenkerFont; font-size: 18px;">Dark Mode
           <i class="icon-moon"></i>
           <label class="switch">
             <input type="checkbox" class="dark-mode-toggle">

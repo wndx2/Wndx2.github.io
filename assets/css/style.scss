@@ -27,6 +27,21 @@
   src: url("/assets/font/SNPro-BoldItalic.ttf");
 }
 
+@font-face {
+  font-family: "SNPro-Italic";
+  src: url("/assets/font/SNPro-BoldItalic.ttf");
+}
+
+@font-face {
+  font-family: NanumHandwriting;
+  src: url(/assets/font/nanumhandwriting.ttf);
+}
+
+@font-face {
+  font-family: JenkerFont;
+  src: url(/assets/font/JenkerFont.otf);
+}
+
 html, body {
   font-family: "SNPro-Regular", sans-serif;
 }
