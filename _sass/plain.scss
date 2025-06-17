@@ -2,7 +2,12 @@
 @import "ext/normalize";
 @import "syntax";
 
-$linkColor: #0a59b0;
+@font-face {
+  font-family: SNPro-Regular;
+  src: url(/assets/font/SNPro-Regular.ttf);
+}
+
+$linkColor: #407F7F;
 $mobileW: 768px;
 $smallMobileW: 480px;
 $bigScreenW: 1600px;
@@ -15,7 +20,7 @@ $leftWidth: 220px;
 }
 
 body {
-  font-family: "Raleway", sans-serif;
+  font-family: "SNPro-Regular", sans-serif;
   font-size: 16px;
   line-height: 1.2em;
   margin: 0;
@@ -164,7 +169,7 @@ main {
 
     a {
       display: block;
-      font-family: 'Merriweather';
+      font-family: 'SNPro-Regular';
       text-align: center;
       padding: 1rem 0;
       text-decoration: none;
@@ -243,7 +248,7 @@ main {
   padding-left: 30px;
 }
 .post {
-  font-family: "Merriweather", sans-serif;
+  font-family: "SNPro-Regular", sans-serif;
   font-weight: 300;
   color: #222;
   line-height: 1.9em;
@@ -264,7 +269,7 @@ main {
   h4,
   h5,
   h6 {
-    font-family: Raleway, sans-serif;
+    font-family: "SNPro-Regular", sans-serif;
   }
 }
 .posts-labelgroup {
@@ -292,7 +297,7 @@ table {
   }
   th {
     background-color: #eee;
-    font-family: Raleway;
+    font-family: "SNPro-Regular";
   }
 }
 

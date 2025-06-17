@@ -12,19 +12,38 @@
   @import "dark";
 {%- endif -%}
 
-@import url('https://fonts.googleapis.com/css2?family=Raleway:ital,wght@0,100..900;1,100..900&family=Seaweed+Script&family=Tajawal:wght@200;300;400;500;700;800;900&display=swap');
+@font-face {
+  font-family: "SNPro-Regular";
+  src: url("/assets/font/SNPro-Regular.ttf");
+}
+
+@font-face {
+  font-family: "SNPro-Bold";
+  src: url("/assets/font/SNPro-Bold.ttf");
+}
+
+@font-face {
+  font-family: "SNPro-Italic";
+  src: url("/assets/font/SNPro-BoldItalic.ttf");
+}
+
+html, body {
+  font-family: "SNPro-Regular", sans-serif;
+}
 
 .post {
-  font-family: "Raleway", sans-serif;
+  font-family: "SNPro-Regular", sans-serif;
   font-weight: 300;
-  color: #fff;
   line-height: 1.9em;
 
   b, strong {
     color: #81ffff;
+    font-family: "SNPro-Bold"
   }
 
   i, em {
     color: #ff81ff;
+    font-weight: bold;
+    font-family: "SNPro-Italic"
   }
 }

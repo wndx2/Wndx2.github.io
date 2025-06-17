@@ -1,5 +1,4 @@
 @charset "UTF-8";
-@import url("https://fonts.googleapis.com/css2?family=Raleway:ital,wght@0,100..900;1,100..900&family=Seaweed+Script&family=Tajawal:wght@200;300;400;500;700;800;900&display=swap");
 @font-face {
   font-family: "fontello";
   src: url("../font/fontello.eot?37382099");
@@ -542,6 +541,10 @@ green     #859900  operators, other keywords
 .highlight .il {
   color: #2aa198;
 } /* Literal.Number.Integer.Long */
+@font-face {
+  font-family: SNPro-Regular;
+  src: url(/assets/font/SNPro-Regular.ttf);
+}
 .highlight {
   background-color: #f4f4f4;
 }
@@ -551,11 +554,15 @@ div.highlight {
 }
 
 pre.highlight, code {
-  font-family: "Consolas", Menlo, monospace;
+  font-family: "SNPro-Regular", Menlo, monospace;
   line-height: 1.4em;
   tab-size: 4;
 }
 
+@font-face {
+  font-family: SNPro-Regular;
+  src: url(/assets/font/SNPro-Regular.ttf);
+}
 *,
 *:before,
 *:after {
@@ -563,7 +570,7 @@ pre.highlight, code {
 }
 
 body {
-  font-family: "Raleway", sans-serif;
+  font-family: "SNPro-Regular", sans-serif;
   font-size: 16px;
   line-height: 1.2em;
   margin: 0;
@@ -583,7 +590,7 @@ a {
   transition: color 0.3s;
 }
 a:hover {
-  color: #0a59b0;
+  color: #407F7F;
 }
 
 h2 {
@@ -723,7 +730,7 @@ main .about .about-header .about-title {
 }
 .navigation ul a {
   display: block;
-  font-family: "Merriweather";
+  font-family: "SNPro-Regular";
   text-align: center;
   padding: 1rem 0;
   text-decoration: none;
@@ -817,7 +824,7 @@ main .about .about-header .about-title {
 }
 
 .post {
-  font-family: "Merriweather", sans-serif;
+  font-family: "SNPro-Regular", sans-serif;
   font-weight: 300;
   color: #222;
   line-height: 1.9em;
@@ -826,12 +833,12 @@ main .about .about-header .about-title {
   margin-top: 10px;
 }
 .post a {
-  color: #0a59b0;
+  color: #407F7F;
   text-decoration: none;
   transition: border-bottom 0.4s;
 }
 .post a:hover {
-  border-bottom: 0.5px solid #0a59b0;
+  border-bottom: 0.5px solid #407F7F;
 }
 .post h1,
 .post h2,
@@ -839,7 +846,7 @@ main .about .about-header .about-title {
 .post h4,
 .post h5,
 .post h6 {
-  font-family: Raleway, sans-serif;
+  font-family: "SNPro-Regular", sans-serif;
 }
 
 .posts-labelgroup {
@@ -867,7 +874,7 @@ table th, table td {
 }
 table th {
   background-color: #eee;
-  font-family: Raleway;
+  font-family: "SNPro-Regular";
 }
 
 footer {
@@ -969,6 +976,10 @@ input:checked + .slider:before {
   border-radius: 50%;
 }
 
+@font-face {
+  font-family: BrassMono;
+  src: url(/assets/font/BrassMono-Regular.ttf);
+}
 .dark,
 .dark * {
   background-color: #171717;
@@ -1373,7 +1384,7 @@ input:checked + .slider:before {
 .dark pre.highlight-dark, .dark code,
 .dark * pre.highlight-dark,
 .dark * code {
-  font-family: "Consolas", Menlo, monospace;
+  font-family: "BrassMono", Menlo, monospace;
   line-height: 1.4em;
   tab-size: 4;
 }
@@ -1384,7 +1395,7 @@ input:checked + .slider:before {
 }
 .dark a,
 .dark * a {
-  color: #4da3ff;
+  color: #81ffff;
 }
 .dark #title a,
 .dark * #title a {
@@ -1392,7 +1403,7 @@ input:checked + .slider:before {
 }
 .dark #title a:hover,
 .dark * #title a:hover {
-  color: #4da3ff;
+  color: #81ffff;
 }
 .dark .posts-labelgroup,
 .dark * .posts-labelgroup {
@@ -1442,17 +1453,35 @@ input:checked + .slider:before {
   background-color: #0d0d0d;
 }
 
+@font-face {
+  font-family: "SNPro-Regular";
+  src: url("/assets/font/SNPro-Regular.ttf");
+}
+@font-face {
+  font-family: "SNPro-Bold";
+  src: url("/assets/font/SNPro-Bold.ttf");
+}
+@font-face {
+  font-family: "SNPro-Italic";
+  src: url("/assets/font/SNPro-BoldItalic.ttf");
+}
+html, body {
+  font-family: "SNPro-Regular", sans-serif;
+}
+
 .post {
-  font-family: "Raleway", sans-serif;
+  font-family: "SNPro-Regular", sans-serif;
   font-weight: 300;
-  color: #fff;
   line-height: 1.9em;
 }
 .post b, .post strong {
   color: #81ffff;
+  font-family: "SNPro-Bold";
 }
 .post i, .post em {
   color: #ff81ff;
+  font-weight: bold;
+  font-family: "SNPro-Italic";
 }
 
 /*# sourceMappingURL=style.css.map */
