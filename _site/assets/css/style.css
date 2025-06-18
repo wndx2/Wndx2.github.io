@@ -982,8 +982,8 @@ input:checked + .slider:before {
 }
 .dark,
 .dark * {
-  background-color: #171717;
-  color: #f6f6f6;
+  background-color: #000000;
+  color: #e3e3e3;
   border-color: #e6e6e6;
   /* Solarized Dark 
 
@@ -1085,11 +1085,11 @@ input:checked + .slider:before {
 }
 .dark .social [class^=icon-],
 .dark * .social [class^=icon-] {
-  color: #f6f6f6;
+  color: #e3e3e3;
 }
 .dark #posts-label,
 .dark * #posts-label {
-  color: #f6f6f6;
+  color: #e3e3e3;
   border-bottom: 1px solid #272727;
 }
 .dark .highlight,
@@ -1439,7 +1439,7 @@ input:checked + .slider:before {
 }
 .dark .posts-labelgroup.focus-within input,
 .dark * .posts-labelgroup.focus-within input {
-  color: #f6f6f6;
+  color: #e3e3e3;
 }
 .dark .posts-labelgroup.focus-within i,
 .dark * .posts-labelgroup.focus-within i {
