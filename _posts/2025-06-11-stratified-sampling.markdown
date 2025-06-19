@@ -6,3 +6,5 @@ categories: L2STATS
 ---
 
 [LICENSE](https://gist.github.com/Wndx2/b1a571678b7249e9d32305b4864c9bc4)
+
+I'm lazy so I do this later

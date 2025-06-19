@@ -570,7 +570,7 @@ pre.highlight, code {
 }
 
 body {
-  font-family: "SNPro-Regular", sans-serif;
+  font-family: "SNPro-Regular", "NanumHandwriting", "NanumHandwriting" "NanumHandwriting" "NanumHandwriting" sans-serif;
   font-size: 16px;
   line-height: 1.2em;
   margin: 0;
@@ -730,7 +730,7 @@ main .about .about-header .about-title {
 }
 .navigation ul a {
   display: block;
-  font-family: "SNPro-Regular";
+  font-family: "SNPro-Regular", "NanumHandwriting", "NanumHandwriting";
   text-align: center;
   padding: 1rem 0;
   text-decoration: none;
@@ -824,7 +824,7 @@ main .about .about-header .about-title {
 }
 
 .post {
-  font-family: "SNPro-Regular", sans-serif;
+  font-family: "SNPro-Regular", "NanumHandwriting", sans-serif;
   font-weight: 300;
   color: #222;
   line-height: 1.9em;
@@ -846,7 +846,7 @@ main .about .about-header .about-title {
 .post h4,
 .post h5,
 .post h6 {
-  font-family: "SNPro-Regular", sans-serif;
+  font-family: "SNPro-Regular", "NanumHandwriting", sans-serif;
 }
 
 .posts-labelgroup {
@@ -874,7 +874,7 @@ table th, table td {
 }
 table th {
   background-color: #eee;
-  font-family: "SNPro-Regular";
+  font-family: "SNPro-Regular", "NanumHandwriting";
 }
 
 footer {
