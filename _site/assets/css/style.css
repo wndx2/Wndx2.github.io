@@ -1474,8 +1474,8 @@ input:checked + .slider:before {
   src: url(/assets/font/nanumhandwriting.ttf);
 }
 @font-face {
-  font-family: JenkerFont;
-  src: url(/assets/font/JenkerFont.otf);
+  font-family: jenku;
+  src: url(/assets/font/jenku.otf);
 }
 html, body {
   font-family: "SNPro-Regular", sans-serif;
