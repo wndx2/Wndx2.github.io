@@ -1,1 +1,1 @@
-삭제됨 왜인지는 모름 ㅋㅋ;;
+## 🙌 [Wndx2.github.io](https://wndx2.github.io)
