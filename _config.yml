@@ -62,5 +62,5 @@ plugins:
 
 kramdown:
   math_engine: mathjax
-  input: GFM
+  parse_block_html: false
   syntax_highlighter: rouge
