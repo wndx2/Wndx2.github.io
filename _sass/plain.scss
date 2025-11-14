@@ -334,3 +334,37 @@ footer {
     border-top: 1px solid #eee;
   }
 }
+
+/* Callouts */
+.callout {
+  padding: 1.25rem;
+  margin-top: 1.25rem;
+  margin-bottom: 1.25rem;
+  border: 1px solid #eee;
+  border-left-width: .25rem;
+  border-radius: .25rem;
+}
+
+.callout-note {
+  border-left-color: #448aff;
+}
+
+.callout-warning {
+  border-left-color: #ff9100;
+}
+
+.callout-info {
+  border-left-color: #00b0ff;
+}
+
+.callout-danger {
+  border-left-color: #ff5252;
+}
+
+.callout > p:first-of-type {
+    margin-top: 0;
+}
+
+.callout > p:last-of-type {
+    margin-bottom: 0;
+}
