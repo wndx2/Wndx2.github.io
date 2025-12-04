@@ -12,13 +12,10 @@ body {
 	background: linear-gradient(to bottom, #0d001f, #19014d);
 	min-height: 100vh;
 	margin: 0;
-	display: flex;
-	justify-content: center;
-	align-items: center;
-	flex-direction: column;
 
 	font-family: schoolbell;
 	font-size: 16px;
+	text-align: center;
 	color: white;
 }
 
