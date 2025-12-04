@@ -1,0 +1,27 @@
+@font-face {
+	font-family: ComputerModern;
+	src: url(ComputerModern/ComputerModern-Regular.ttf);
+}
+
+body {
+	background-color: black;
+	color: white;
+	font-family: ComputerModern;
+	text-align: center;
+}
+
+.centercontainer {
+	height: 100%;
+	width: 100%;
+	text-align: center;
+
+	display: table;
+}
+
+.verticalcenter {
+	vertical-align: middle;
+
+	display: table-cell;
+	padding: 2rem;
+	line-height: 2;
+}
