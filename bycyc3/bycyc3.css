@@ -1,0 +1,27 @@
+@font-face {
+	font-family: longcang;
+	src: url(../assets/fonts/LongCang-Regular.ttf);
+}
+
+@font-face {
+	font-family: schoolbell;
+	src: url(../assets/fonts/Schoolbell-Regular.ttf);
+}
+
+body {
+	background: linear-gradient(to bottom, #0d001f, #19014d);
+	min-height: 100vh;
+	margin: 0;
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	flex-direction: column;
+
+	font-family: schoolbell;
+	font-size: 16px;
+	color: white;
+}
+
+.title {
+	font-size: 48px;
+}
