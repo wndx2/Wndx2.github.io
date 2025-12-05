@@ -15,7 +15,7 @@ b {
 	font-family: monospace;
 }
 
-.centercontainer {
+.c-center {
 	height: 100%;
 	width: 100%;
 	text-align: center;
@@ -23,7 +23,7 @@ b {
 	display: table;
 }
 
-.verticalcenter {
+.p-center {
 	vertical-align: middle;
 
 	display: table-cell;
