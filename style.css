@@ -10,6 +10,11 @@ body {
 	text-align: center;
 }
 
+b {
+	color: #f2ed58;
+	font-family: monospace;
+}
+
 .centercontainer {
 	height: 100%;
 	width: 100%;
