@@ -19,11 +19,57 @@ body {
 	color: white;
 }
 
+p {
+	font-size: 20px;
+}
+
+p-c {
+	font-size: 20px;
+}
+
 .title {
 	font-size: 48px;
 	text-align: center;
 }
 
-.text {
-	font-size: 20px;
+.c-center {
+	height: 100%;
+	width: 100%;
+	text-align: center;
+
+	display: table;
+}
+
+.p-center {
+	vertical-align: middle;
+
+	display: table-cell;
+	padding: 2rem;
+	line-height: 2;
+}
+
+.spacer {
+	margin: 256px;
+}
+
+.scrollsection {
+	display: flex;
+	overflow-x: auto;
+	text-align: center;
+	width: 80%;
+	max-width: 1200px;
+	margin: 0 auto;
+	justify-content: flex-start;
+	align-items: center;
+	box-sizing: border-box;
+	height: 200px;
+	gap: 10px;
+	padding: 10px;
+}
+
+.images {
+	height: 100%;
+	width: auto;
+	flex: 0 0 auto;
+	object-fit: contain;
 }
