@@ -5,9 +5,13 @@
 
 body {
 	background-image: linear-gradient(#000, #151515);
-	color: #fff;
+	color: #696969;
 	font-family: ComputerModern;
 	text-align: center;
+}
+
+p {
+	color: #696969;
 }
 
 b {
@@ -33,14 +37,16 @@ b {
 }
 
 h1#name {
-	color: #fff;
-	text-shadow:
-		0 0 6px #fff,
-		0 0 12px rgba(255, 255, 255, 0.8),
-		0 0 24px rgba(255, 255, 255, 0.6);
+	color: #e8e8e8;
 	display: inline-block;
 	border-right: 2px solid;
 	animation: blink 0.75s step-end infinite;
+}
+
+h1,
+h2,
+h3 {
+	color: #e8e8e8;
 }
 
 @keyframes blink {
@@ -49,10 +55,15 @@ h1#name {
 		border-color: transparent;
 	}
 	50% {
-		border-color: #fff;
+		border-color: #e8e8e8;
 	}
 }
 
 .divider {
 	margin: 16rem;
+}
+
+a.socials {
+	margin: 8px;
+	text-decoration: none;
 }
