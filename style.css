@@ -35,8 +35,9 @@ b {
 h1#name {
 	color: #fff;
 	text-shadow:
-		1px 1px 70px #fff,
-		1px 1px 70px #ccc;
+		0 0 6px #fff,
+		0 0 12px rgba(255, 255, 255, 0.8),
+		0 0 24px rgba(255, 255, 255, 0.6);
 	display: inline-block;
 	border-right: 2px solid;
 	animation: blink 0.75s step-end infinite;
