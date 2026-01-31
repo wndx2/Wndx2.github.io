@@ -1,9 +1,15 @@
+@font-face {
+	font-family: "Paperlogy";
+	src: url("../assets/fonts/Paperlogy-1.001/Paperlogy-4Regular.ttf") format("truetype");
+}
+
 body {
 	background-image: linear-gradient(#ddf2ff, #ffddf9);
 	min-height: 100vh;
 	margin: 0;
 	font-size: 16px;
 	text-align: center;
+	font-family: "Paperlogy";
 }
 
 .content-wrapper {
