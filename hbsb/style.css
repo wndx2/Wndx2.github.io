@@ -9,7 +9,7 @@ body {
 	margin: 0;
 	font-size: 16px;
 	text-align: center;
-	font-family: "Paperlogy";
+	font-family: "Paperlogy", sans-serif, serif;
 }
 
 .content-wrapper {
