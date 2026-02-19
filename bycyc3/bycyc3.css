@@ -24,9 +24,14 @@ p {
 }
 
 p-c {
-	font-size: 20px;
+	font-size: 25px;
 	font-family: longcang;
 	color: #696969;
+}
+
+danger {
+	font-size: 20px;
+	color: #ff0000;
 }
 
 .title {
