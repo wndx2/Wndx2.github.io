@@ -1,46 +1,85 @@
+/* Make sure the entire page can be full height without weird defaults */
+html,
+body {
+	height: 100%;
+	margin: 0;
+	padding: 0;
+	overflow-x: hidden; /* ← prevents horizontal scroll when logo moves right */
+	overflow-y: auto; /* ← allows vertical scroll only if content overflows */
+	background-image: linear-gradient(#000, #151515);
+}
+
+/* Fonts — unchanged, looks good */
 @font-face {
 	font-family: ComputerModern;
 	src: url(assets/fonts/ComputerModern/ComputerModern-Regular.ttf);
 }
-
-body {
-	background-image: linear-gradient(#000, #151515);
-	color: #696969;
-	font-family: ComputerModern;
-	text-align: center;
+@font-face {
+	font-family: PaperlogyBlack;
+	src: url(assets/fonts/Paperlogy-1.001/Paperlogy-9Black.ttf);
+}
+@font-face {
+	font-family: Paperlogy;
+	src: url(assets/fonts/Paperlogy-1.001/Paperlogy-4Regular.ttf);
 }
 
-p {
-	color: #696969;
+body {
+	font-family: ComputerModern, Paperlogy, sans-serif; /* ← fallback added */
+	color: #e8e8e8;
+	text-align: center;
+	/* background moved up to html/body for consistency */
+}
+
+/* Container center — this is the key part */
+.c-center {
+	height: 100vh; /* ← Use vh instead of 100% — more reliable */
+	width: 100vw; /* ← or 100% — both work now */
+	min-height: 100vh; /* ← fallback if vh is blocked */
+	position: relative;
+	overflow: hidden; /* ← keeps logo INSIDE this box */
+	display: flex; /* ← modern replacement for display: table */
+	justify-content: center;
+	align-items: center;
+	/* Remove text-align: center; — flex handles centering better */
+}
+
+/* If you really need/want to keep display: table (e.g. for very old browser support) */
+.c-center.table-mode {
+	/* ← optional alternate class */
+	display: table;
+	height: 100vh;
+	width: 100vw;
+}
+
+/* Table-cell child — only needed if you keep display: table */
+.p-center {
+	display: table-cell;
+	vertical-align: middle;
+	padding: 2rem;
+	line-height: 2;
+}
+
+/* DVD logo */
+#dvd-logo {
+	position: absolute;
+	width: 120px;
+	height: auto;
+	top: 0;
+	left: 0;
+	animation: spin 0.5s linear infinite;
+	pointer-events: none;
 }
 
 b {
 	font-weight: bolder;
 }
 
-/* Container center */
-.c-center {
-	height: 100%;
-	width: 100%;
-	text-align: center;
-
-	display: table;
-}
-
-/* Paragraph center */
-.p-center {
-	vertical-align: middle;
-
-	display: table-cell;
-	padding: 2rem;
-	line-height: 2;
-}
-
 h1#name {
 	color: #e8e8e8;
 	display: inline-block;
-	border-right: 2px solid;
+	border-right: 2px solid #e8e8e8;
 	animation: blink 0.75s step-end infinite;
+	white-space: nowrap;
 }
 
 h1,
@@ -59,9 +98,18 @@ h3 {
 	}
 }
 
-.divider {
-	margin: 16rem;
+@keyframes spin {
+	from {
+		transform: rotate(0deg);
+	}
+	to {
+		transform: rotate(360deg);
+	}
 }
+
+.divider {
+	margin: 16rem 0;
+} /* ← added 0 for left/right */
 
 a.socials {
 	margin: 8px;

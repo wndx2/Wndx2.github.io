@@ -7,32 +7,35 @@
 		<script src="script.js"></script>
 	</head>
 	<body>
-		<div class="c-center">
+		<div class="c-center" style="font-family: PaperlogyBlack">
+			<img id="dvd-logo" src="assets/images/e8.png" alt="dvd logo" />
 			<div class="p-center">
-				<h2 style="margin-bottom: -30px">Hi, I'm</h2>
-				<h1 id="name"></h1>
+				<h1 style="font-size: 50px">
+					<script>
+						const today = new Date();
+						const day = String(today.getDate()).padStart(2, "0");
+						const month = String(today.getMonth() + 1).padStart(2, "0");
+						const year = today.getFullYear();
+						document.write(`${day}.${month}.${year}`); // returns as html
+					</script>
+				</h1>
+				<p id="live-time"></p>
 			</div>
 		</div>
 		<main>
-			<h2>Hello there,</h2>
-			<p>I am a 16-year-old <b>SOUTH</b>-Korean, living in New Zealand.</p>
-			<p>I speak both Korean and English.</p>
+			<p>I'm <span id="name" style="display: inline-block"></span></p>
+			<p>This page is used by me to quickly access shortcuts.</p>
+			<p>For example, press the key 'C'; it will open Google Classroom.</p>
+
 			<div class="divider"></div>
 
-			<div class="lifestats">
-				<h2>Life Stats:</h2>
-				<p>I have lived:</p>
-				<p id="live-time"></p>
-				<p id="total-days"></p>
-				<p id="total-hours"></p>
-				<p id="total-minutes"></p>
-				<p id="total-seconds"></p>
-			</div>
+			<p>MBTI: ISTP</p>
+			<p>B-Day: 8th of November, 2009</p>
+			<p>Email: 22222w@duck.com</p>
 
 			<div class="divider"></div>
 
 			<div class="socials">
-				<h2>Socials:</h2>
 				<a href="https://github.com/wndx2" target="_blank" class="socials">
 					<img src="assets/images/github-icon.png" alt="github icon" width="40px" />
 				</a>
