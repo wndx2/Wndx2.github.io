@@ -26,6 +26,10 @@ const CLICK_SLOP = 6;
 
 // How close to an axis line the pointer has to be to count as on it, in pixels.
 const AXIS_RADIUS = 18;
+// Fingers are less precise than a mouse, and cover the line they are aiming at.
+const TOUCH_AXIS_RADIUS = 32;
+// Below this spread along the axis, a pinch's ratio is too jumpy to stretch by.
+const MIN_STRETCH_SPREAD = 24;
 const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -59,7 +63,8 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
     let pinned: PointOfInterest[] = [];
     let hovered: PointOfInterest | undefined;
     // Where the mouse is over the canvas, and the axis it is on with Shift held:
-    // that axis is highlighted, and is the one a scroll would stretch.
+    // that axis is highlighted, and is the one a scroll would stretch. A pinch that
+    // starts with both fingers on an axis sets it too.
     let mouse: { x: number; y: number } | undefined;
     let stretching: 'x' | 'y' | undefined;
 
@@ -207,6 +212,16 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
       return fromXAxis <= fromYAxis ? 'x' : 'y';
     };
 
+    // The axis both fingers of a pinch are on, if they share one. With both near the
+    // origin, the axis the fingers are spread along wins.
+    const axisBetween = (a: { x: number; y: number }, b: { x: number; y: number }): 'x' | 'y' | undefined => {
+      const [originX, originY] = toScreen(0, 0);
+      const onX = Math.max(Math.abs(a.y - originY), Math.abs(b.y - originY)) <= TOUCH_AXIS_RADIUS;
+      const onY = Math.max(Math.abs(a.x - originX), Math.abs(b.x - originX)) <= TOUCH_AXIS_RADIUS;
+      if (onX && onY) return Math.abs(a.x - b.x) >= Math.abs(a.y - b.y) ? 'x' : 'y';
+      return onX ? 'x' : onY ? 'y' : undefined;
+    };
+
     // Works out the axis to highlight from where the mouse is and whether Shift is down.
     const updateStretching = (shift: boolean) => {
       const axis = shift && mouse && !hovered && pointers.size === 0 ? axisAt(mouse.x, mouse.y) : undefined;
@@ -334,6 +349,9 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
       } else if (pointers.size === 2) {
         mode = 'pinch';
         trace = undefined;
+        // Pinching on an axis stretches that axis alone.
+        const [a, b] = pointers.values();
+        stretching = axisBetween(a, b);
       }
       redraw();
     };
@@ -380,7 +398,14 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
         const spreadAfter = Math.hypot(p.x - other.x, p.y - other.y);
         view.cx -= (after.x - before.x) / view.scale;
         view.cy += (after.y - before.y) / scaleY(view);
-        if (spreadBefore > 0) zoomAt(after.x, after.y, spreadAfter / spreadBefore);
+        if (stretching) {
+          // Only the spread along the axis counts, so a wobble across it does nothing.
+          const alongBefore = Math.abs(stretching === 'x' ? previous.x - other.x : previous.y - other.y);
+          const alongAfter = Math.abs(stretching === 'x' ? p.x - other.x : p.y - other.y);
+          if (Math.min(alongBefore, alongAfter) >= MIN_STRETCH_SPREAD) {
+            stretchAt(stretching, after.x, after.y, alongAfter / alongBefore);
+          }
+        } else if (spreadBefore > 0) zoomAt(after.x, after.y, spreadAfter / spreadBefore);
       }
       redraw();
     };
@@ -392,6 +417,8 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
         const [rest] = pointers.values();
         mode = 'pan';
         history = [{ t: e.timeStamp, ...rest }];
+        stretching = undefined;
+        redraw();
         return;
       }
       if (pointers.size > 0) return;
@@ -418,6 +445,7 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
         if (e.pointerType === 'mouse') hovered = existing ? undefined : point;
       }
       pressed = undefined;
+      stretching = undefined;
       if (mode === 'trace' && e.pointerType !== 'mouse') trace = undefined;
       mode = 'idle';
       delete canvas.dataset.dragging;
