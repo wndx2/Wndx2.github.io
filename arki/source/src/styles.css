@@ -1,3 +1,9 @@
+@font-face {
+  font-family: 'ChosunSm';
+  src: url('./fonts/ChosunSm.ttf') format('truetype');
+  font-display: swap;
+}
+
 :root {
   color-scheme: light dark;
 
@@ -26,7 +32,7 @@
   /* Critically damped feel for surfaces that are toggled rather than dragged. */
   --ease-settle: cubic-bezier(0.32, 0.72, 0, 1);
 
-  font: 100%/1.4 -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', sans-serif;
+  font: 100%/1.4 'ChosunSm', -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 

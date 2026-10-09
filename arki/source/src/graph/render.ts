@@ -51,7 +51,7 @@ export interface Trace {
   at: number;
 }
 
-const FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
+const FONT = 'ChosunSm, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
 const CURVE_WIDTH = 2.5;
 const SUPERSCRIPT = '⁰¹²³⁴⁵⁶⁷⁸⁹';
 
