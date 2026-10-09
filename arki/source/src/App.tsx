@@ -4,28 +4,44 @@ import type { Drawable } from './graph/render';
 import { analyze } from './math/analyze';
 import { nameToLatex } from './math/parser';
 import { ExpressionRow, type Expression } from './ui/ExpressionRow';
-import { HomeIcon, MinusIcon, PlusIcon, SidebarIcon } from './ui/icons';
-import { PALETTE, colorOf } from './ui/palette';
+import { HomeIcon, KeyboardIcon, MinusIcon, MoonIcon, PlusIcon, SidebarIcon, SunIcon } from './ui/icons';
+import { DEFAULT_COLOR, colorOf } from './ui/palette';
+import type { TableRange } from './ui/Table';
 
 const STORAGE_KEY = 'arki:expressions:v1';
+const THEME_KEY = 'arki:theme';
 const PANEL_WIDTH = 360;
 const PANEL_MARGIN = 12;
 const NARROW = '(max-width: 640px)';
 
 let nextId = 0;
-const newExpression = (latex: string, color: number): Expression => ({
+const newExpression = (latex: string, color = DEFAULT_COLOR): Expression => ({
   id: `${Date.now().toString(36)}-${nextId++}`,
   latex,
-  color: color % PALETTE.length,
+  color,
   hidden: false,
   min: -10,
   max: 10,
 });
 
+// A saved expression, with anything an older version stored differently put right:
+// a table's own values were once numbers, and are LaTeX now.
+function restore(saved: Expression): Expression {
+  const table = saved.table as (Omit<TableRange, 'extra'> & { extra?: unknown }) | undefined;
+  if (!table) return saved;
+  if (![table.start, table.end, table.step].every((v) => v == null || (typeof v === 'number' && Number.isFinite(v)))) {
+    return { ...saved, table: undefined };
+  }
+  const extra = (Array.isArray(table.extra) ? table.extra : [])
+    .map((value) => (typeof value === 'number' ? String(value) : value))
+    .filter((value): value is string => typeof value === 'string');
+  return { ...saved, table: { ...table, extra } };
+}
+
 function loadExpressions(): Expression[] {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
-    if (Array.isArray(saved) && saved.length > 0) return saved;
+    if (Array.isArray(saved) && saved.length > 0) return saved.map(restore);
   } catch {
     // Unreadable storage just means starting fresh.
   }
@@ -43,14 +59,95 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
+// Publishes how much of the bottom of the screen a keyboard covers as `--keyboard-inset`,
+// so the panel can sit above it. Covers both the maths keyboard and the system one.
+function useKeyboardInset() {
+  useEffect(() => {
+    const keyboard = window.mathVirtualKeyboard;
+    const viewport = window.visualViewport;
+    const update = () => {
+      const backdrop = keyboard.visible ? document.querySelector<HTMLElement>('.MLK__backdrop') : null;
+      const maths = backdrop?.offsetHeight ?? 0;
+      const system = viewport ? window.innerHeight - viewport.height - viewport.offsetTop : 0;
+      document.documentElement.style.setProperty('--keyboard-inset', `${Math.max(0, maths, Math.round(system))}px`);
+      // The panel has just changed size; keep the row being edited inside it.
+      requestAnimationFrame(() => document.activeElement?.scrollIntoView({ block: 'nearest' }));
+    };
+    update();
+    keyboard.addEventListener('geometrychange', update);
+    keyboard.addEventListener('virtual-keyboard-toggle', update);
+    viewport?.addEventListener('resize', update);
+    viewport?.addEventListener('scroll', update);
+    return () => {
+      keyboard.removeEventListener('geometrychange', update);
+      keyboard.removeEventListener('virtual-keyboard-toggle', update);
+      viewport?.removeEventListener('resize', update);
+      viewport?.removeEventListener('scroll', update);
+    };
+  }, []);
+}
+
+// Light or dark. It follows the system until one is chosen with the navbar's switch;
+// the choice is remembered. (index.html applies it before the first paint.)
+function useTheme(): [boolean, () => void] {
+  const system = useMediaQuery('(prefers-color-scheme: dark)');
+  const [chosen, setChosen] = useState<boolean | undefined>(() => {
+    try {
+      const saved = localStorage.getItem(THEME_KEY);
+      return saved === 'dark' ? true : saved === 'light' ? false : undefined;
+    } catch {
+      return undefined;
+    }
+  });
+  const dark = chosen ?? system;
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.theme = dark ? 'dark' : 'light';
+    // MathLive's keyboard takes its theme from this attribute.
+    root.setAttribute('theme', dark ? 'dark' : 'light');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0e0e10' : '#ffffff');
+  }, [dark]);
+  const toggle = () => {
+    setChosen(!dark);
+    try {
+      localStorage.setItem(THEME_KEY, dark ? 'light' : 'dark');
+    } catch {
+      // Without storage the choice just lasts for this visit.
+    }
+  };
+  return [dark, toggle];
+}
+
+const focusedField = () => (document.activeElement?.tagName === 'MATH-FIELD' ? document.activeElement : null);
+
+// The on-screen maths keyboard appears by itself on touch devices. Elsewhere it is
+// switched on by hand, and then follows the field being edited in the same way.
+function useKeyboardSwitch(): [boolean, (on: boolean) => void] {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    if (!on) {
+      window.mathVirtualKeyboard.hide();
+      return;
+    }
+    const show = () => {
+      if (focusedField()) window.mathVirtualKeyboard.show({ animate: true });
+    };
+    show();
+    document.addEventListener('focusin', show);
+    return () => document.removeEventListener('focusin', show);
+  }, [on]);
+  return [on, setOn];
+}
+
 export function App() {
+  useKeyboardInset();
   const [expressions, setExpressions] = useState(loadExpressions);
   const [focus, setFocus] = useState({ id: '', token: 0 });
   const [panelOpen, setPanelOpen] = useState(true);
-  const dark = useMediaQuery('(prefers-color-scheme: dark)');
+  const [keyboardOn, setKeyboardOn] = useKeyboardSwitch();
+  const [dark, toggleTheme] = useTheme();
   const narrow = useMediaQuery(NARROW);
   const graph = useRef<GraphHandle>(null);
-  const created = useRef(expressions.length);
 
   useEffect(() => {
     try {
@@ -61,6 +158,12 @@ export function App() {
   }, [expressions]);
 
   const analyses = useMemo(() => analyze(expressions.map((e) => e.latex)), [expressions]);
+
+  // Works out a value typed into a table, which may use the sliders and functions here.
+  const evaluate = useCallback(
+    (latex: string) => analyze([latex, ...expressions.map((e) => e.latex)])[0].value,
+    [expressions],
+  );
 
   const drawables = useMemo(() => {
     const out: Drawable[] = [];
@@ -78,7 +181,7 @@ export function App() {
 
   // Inserts rows after `afterId` (or at the end) and returns the first new one.
   const insert = (afterId: string | undefined, latexes: string[]) => {
-    const added = latexes.map((latex) => newExpression(latex, created.current++));
+    const added = latexes.map((latex) => newExpression(latex));
     setExpressions((list) => {
       const index = afterId ? list.findIndex((e) => e.id === afterId) : list.length - 1;
       return [...list.slice(0, index + 1), ...added, ...list.slice(index + 1)];
@@ -108,15 +211,49 @@ export function App() {
     focusOn(insert(undefined, ['']).id);
   };
 
+  const toggleKeyboard = () => {
+    // Switching it on with nothing being edited starts editing the last expression.
+    if (!keyboardOn && !focusedField()) focusOn(expressions[expressions.length - 1].id);
+    setKeyboardOn(!keyboardOn);
+  };
+
   const inset = panelOpen && !narrow ? PANEL_WIDTH + PANEL_MARGIN : 0;
 
   return (
     <div className="app" data-panel={panelOpen ? 'open' : 'closed'}>
       <Graph ref={graph} items={drawables} dark={dark} insetLeft={inset} />
 
+      <nav className="navbar" aria-label="Site">
+        {/* Focusable so the notice can also be reached by keyboard, or a tap on a phone. */}
+        <h1 aria-label="Arki" aria-describedby="copyright" tabIndex={0}>
+          <span aria-hidden="true">A</span>rki
+          <span id="copyright" role="tooltip" className="navbar-tip">
+            Copyright 2026 © Juyoung Park All rights reserved.
+          </span>
+        </h1>
+        <div className="navbar-actions">
+          <button className="icon-button" aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} onClick={toggleTheme}>
+            {dark ? <SunIcon /> : <MoonIcon />}
+          </button>
+          <a href="https://sleepywndud.github.io" target="_blank" rel="noopener">
+            NI BRAIN TOO SHT
+          </a>
+        </div>
+      </nav>
+
       <aside className="panel" aria-label="Expressions" inert={!panelOpen}>
         <header className="panel-header">
-          <h1>Arki</h1>
+          <h2>Expressions</h2>
+          <button
+            className="icon-button keyboard-switch"
+            aria-label="Maths keyboard"
+            aria-pressed={keyboardOn}
+            // Keeps the focus in the field being edited, which the keyboard types into.
+            onPointerDown={(e) => e.preventDefault()}
+            onClick={toggleKeyboard}
+          >
+            <KeyboardIcon />
+          </button>
           <button className="icon-button" aria-label="Add expression" onClick={addExpression}>
             <PlusIcon />
           </button>
@@ -132,6 +269,7 @@ export function App() {
               analysis={analyses[i]}
               dark={dark}
               focusToken={focus.id === expression.id ? focus.token : 0}
+              evaluate={evaluate}
               onChange={(patch) => change(expression.id, patch)}
               onEnter={() => focusOn(insert(expression.id, ['']).id)}
               onRemove={() => remove(expression.id)}

@@ -43,6 +43,9 @@ const RULES: Record<string, (u: Node) => Node> = {
   artanh: (u) => div(num(1), sub(num(1), square(u))),
   ln: (u) => div(num(1), u),
   log: (u) => div(num(1), mul(u, call('ln', num(10)))),
+  log2: (u) => div(num(1), mul(u, call('ln', num(2)))),
+  trunc: () => num(0),
+  frac: () => num(1),
   exp: (u) => call('exp', u),
   sqrt: (u) => div(num(1), mul(num(2), call('sqrt', u))),
   abs: (u) => call('sign', u),
@@ -76,6 +79,8 @@ function dependsOn(node: Node, name: string): boolean {
       return piecesOf(node).some((part) => dependsOn(part, name));
     case 'deriv':
       return node.wrt === name || dependsOn(node.body, name);
+    case 'bind':
+      return node.args.some((arg) => dependsOn(arg, name)) || (node.wrt !== name && dependsOn(node.body, name));
   }
 }
 
@@ -127,6 +132,8 @@ function substitute(node: Node, name: string, value: Node): Node {
         // A derivative in `name` can't have an expression put in its place; callers
         // check for that case first (see containsDerivativeOf) and never reach it.
         return n.wrt === name ? n : { ...n, body: s(n.body) };
+      case 'bind':
+        return { ...n, args: n.args.map(s), body: n.wrt === name ? n.body : s(n.body) };
     }
   };
   return s(node);
@@ -153,6 +160,8 @@ function containsDerivativeOf(node: Node, name: string): boolean {
       return piecesOf(node).some((part) => containsDerivativeOf(part, name));
     case 'deriv':
       return node.wrt === name || containsDerivativeOf(node.body, name);
+    case 'bind':
+      return containsDerivativeOf(node.body, name) || node.args.some((arg) => containsDerivativeOf(arg, name));
   }
 }
 
@@ -226,6 +235,7 @@ export function differentiate(node: Node, wrt: string, isFunction: (name: string
         };
       case 'tuple':
       case 'deriv':
+      case 'bind':
         return numeric;
     }
   };

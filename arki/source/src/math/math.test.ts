@@ -47,6 +47,95 @@ near(value('\\operatorname{mod}\\left(-1,3\\right)'), 2);
 near(value('\\sum_{n=1}^{10}n^2'), 385);
 near(value('\\prod_{k=1}^{5}k'), 120);
 
+// Keyboard functions
+near(value('\\operatorname{lb}8+\\lg100'), 5);
+near(value('\\operatorname{tg}\\left(\\frac{\\pi}{4}\\right)+\\operatorname{arctg}\\left(1\\right)'), 1 + Math.PI / 4);
+near(value('\\left\\Vert-3\\right\\Vert+\\mathrm{abs}\\left(-2\\right)'), 5);
+near(value('\\sin\\left(30\\degree\\right)+\\cos60^{\\circ}'), 1);
+near(value('\\exponentialE^{2}'), Math.E ** 2);
+near(plot(one('\\frac{\\partial}{\\partial x}x^3'), 'fx').f(2), 12, 1e-5);
+near(plot(one('\\frac{d^2}{dx^2}x^3'), 'fx').f(2), 12, 1e-4);
+near(value('f^{\\prime}\\left(2\\right)', 'f\\left(x\\right)=x^3'), 12, 1e-6);
+near(value("f''(2)", 'f\\left(x\\right)=x^3'), 12, 1e-4);
+near(plot(one("f'(x)", 'f\\left(t\\right)=t^2'), 'fx').f(3), 6, 1e-6);
+near(value('\\lim_{x\\to0}\\frac{\\sin x}{x}'), 1);
+near(value('\\lim_{x\\to\\infty}\\left(1+\\frac{1}{x}\\right)^x'), Math.E, 1e-7);
+near(value('\\lim_{x\\to0}\\frac{1-\\cos x}{x^2}'), 0.5);
+near(value('\\lim_{x\\to0^{+}}\\frac{\\left|x\\right|}{x}'), 1);
+near(value('\\lim_{x\\to0^-}\\frac{\\left|x\\right|}{x}'), -1);
+near(value('\\lim_{x\\rightarrow2}\\frac{x^2-4}{x-2}'), 4);
+assert.ok(Number.isNaN(value('\\lim_{x\\to0}\\frac{\\left|x\\right|}{x}')));
+assert.equal(value('\\lim_{x\\to0^+}\\frac{1}{x}'), Infinity);
+assert.ok(Number.isNaN(value('\\lim_{x\\to\\infty}\\sin x')));
+near(value('\\lim_{x\\to\\infty}\\frac{\\sin x}{x}'), 0, 1e-6);
+near(plot(one('\\lim_{h\\to0}\\frac{\\left(x+h\\right)^2-x^2}{h}'), 'fx').f(3), 6);
+assert.equal(one('\\lim_{x\\to}').softError, true);
+assert.ok(one('\\forall x').error);
+near(value('\\operatorname{\\mathrm{arsinh}}\\left(0\\right)+\\operatorname{\\mathrm{lb}}8'), 3);
+
+// Derivatives at a value
+near(value('\\frac{d}{dx}\\left(x^3,2\\right)'), 12, 1e-12);
+near(value('\\frac{d^2}{dx^2}\\left(x^3,2\\right)'), 12, 1e-12);
+near(value('\\frac{d}{dx}\\left(\\sin x,\\pi\\right)'), -1, 1e-12);
+near(value('\\frac{d^2}{dx^2}\\left(e^{2x},0\\right)'), 4, 1e-12);
+near(value('\\frac{d}{dt}\\left(t^2+a,3\\right)', 'a=5'), 6, 1e-12);
+near(value('\\dfrac{\\mathrm{d}}{\\mathrm{d}x}\\left(x^2,a\\right)', 'a=5'), 10, 1e-12);
+near(value('\\frac{d}{dx}\\left(f\\left(x\\right),2\\right)', 'f\\left(x\\right)=x^3'), 12, 1e-6);
+near(value('\\frac{d}{dx}\\left(\\left|x\\right|^x,2\\right)'), 4 * (Math.log(2) + 1), 1e-9);
+near(plot(one('\\frac{d}{dx}\\left(x^3\\right)'), 'fx').f(2), 12, 1e-5);
+near(plot(one('\\frac{d}{dx}\\left(x\\right)\\left(x+1\\right)'), 'fx').f(2), 5, 1e-5);
+near(plot(one('\\frac{d^2}{dx^2}\\sin x'), 'fx').f(1), -Math.sin(1), 1e-12);
+
+// Calculator catalogue
+near(value('\\operatorname{Int}\\left(-2.7\\right)+\\operatorname{Frac}\\left(-2.7\\right)'), -2.7);
+near(value('\\operatorname{Intg}\\left(-2.7\\right)'), -3);
+near(value('\\operatorname{RndFix}\\left(3.14159,2\\right)+\\operatorname{round}\\left(2.5\\right)'), 6.14);
+near(value('\\operatorname{GCD}\\left(12,18\\right)+\\operatorname{lcm}\\left(4,6,10\\right)'), 66);
+near(value('\\operatorname{modexp}\\left(2,10,1000\\right)'), 24);
+near(value('\\operatorname{nCr}\\left(10,3\\right)+\\operatorname{nPr}\\left(5,2\\right)+\\binom{5}{2}'), 150);
+near(value('\\operatorname{sech}\\left(0\\right)+\\operatorname{arccot}\\left(1\\right)'), 1 + Math.PI / 4);
+near(value('\\operatorname{solve}\\left(x^2=2,1\\right)'), Math.SQRT2);
+near(value('\\operatorname{solve}\\left(x^2-2,-1\\right)'), -Math.SQRT2);
+near(value('\\operatorname{solve}\\left(\\cos x-x\\right)'), 0.7390851332151607);
+near(value('\\operatorname{solve}\\left(x^3-x,0.4,0.5,2\\right)'), 1);
+near(value('\\operatorname{solve}\\left(x^2=a,1\\right)', 'a=9'), 3);
+near(value('\\operatorname{fMin}\\left(x^2-2x,-5,5\\right)'), 1, 1e-6);
+near(value('\\operatorname{fMax}\\left(\\sin x,0,3\\right)'), Math.PI / 2, 1e-6);
+for (let i = 0; i < 50; i++) {
+  const r = value('\\operatorname{random}\\left(\\right)');
+  assert.ok(r >= 0 && r < 1);
+  const d = value('\\operatorname{RanInt}\\left(1,6\\right)');
+  assert.ok(Number.isInteger(d) && d >= 1 && d <= 6);
+}
+assert.ok(one('\\operatorname{nCr}\\left(5\\right)').error);
+
+// Distributions
+near(value('\\operatorname{NormCD}\\left(-1.96,1.96\\right)'), 0.9500042097, 1e-9);
+near(value('\\operatorname{NormCD}\\left(-\\infty,110,10,100\\right)'), 0.8413447461, 1e-9);
+near(value('\\operatorname{NormPD}\\left(0\\right)'), 1 / Math.sqrt(2 * Math.PI));
+near(value('\\operatorname{InvNormCD}\\left(0.975\\right)'), 1.959963985, 1e-8);
+near(value('\\operatorname{InvNormCD}\\left(0.5,15,100\\right)'), 100, 1e-8);
+near(value('\\operatorname{tCD}\\left(-2,2,10\\right)'), 0.9266118, 1e-6);
+near(value('\\operatorname{InvTCD}\\left(0.025,10\\right)'), 2.2281389, 1e-6);
+near(value('\\operatorname{tPD}\\left(0,1\\right)'), 1 / Math.PI);
+near(value('\\operatorname{ChiCD}\\left(0,3.841458821,1\\right)'), 0.95, 1e-8);
+near(value('\\operatorname{InvChiCD}\\left(0.05,2\\right)'), -2 * Math.log(0.05), 1e-8);
+near(value('\\operatorname{ChiPD}\\left(2,2\\right)'), Math.exp(-1) / 2);
+near(value('\\operatorname{FCD}\\left(0,1,2,2\\right)'), 0.5);
+near(value('\\operatorname{InvFCD}\\left(0.05,2,10\\right)'), 4.102821, 1e-5);
+near(value('\\operatorname{FPD}\\left(1,2,2\\right)'), 0.25);
+near(value('\\operatorname{BinomialPD}\\left(3,10,0.5\\right)'), 120 / 1024);
+near(value('\\operatorname{BinomialCD}\\left(3,10,0.5\\right)'), 176 / 1024);
+near(value('\\operatorname{BinomialCD}\\left(2,3,10,0.5\\right)'), 165 / 1024);
+near(value('\\operatorname{InvBinomialCD}\\left(0.5,10,0.5\\right)'), 5);
+near(value('\\operatorname{PoissonPD}\\left(2,3\\right)'), 4.5 * Math.exp(-3));
+near(value('\\operatorname{PoissonCD}\\left(2,3\\right)'), 8.5 * Math.exp(-3));
+near(value('\\operatorname{InvPoissonCD}\\left(0.5,3\\right)'), 3);
+near(value('\\operatorname{GeoPD}\\left(3,0.5\\right)+\\operatorname{GeoCD}\\left(3,0.5\\right)'), 1);
+near(value('\\operatorname{HypergeoPD}\\left(1,2,3,5\\right)'), 0.6);
+near(value('\\operatorname{HypergeoCD}\\left(1,2,3,5\\right)'), 0.7);
+near(plot(one('\\operatorname{NormPD}\\left(x,2,1\\right)'), 'fx').f(1), 1 / (2 * Math.sqrt(2 * Math.PI)));
+
 // Plots
 near(plot(one('y=x^2'), 'fx').f(3), 9);
 near(plot(one('x^2-1'), 'fx').f(3), 8);
@@ -155,6 +244,16 @@ const trigSamples = [
   '\\sin^{2}x+y\\cos x=1', 'y=\\int_{0}^{x}\\sin^{2}t\\,dt',
   // Pieces written straight after something that would swallow the replacement.
   'y=x^2\\sin x', 'y=\\ln x\\cos x', 'y=\\sum_{n=1}^{3}n\\sin^2x', 'y=2\\cdot\\cos x', 'y=\\operatorname{floor}x\\cos x',
+  'y=2\\tan^{2}x\\cdot\\csc\\left(0.5\\right)', 'y=2\\cos^{2}3x\\cdot\\left(\\cot^{2}\\left(2\\right)\\right)', 'y=\\left(x\\sec^{2}2x\\right)^{2}',
+  // Numeric and compound arguments, which must not run into the 2 of a double angle.
+  'y=x\\cos^2\\left(3\\right)', 'y=\\tan^{2}\\left(0.5\\right)+x', 'y=x\\tanh\\left(2\\right)', 'y=\\sin^{2}\\left(4x\\right)', 'y=\\cos\\left(\\frac{3x}{2}\\right)',
+  'y=\\tan\\left(4x\\right)', 'y=\\sin\\left(2\\left(x+1\\right)\\right)', 'y=\\sinh\\left(x-1\\right)',
+  // Forms the converter writes itself, which it has to be able to take back.
+  'y=\\cos\\left(\\frac{\\pi}{2}-x\\right)', 'y=x\\tan\\left(x\\right)\\cos\\left(x\\right)', 'y=2\\sin\\left(\\frac{x}{2}\\right)\\cos\\left(\\frac{x}{2}\\right)',
+  'y=\\frac{1-\\cos\\left(2x\\right)}{2}', 'y=\\frac{1+\\cos\\left(2x\\right)}{2}', 'y=2\\cos^{2}\\left(x\\right)-1', 'y=1-2\\sin^{2}\\left(x\\right)',
+  'y=\\frac{\\sin^{2}\\left(x\\right)}{\\cos^{2}\\left(x\\right)}', 'y=\\frac{2\\tan\\left(x\\right)}{1-\\tan^{2}\\left(x\\right)}', 'y=\\tanh\\left(x\\right)\\cosh\\left(x\\right)',
+  // Pairs at the end of a longer sum.
+  'y=3+\\sin^2x+\\cos^2x', 'y=5-1+\\cos^{2}x', 'y=x-\\cos^2x+\\sin^2x', 'y=x-\\sin^2x-\\cos^2x',
 ];
 let converted = 0;
 for (const sample of trigSamples) {
@@ -178,12 +277,26 @@ for (const sample of trigSamples) {
     }
   }
 }
-assert.ok(converted > 150, `only ${converted} conversions checked`);
-assert.equal(trigTerms('y=\\sin x+\\cos x\\tan x-\\sec^{2}x\\csc x+\\cot\\left(2x\\right)').length, 6);
+assert.ok(converted > 300, `only ${converted} conversions checked`);
+assert.equal(trigTerms('y=\\sin x+\\cos x\\tan x-\\sec^{2}x\\csc x+\\cot\\left(2x\\right)').length, 7);
 assert.deepEqual(trigTerms('y=\\sin^{2}x').map((t) => t.source), ['\\sin^{2}x']);
 assert.equal(applyTrigOption('y=2\\sin^{2}x', trigTerms('y=2\\sin^{2}x')[0], trigTerms('y=2\\sin^{2}x')[0].options[0]),
   'y=2\\left(1-\\cos^{2}\\left(x\\right)\\right)');
 assert.equal(trigTerms('y=\\sin^{2}x')[0].options[0], '1-\\cos^{2}\\left(x\\right)');
+const firstForm = (latex: string, piece = 0) => applyTrigOption(latex, trigTerms(latex)[piece], trigTerms(latex)[piece].options[0]);
+assert.equal(firstForm('y=\\cos\\left(\\frac{\\pi}{2}-x\\right)'), 'y=\\sin\\left(x\\right)');
+assert.equal(firstForm('y=x\\tan\\left(x\\right)\\cos\\left(x\\right)'), 'y=x\\sin\\left(x\\right)');
+assert.equal(firstForm('y=2\\sin\\left(\\frac{x}{2}\\right)\\cos\\left(\\frac{x}{2}\\right)'), 'y=\\sin\\left(x\\right)');
+assert.equal(firstForm('y=\\frac{1-\\cos\\left(2x\\right)}{2}'), 'y=\\sin^{2}\\left(x\\right)');
+assert.equal(firstForm('y=3+\\sin^2x+\\cos^2x'), 'y=3+1');
+assert.equal(firstForm('y=5-1+\\cos^{2}x'), 'y=5-\\sin^{2}\\left(x\\right)');
+assert.equal(firstForm('y=\\sin\\left(4x\\right)'), 'y=2\\sin\\left(2x\\right)\\cos\\left(2x\\right)');
+assert.equal(trigTerms('y=\\cos^2\\left(3\\right)')[0].options[1], '\\frac{1+\\cos\\left(6\\right)}{2}');
+assert.equal(trigTerms('y=\\sin^{2}\\left(\\frac{x}{2}\\right)')[0].options[1], '\\frac{1-\\cos\\left(x\\right)}{2}');
+assert.equal(trigTerms('y=x\\sin x')[0].options.at(-1), '\\cdot 2\\sin\\left(\\frac{x}{2}\\right)\\cos\\left(\\frac{x}{2}\\right)');
+// A power after a bracketed product applies to the whole product.
+near(value('\\left(a\\left(1+a\\right)\\right)^{2}', 'a=2'), 36);
+near(value('a\\left(1+a\\right)^{2}', 'a=2'), 18);
 assert.deepEqual(trigTerms('y=x^2+1'), []);
 assert.deepEqual(trigTerms('y=\\sin('), []);
 

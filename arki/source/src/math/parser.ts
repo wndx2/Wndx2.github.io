@@ -14,6 +14,9 @@ export type Node =
   | { t: 'tuple'; items: Node[] }
   | { t: 'big'; kind: 'sum' | 'prod'; index: string; lo: Node; hi: Node; body: Node }
   | { t: 'deriv'; wrt: string; body: Node }
+  // A built-in that works on `body` as a function of its own variable `wrt`, with
+  // ordinary arguments after it: a limit, solve, f′(a), a second derivative.
+  | { t: 'bind'; fn: string; wrt: string; body: Node; args: Node[] }
   // A definite integral of `body` over `wrt` from `lo` to `hi`.
   | { t: 'int'; wrt: string; lo: Node; hi: Node; body: Node }
   // Braces: `{x > 0}` restricts whatever it multiplies, and `{x < 0: -x, x}` chooses
@@ -62,6 +65,7 @@ const GREEK = new Set([
   'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'varepsilon', 'zeta', 'eta', 'theta', 'vartheta',
   'iota', 'kappa', 'lambda', 'mu', 'nu', 'xi', 'rho', 'sigma', 'tau', 'phi', 'varphi', 'chi',
   'psi', 'omega', 'Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Sigma', 'Phi', 'Psi', 'Omega',
+  'upsilon', 'omicron', 'varsigma', 'varkappa', 'varpi', 'varrho', 'Pi', 'Upsilon',
 ]);
 
 const FUNCTION_ALIASES: Record<string, string> = {
@@ -75,7 +79,34 @@ const FUNCTION_ALIASES: Record<string, string> = {
   abs: 'abs', floor: 'floor', ceil: 'ceil', round: 'round',
   sign: 'sign', sgn: 'sign', signum: 'sign',
   min: 'min', max: 'max', mod: 'mod',
+  tg: 'tan', ctg: 'cot', cotg: 'cot', cosec: 'csc', arctg: 'arctan',
+  arcsec: 'arcsec', arccsc: 'arccsc', arccot: 'arccot', asec: 'arcsec', acsc: 'arccsc', acot: 'arccot',
+  arcctg: 'arccot', sech: 'sech', csch: 'csch', coth: 'coth', cth: 'coth',
+  sh: 'sinh', ch: 'cosh', th: 'tanh', arsh: 'arsinh', arch: 'arcosh', arth: 'artanh',
+  asinh: 'arsinh', acosh: 'arcosh', atanh: 'artanh',
+  lb: 'log2', trunc: 'trunc', Int: 'trunc', Frac: 'frac', fract: 'frac', intg: 'floor', rndfix: 'round',
+  gcd: 'gcd', lcm: 'lcm', modexp: 'modexp', ncr: 'ncr', npr: 'npr',
+  random: 'random', rand: 'random', ran: 'random', randint: 'randint', ranint: 'randint',
+  randnorm: 'randnorm', rannorm: 'randnorm', randbin: 'randbin', ranbin: 'randbin',
+  normpd: 'normpd', normcd: 'normcd', invnormcd: 'invnormcd', invnorm: 'invnormcd',
+  tpd: 'tpd', tcd: 'tcd', invtcd: 'invtcd', chipd: 'chipd', chicd: 'chicd', invchicd: 'invchicd',
+  fpd: 'fpd', fcd: 'fcd', invfcd: 'invfcd',
+  binomialpd: 'binomialpd', binomialcd: 'binomialcd', invbinomialcd: 'invbinomialcd',
+  binompd: 'binomialpd', binomcd: 'binomialcd', invbinomcd: 'invbinomialcd',
+  poissonpd: 'poissonpd', poissoncd: 'poissoncd', invpoissoncd: 'invpoissoncd',
+  geopd: 'geopd', geocd: 'geocd', invgeocd: 'invgeocd', hypergeopd: 'hypergeopd', hypergeocd: 'hypergeocd',
+  solve: 'solve', fmin: 'fmin', fmax: 'fmax',
 };
+
+// Names are matched as written first, then without regard to case (NormCD, nCr, GCD).
+function functionNamed(name: string): string | undefined {
+  if (Object.hasOwn(FUNCTION_ALIASES, name)) return FUNCTION_ALIASES[name];
+  const lower = name.toLowerCase();
+  return Object.hasOwn(FUNCTION_ALIASES, lower) ? FUNCTION_ALIASES[lower] : undefined;
+}
+
+// Functions that take an expression in x as their first argument (see `bind`).
+const SOLVERS = new Set(['solve', 'fmin', 'fmax']);
 
 const INVERSE: Record<string, string> = {
   sin: 'arcsin', cos: 'arccos', tan: 'arctan', sinh: 'arsinh', cosh: 'arcosh', tanh: 'artanh',
@@ -89,17 +120,18 @@ const SKIPPED_COMMANDS = new Set([
 const COMMAND_CHARS: Record<string, string> = {
   cdot: '*', times: '*', ast: '*', div: '/',
   lt: '<', gt: '>', le: '≤', leq: '≤', leqslant: '≤', ge: '≥', geq: '≥', geqslant: '≥',
-  lvert: '|', rvert: '|', vert: '|', mid: '|',
+  lvert: '|', rvert: '|', vert: '|', mid: '|', Vert: '|', lVert: '|', rVert: '|', '|': '|',
+  prime: "'",
   lparen: '(', rparen: ')', lbrack: '[', rbrack: ']', colon: ':',
 };
 
 const COMMAND_RENAMES: Record<string, string> = {
   mleft: 'left', mright: 'right', dfrac: 'frac', tfrac: 'frac', cfrac: 'frac',
-  exponentialE: 'e', differentialD: 'd',
+  exponentialE: 'e', differentialD: 'd', partial: 'd', rightarrow: 'to', binom: 'binom', dbinom: 'binom', tbinom: 'binom',
 };
 
 const CHAR_RENAMES: Record<string, string> = {
-  '·': '*', '×': '*', '∗': '*', '÷': '/', '−': '-', '–': '-',
+  '·': '*', '×': '*', '∗': '*', '÷': '/', '−': '-', '–': '-', '′': "'", '’': "'",
 };
 
 const NAME_WRAPPERS = new Set(['operatorname', 'mathrm', 'mathit', 'text', 'mathop', 'textrm']);
@@ -121,6 +153,7 @@ function tokenize(src: string): Tok[] {
     if (c !== '\\') {
       if (c === 'π') push('cmd', 'pi');
       else if (c === 'θ') push('cmd', 'theta');
+      else if (c === '→') push('cmd', 'to');
       else push('ch', CHAR_RENAMES[c] ?? c);
       i++;
       return;
@@ -130,8 +163,10 @@ function tokenize(src: string): Tok[] {
     while (i < src.length && isLetter(src[i])) name += src[i++];
     if (name === '') name = src[i++] ?? '';
     if (NAME_WRAPPERS.has(name) && src[i] === '{') {
-      const close = src.indexOf('}', i);
-      const inner = close < 0 ? '' : src.slice(i + 1, close).trim();
+      // MathLive writes a typed operator name doubly wrapped: \operatorname{\mathrm{lb}}.
+      const nested = /^\{\s*\\[a-zA-Z]+\s*\{([a-zA-Z]+)\}\s*\}/.exec(src.slice(i));
+      const close = nested ? i + nested[0].length - 1 : src.indexOf('}', i);
+      const inner = nested ? nested[1] : close < 0 ? '' : src.slice(i + 1, close).trim();
       if (close >= 0 && /^[a-zA-Z]+$/.test(inner)) {
         i = close + 1;
         if (inner.length === 1) push('ch', inner);
@@ -142,6 +177,11 @@ function tokenize(src: string): Tok[] {
     }
     if (SKIPPED_COMMANDS.has(name)) return;
     if (name === 'lbrace' || name === 'rbrace') push('cmd', name === 'lbrace' ? '{' : '}');
+    else if (name === 'degree') push('ch', '°');
+    else if (name === 'doubleprime') {
+      push('ch', "'");
+      push('ch', "'");
+    }
     else if (name in COMMAND_CHARS) push('ch', COMMAND_CHARS[name]);
     else if (name === 'e' || name === 'd') push('ch', name);
     else if (name in COMMAND_RENAMES) {
@@ -379,7 +419,8 @@ class Parser {
 
   private startsFunction(): boolean {
     const t = this.peek();
-    return !!t && t.k === 'cmd' && (t.v in FUNCTION_ALIASES || t.v === 'sum' || t.v === 'prod' || t.v === 'int');
+    if (!t || t.k !== 'cmd') return false;
+    return !!functionNamed(t.v) || t.v === 'sum' || t.v === 'prod' || t.v === 'int' || t.v === 'lim';
   }
 
   private startsOperand(): boolean {
@@ -390,23 +431,121 @@ class Parser {
       return t.v === '|' && this.barDepth === 0;
     }
     return (
-      t.v === 'frac' || t.v === 'sqrt' || t.v === 'left' || t.v === 'int' || t.v === '{' || t.v === 'lfloor' || t.v === 'lceil' ||
+      t.v === 'frac' || t.v === 'sqrt' || t.v === 'binom' || t.v === 'left' || t.v === 'int' || t.v === '{' || t.v === 'lfloor' || t.v === 'lceil' ||
       t.v === 'pi' || t.v === 'infty' || t.v === 'placeholder' || GREEK.has(t.v) || this.startsFunction()
     );
   }
 
   private parsePostfix(): Node {
     const start = this.pos;
+    // `x(1+x)^2` leaves the exponent's meaning open (see `app`), but a bracketed
+    // `(x(1+x))^2` doesn't: there the power applies to everything inside.
+    const first = this.peek();
+    const named = !!first && ((first.k === 'ch' && isLetter(first.v)) || (first.k === 'cmd' && GREEK.has(first.v)));
     let base = this.mark(this.parsePrimary(), start);
     for (;;) {
-      if (this.eatCh('^')) {
+      if (this.eatDegree()) {
+        base = this.mark(mul(base, { t: 'bin', op: '/', a: { t: 'var', name: 'pi' }, b: num(180) }), start);
+      } else if (this.eatCh('^')) {
         const exponent = this.parseArg();
-        if (base.t === 'app' && !base.pow) base = this.mark({ ...base, pow: exponent }, start);
+        if (named && base.t === 'app' && !base.pow) base = this.mark({ ...base, pow: exponent }, start);
         else base = this.mark({ t: 'bin', op: '^', a: base, b: exponent }, start);
       } else if (this.eatCh('!')) {
         base = this.mark({ t: 'call', fn: 'fact', args: [base] }, start);
       } else return base;
     }
+  }
+
+  // A degree sign after a value: `°`, or the `^\circ` it is often typed as.
+  private eatDegree(): boolean {
+    if (this.eatCh('°')) return true;
+    if (!this.isCh('^')) return false;
+    if (this.isCmd('circ', 1)) this.pos += 2;
+    else if (this.isCh('{', 1) && this.isCmd('circ', 2) && this.isCh('}', 3)) this.pos += 4;
+    else return false;
+    return true;
+  }
+
+  // Counts the primes after a name: `f'`, `f''`, or the `f^{\prime}` MathLive writes.
+  private eatPrimes(): number {
+    let count = 0;
+    for (;;) {
+      if (this.eatCh("'")) count++;
+      else if (this.isCh('^') && this.isCh("'", 1)) {
+        this.pos += 2;
+        count++;
+      } else if (this.isCh('^') && this.isCh('{', 1) && this.isCh("'", 2)) {
+        let end = this.pos + 2;
+        while (this.isCh("'", end - this.pos)) end++;
+        if (!this.isCh('}', end - this.pos)) return count;
+        count += end - this.pos - 2;
+        this.pos = end + 1;
+      } else return count;
+    }
+  }
+
+  // `\lim_{x \to a}` followed by the expression; `a^+` and `a^-` take one side only.
+  private parseLimit(): Node {
+    this.pos++;
+    this.expectCh('_');
+    this.expectCh('{');
+    let end = this.pos;
+    for (let depth = 0; end < this.toks.length; end++) {
+      const t = this.toks[end];
+      if (t.k !== 'ch') continue;
+      if (t.v === '{') depth++;
+      else if (t.v === '}' && depth-- === 0) break;
+    }
+    if (end >= this.toks.length) throw new MathError('Incomplete expression', true);
+    const index = this.peek()!;
+    const named = index.k === 'ch' ? isLetter(index.v) : GREEK.has(index.v);
+    if (!named) throw new MathError('A limit needs a variable, like x → 0', true);
+    if (!(this.isCmd('to', 1) && end > this.pos + 2)) throw new MathError('A limit needs a target, like x → 0', true);
+    let stop = end;
+    let side = 0;
+    const sign = (i: number) => (this.toks[i].k === 'ch' && (this.toks[i].v === '+' || this.toks[i].v === '-') ? this.toks[i].v : '');
+    if (sign(stop - 1) && this.toks[stop - 2].k === 'ch' && this.toks[stop - 2].v === '^') {
+      side = sign(stop - 1) === '+' ? 1 : -1;
+      stop -= 2;
+    } else if (this.toks[stop - 1].v === '}' && sign(stop - 2) && this.toks[stop - 3].v === '{' && this.toks[stop - 4].v === '^') {
+      side = sign(stop - 2) === '+' ? 1 : -1;
+      stop -= 4;
+    }
+    const target = new Parser(this.toks.slice(this.pos + 2, stop)).parseAll();
+    this.pos = end + 1;
+    return { t: 'bind', fn: 'lim', wrt: index.v, body: this.parseJuxtaposed(false), args: [target, num(side)] };
+  }
+
+  // The `(expression, value)` after a derivative, if that is what follows; otherwise
+  // nothing is consumed and the derivative is read the usual way.
+  private parseDerivativeAt(): [Node, Node] | undefined {
+    if (!this.opensParen()) return undefined;
+    const start = this.pos;
+    const savedBars = this.barDepth;
+    try {
+      const items = this.parseParenList();
+      if (items.length === 2) return [items[0], items[1]];
+    } catch (err) {
+      if (!(err instanceof MathError)) throw err;
+    }
+    this.pos = start;
+    this.barDepth = savedBars;
+    return undefined;
+  }
+
+  // `solve(x^2 = 2, 1)`: an expression or equation in x, then ordinary arguments.
+  private parseSolver(fn: string): Node {
+    const fenced = this.eatCmd('left');
+    this.expectCh('(');
+    const savedBars = this.barDepth;
+    this.barDepth = 0;
+    let body = this.parseExpr();
+    if (fn === 'solve' && this.eatCh('=')) body = { t: 'bin', op: '-', a: body, b: this.parseExpr() };
+    const args = this.eatCh(',') ? this.parseList() : [];
+    this.barDepth = savedBars;
+    if (fenced && !this.eatCmd('right')) this.fail();
+    this.expectCh(')');
+    return { t: 'bind', fn, wrt: 'x', body, args };
   }
 
   // A TeX argument: a braced group, or exactly one token (`x^2y` is x²·y).
@@ -453,6 +592,15 @@ class Parser {
 
   private opensParen(): boolean {
     return this.isCh('(') || (this.isCmd('left') && (this.isCh('(', 1) || this.isCh('[', 1)));
+  }
+
+  // `()` with nothing inside, as in `random()`; consumed when present.
+  private opensEmptyParens(): boolean {
+    const plain = this.isCh('(') && this.isCh(')', 1);
+    const fenced = this.isCmd('left') && this.isCh('(', 1) && this.isCmd('right', 2) && this.isCh(')', 3);
+    if (!plain && !fenced) return false;
+    this.pos += plain ? 2 : 4;
+    return true;
   }
 
   private parseParenList(): Node[] {
@@ -532,9 +680,25 @@ class Parser {
         const top = this.parseArg();
         const bottom = this.parseArg();
         const wrt = derivativeVariable(top, bottom);
-        if (wrt) return { t: 'deriv', wrt, body: this.parseJuxtaposed(false) };
+        const second = wrt ? undefined : secondDerivativeVariable(top, bottom);
+        if (wrt || second) {
+          const variable = (wrt ?? second)!;
+          const fn = wrt ? 'deriv' : 'deriv2';
+          // `d/dx (x^3, 2)`: the derivative at a given value, as on a calculator.
+          const at = this.parseDerivativeAt();
+          if (at) return { t: 'bind', fn, wrt: variable, body: at[0], args: [at[1]] };
+          if (wrt) return { t: 'deriv', wrt, body: this.parseJuxtaposed(false) };
+          return { t: 'bind', fn, wrt: variable, body: this.parseJuxtaposed(false), args: [{ t: 'var', name: variable }] };
+        }
         return { t: 'bin', op: '/', a: top, b: bottom };
       }
+      case 'binom': {
+        this.pos++;
+        const n = this.parseArg();
+        return { t: 'call', fn: 'ncr', args: [n, this.parseArg()] };
+      }
+      case 'lim':
+        return this.parseLimit();
       case 'sqrt': {
         this.pos++;
         if (this.eatCh('[')) {
@@ -574,7 +738,7 @@ class Parser {
     }
 
     if (GREEK.has(t.v)) return this.parseIdentifier();
-    if (t.v in FUNCTION_ALIASES) return this.parseFunction();
+    if (functionNamed(t.v)) return this.parseFunction();
     throw new MathError(`“\\${t.v}” isn’t supported yet`);
   }
 
@@ -590,6 +754,15 @@ class Parser {
   private parseIdentifier(): Node {
     let name = this.toks[this.pos++].v;
     if (this.eatCh('_')) name += '_' + this.parseSubscript();
+    const primes = this.eatPrimes();
+    if (primes > 0) {
+      if (primes > 2) throw new MathError('Only first and second derivatives can be written with primes');
+      if (!this.opensParen()) throw new MathError(`Give ${name}′ an argument, like ${name}′(x)`, true);
+      const args = this.parseParenList();
+      if (args.length !== 1) throw new MathError(`${name}′ takes 1 argument`);
+      const body: Node = { t: 'app', name, args: [{ t: 'var', name: '_' }] };
+      return { t: 'bind', fn: primes === 1 ? 'deriv' : 'deriv2', wrt: '_', body, args };
+    }
     if (name !== 'e' && name !== 'pi' && this.opensParen()) {
       return { t: 'app', name, args: this.parseParenList() };
     }
@@ -602,7 +775,9 @@ class Parser {
   }
 
   private parseFunction(): Node {
-    let fn = FUNCTION_ALIASES[this.toks[this.pos++].v];
+    let fn = functionNamed(this.toks[this.pos++].v)!;
+    if (SOLVERS.has(fn)) return this.parseSolver(fn);
+    if (this.opensEmptyParens()) return { t: 'call', fn, args: [] };
     let base: Node | undefined;
     let power: Node | undefined;
     for (;;) {
@@ -632,6 +807,15 @@ function derivativeVariable(top: Node, bottom: Node): string | undefined {
     return bottom.b.name;
   }
   return undefined;
+}
+
+// Likewise the `d^2 / dx^2` of a second derivative.
+function secondDerivativeVariable(top: Node, bottom: Node): string | undefined {
+  const squared = (n: Node, name?: string) =>
+    n.t === 'bin' && n.op === '^' && n.a.t === 'var' && (!name || n.a.name === name) && n.b.t === 'num' && n.b.v === 2 ? n.a.name : undefined;
+  if (squared(top, 'd') !== 'd') return undefined;
+  if (bottom.t !== 'bin' || bottom.op !== '*' || bottom.a.t !== 'var' || bottom.a.name !== 'd') return undefined;
+  return squared(bottom.b);
 }
 
 export function parse(latex: string): Statement {

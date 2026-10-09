@@ -1,7 +1,7 @@
 // Turns the list of expressions into things to draw. The whole list is analysed
 // together because expressions refer to each other (sliders, user functions).
 
-import { ARITY, builtins } from './builtins';
+import { ARITY, BINDERS, builtins } from './builtins';
 import { differentiate } from './differentiate';
 import { MathError, nameToLatex, parse, type Node, type Statement } from './parser';
 
@@ -105,6 +105,10 @@ function collectFree(node: Node, bound: ReadonlySet<string>, out: Set<string>): 
       collectFree(node.hi, bound, out);
       collectFree(node.body, new Set(bound).add(node.wrt), out);
       break;
+    case 'bind':
+      for (const arg of node.args) collectFree(arg, bound, out);
+      collectFree(node.body, new Set(bound).add(node.wrt), out);
+      break;
     case 'deriv':
       // The derivative is evaluated at the current value of its variable, so that stays free.
       if (!bound.has(node.wrt)) out.add(node.wrt);
@@ -162,8 +166,7 @@ function gen(node: Node, scope: Scope): string {
     case 'call': {
       const [min, max] = ARITY[node.fn] ?? [1, 1];
       if (node.args.length < min || node.args.length > max) {
-        const wanted = min === max ? `${min} argument${min === 1 ? '' : 's'}` : `at least ${min} argument`;
-        throw new MathError(`“${node.fn}” takes ${wanted}`);
+        throw new MathError(`“${node.fn}” takes ${arityText(min, max)}`);
       }
       return `B.${node.fn}(${node.args.map((arg) => gen(arg, scope)).join(',')})`;
     }
@@ -206,12 +209,37 @@ function gen(node: Node, scope: Scope): string {
       const inner: Scope = { ...scope, locals: new Map(scope.locals).set(node.wrt, id) };
       return `B.integrate(${gen(node.lo, scope)},${gen(node.hi, scope)},(${id})=>${gen(node.body, inner)})`;
     }
+    case 'bind': {
+      const [min, max] = BINDERS[node.fn];
+      if (node.args.length < min || node.args.length > max) {
+        throw new MathError(`“${node.fn}” takes an expression and ${arityText(min, max)}`);
+      }
+      const id = `$${node.wrt}`;
+      const inner: Scope = { ...scope, locals: new Map(scope.locals).set(node.wrt, id) };
+      if (node.fn === 'deriv' || node.fn === 'deriv2') {
+        // Differentiate symbolically where there are rules for it, which is exact; the
+        // numeric derivative is kept for whatever the rules don't reach.
+        const isFunction = (name: string) => scope.defs.get(name)?.kind === 'fn';
+        let derived = differentiate(node.body, node.wrt, isFunction);
+        if (node.fn === 'deriv2') derived = differentiate(derived, node.wrt, isFunction);
+        const symbolic = !JSON.stringify(derived).includes('"t":"deriv"');
+        if (symbolic) return `((${id})=>${gen(derived, inner)})(${gen(node.args[0], scope)})`;
+      }
+      return `B.${node.fn}(${[`(${id})=>${gen(node.body, inner)}`, ...node.args.map((arg) => gen(arg, scope))].join(',')})`;
+    }
     case 'deriv': {
       const id = `$${node.wrt}`;
       const inner: Scope = { ...scope, locals: new Map(scope.locals).set(node.wrt, id) };
       return `B.deriv((${id})=>${gen(node.body, inner)},${gen({ t: 'var', name: node.wrt }, scope)})`;
     }
   }
+}
+
+function arityText(min: number, max: number): string {
+  const plural = (n: number) => `argument${n === 1 ? '' : 's'}`;
+  if (min === max) return `${min} ${plural(min)}`;
+  if (max === Infinity) return `at least ${min} ${plural(min)}`;
+  return `${min} to ${max} arguments`;
 }
 
 function genPower(base: Node, exponent: Node, scope: Scope): string {

@@ -9,11 +9,23 @@ declare module 'react' {
   }
 }
 
+// Function names that become upright operators as they are typed, on top of the ones
+// MathLive already knows (sin, ln, gcd, …). Spelled as on a Casio where it has them.
+const TYPED_FUNCTIONS = [
+  'solve', 'fMin', 'fMax', 'nCr', 'nPr', 'lcm', 'trunc', 'round', 'RndFix', 'Int', 'Frac', 'modexp',
+  'sign', 'abs', 'arccot', 'csch', 'random', 'randint', 'RanInt', 'RanNorm', 'RanBin',
+  'NormPD', 'NormCD', 'InvNormCD', 'tPD', 'tCD', 'InvTCD', 'ChiPD', 'ChiCD', 'InvChiCD', 'FPD', 'FCD', 'InvFCD',
+  'BinomialPD', 'BinomialCD', 'InvBinomialCD', 'PoissonPD', 'PoissonCD', 'InvPoissonCD',
+  'GeoPD', 'GeoCD', 'InvGeoCD', 'HypergeoPD', 'HypergeoCD',
+];
+
 interface MathFieldProps {
   value: string;
   // Changes whenever this field should take focus.
   focusToken: number;
   label: string;
+  // LaTeX shown while the field is empty.
+  placeholder?: string;
   onChange(latex: string): void;
   onEnter(): void;
   onDeleteEmpty(): void;
@@ -29,6 +41,10 @@ export function MathField(props: MathFieldProps) {
     const field = ref.current!;
     field.menuItems = [];
     field.smartFence = true;
+    field.inlineShortcuts = {
+      ...field.inlineShortcuts,
+      ...Object.fromEntries(TYPED_FUNCTIONS.map((name) => [name, `\\operatorname{${name}}`])),
+    };
 
     const onInput = () => handlers.current.onChange(field.value);
     const onKeyDown = (e: KeyboardEvent) => {
@@ -61,6 +77,11 @@ export function MathField(props: MathFieldProps) {
     const field = ref.current!;
     if (field.value !== props.value) field.setValue(props.value, { silenceNotifications: true });
   }, [props.value]);
+
+  useEffect(() => {
+    if (props.placeholder) ref.current!.setAttribute('placeholder', props.placeholder);
+    else ref.current!.removeAttribute('placeholder');
+  }, [props.placeholder]);
 
   useEffect(() => {
     if (props.focusToken) ref.current!.focus();

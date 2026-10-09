@@ -24,6 +24,33 @@ export const PlusIcon = () => (
   </Icon>
 );
 
+export const KeyboardIcon = () => (
+  <Icon>
+    <rect x="2.5" y="5" width="15" height="10" rx="2.5" />
+    <path d="M5.5 8.25h.01M8.5 8.25h.01M11.5 8.25h.01M14.5 8.25h.01M5.5 11.75h.01M14.5 11.75h.01M8 11.75h4" />
+  </Icon>
+);
+
+export const TableIcon = () => (
+  <Icon>
+    <rect x="3" y="4" width="14" height="12" rx="2.5" />
+    <path d="M3 8h14M3 12h14M9 4v12" />
+  </Icon>
+);
+
+export const SunIcon = () => (
+  <Icon>
+    <circle cx="10" cy="10" r="3.25" />
+    <path d="M10 2.75v1.5M10 15.75v1.5M2.75 10h1.5M15.75 10h1.5M4.9 4.9l1.05 1.05M14.05 14.05l1.05 1.05M4.9 15.1l1.05-1.05M14.05 5.95l1.05-1.05" />
+  </Icon>
+);
+
+export const MoonIcon = () => (
+  <Icon>
+    <path d="M16 11.6A6.5 6.5 0 0 1 8.4 4a6.5 6.5 0 1 0 7.6 7.6z" />
+  </Icon>
+);
+
 export const MinusIcon = () => (
   <Icon>
     <path d="M4.5 10h11" />

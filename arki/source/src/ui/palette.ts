@@ -6,7 +6,12 @@ export const PALETTE = [
   { name: 'Orange', light: '#ff9500', dark: '#ff9f0a' },
   { name: 'Purple', light: '#af52de', dark: '#bf5af2' },
   { name: 'Graphite', light: '#2c2c2e', dark: '#e5e5ea' },
+  // The site's accent colour. Added last so that saved graphs keep their colours.
+  { name: 'Accent', light: '#2929c8', dark: '#ffc800' },
 ];
+
+// What a new graph is drawn in until another colour is picked for it.
+export const DEFAULT_COLOR = PALETTE.length - 1;
 
 // A curve's colour is either a palette entry (by index), which adapts to light and
 // dark, or a custom hex colour, which is used as given.

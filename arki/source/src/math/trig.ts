@@ -34,7 +34,11 @@ const fn = (name: string, arg: string, power?: string) => `\\${name}${power ? `^
 const sq = (name: string, arg: string) => fn(name, arg, '2');
 
 const isNum = (node: Node, v: number) => node.t === 'num' && node.v === v;
+const isBin = (node: Node, op: string): node is Extract<Node, { t: 'bin' }> => node.t === 'bin' && node.op === op;
+const isHalfPi = (node: Node) => isBin(node, '/') && node.a.t === 'var' && node.a.name === 'pi' && isNum(node.b, 2);
 const same = (a: Node, b: Node) => JSON.stringify(a) === JSON.stringify(b);
+
+const RECIPROCAL: Record<string, string> = { sin: 'csc', cos: 'sec', tan: 'cot', csc: 'sin', sec: 'cos', cot: 'tan' };
 
 export function trigTerms(latex: string): TrigTerm[] {
   let statement;
@@ -52,52 +56,82 @@ export function trigTerms(latex: string): TrigTerm[] {
   };
   const simple = (node: Node) => node.t === 'var' || (node.t === 'num' && node.v >= 0);
 
-  // A circular function of one argument, and its square.
+  // An argument written with an even coefficient: 2x, 4x, 6(x + 1) …
+  const isEven = (arg: Node): arg is Extract<Node, { t: 'bin' }> & { a: { t: 'num'; v: number } } =>
+    isBin(arg, '*') && arg.a.t === 'num' && Number.isInteger(arg.a.v) && arg.a.v > 0 && arg.a.v % 2 === 0;
+
+  // Twice and half an argument, as LaTeX to go inside a function's brackets. Where the
+  // argument is already written as a multiple or a half, that is folded in (2·2x is 4x).
+  const doubled = (arg: Node): string => {
+    const u = text(arg) ?? '';
+    if (arg.t === 'var') return `2${u}`;
+    if (arg.t === 'num') return String(2 * arg.v);
+    if (isBin(arg, '/') && isNum(arg.b, 2)) return text(arg.a) ?? `2\\left(${u}\\right)`;
+    if (isBin(arg, '*') && arg.a.t === 'num' && Number.isInteger(arg.a.v) && arg.a.v > 0) {
+      const [whole, coefficient] = [spanOf(arg), spanOf(arg.a)];
+      if (whole && coefficient && whole[0] === coefficient[0]) return `${2 * arg.a.v}${latex.slice(coefficient[1], whole[1])}`;
+    }
+    return `2\\left(${u}\\right)`;
+  };
+  const halved = (arg: Node): string => {
+    const u = text(arg) ?? '';
+    if (isBin(arg, '*') && isNum(arg.a, 2)) return text(arg.b) ?? frac(u, '2');
+    if (isEven(arg)) {
+      const [whole, coefficient] = [spanOf(arg), spanOf(arg.a)];
+      if (whole && coefficient && whole[0] === coefficient[0]) return `${arg.a.v / 2}${latex.slice(coefficient[1], whole[1])}`;
+    }
+    if (isBin(arg, '/') && arg.b.t === 'num' && Number.isInteger(arg.b.v) && arg.b.v > 0) {
+      const top = text(arg.a);
+      if (top !== undefined) return frac(top, String(2 * arg.b.v));
+    }
+    return frac(u, '2');
+  };
+
+  // A trig function of one argument, and its square.
   const plain = (node: Node) =>
-    node.t === 'call' && CIRCULAR.has(node.fn) && node.args.length === 1 ? { fn: node.fn, arg: node.args[0] } : undefined;
-  const squared = (node: Node) => (node.t === 'bin' && node.op === '^' && isNum(node.b, 2) ? plain(node.a) : undefined);
+    node.t === 'call' && TRIG.has(node.fn) && node.args.length === 1 ? { fn: node.fn, arg: node.args[0] } : undefined;
+  const squared = (node: Node) => (isBin(node, '^') && isNum(node.b, 2) ? plain(node.a) : undefined);
+  // 2·node.
+  const twice = (node: Node) => (isBin(node, '*') && isNum(node.a, 2) ? node.b : undefined);
 
   // Forms of fn(arg).
   const forms = (name: string, arg: Node): Option[] => {
     const u = text(arg);
     if (u === undefined) return [];
-    // The argument as it must appear after a minus sign, under a power, or doubled.
+    // The argument as it must appear under a power, and after a minus sign.
     const g = simple(arg) ? u : `\\left(${u}\\right)`;
-    const half = frac(u, '2');
-    const complement = `\\frac{\\pi}{2}-${g}`;
-    // If the argument is 2v, the double-angle identities apply to v.
-    const halved = arg.t === 'bin' && arg.op === '*' && isNum(arg.a, 2) ? text(arg.b) : undefined;
-    const v = halved ?? '';
+    const m = isBin(arg, '+') || isBin(arg, '-') || arg.t === 'neg' ? g : u;
+    const h = halved(arg);
+    // A function of π/2 − w is the cofunction of w; otherwise offer it the other way round.
+    const inner = isBin(arg, '-') && isHalfPi(arg.a) ? text(arg.b) : undefined;
+    // The double-angle forms come first when the argument is written as 2v, and are
+    // left out for π/2 − w, where halving the angle only makes a mess.
+    const isDouble = isEven(arg);
+    const order = (double: Option[], rest: Option[]) => (inner !== undefined ? rest : isDouble ? [...double, ...rest] : [...rest, ...double]);
+    const co = (other: string) => atom(fn(other, inner ?? `\\frac{\\pi}{2}-${m}`));
     switch (name) {
       case 'sin':
-        return [
-          ...(halved ? [product(`2${fn('sin', v)}${fn('cos', v)}`)] : []),
-          atom(frac('1', fn('csc', u))),
-          atom(fn('cos', complement)),
-          product(`${fn('tan', u)}${fn('cos', u)}`),
-          product(`2${fn('sin', half)}${fn('cos', half)}`),
-        ];
+        return order(
+          [product(`2${fn('sin', h)}${fn('cos', h)}`)],
+          [co('cos'), atom(frac('1', fn('csc', u))), product(`${fn('tan', u)}${fn('cos', u)}`)],
+        );
       case 'cos':
-        return [
-          ...(halved ? [sum(`${sq('cos', v)}-${sq('sin', v)}`), sum(`2${sq('cos', v)}-1`), sum(`1-2${sq('sin', v)}`)] : []),
-          atom(frac('1', fn('sec', u))),
-          atom(fn('sin', complement)),
-          sum(`2${sq('cos', half)}-1`),
-          sum(`1-2${sq('sin', half)}`),
-        ];
+        return order(
+          [sum(`${sq('cos', h)}-${sq('sin', h)}`), sum(`2${sq('cos', h)}-1`), sum(`1-2${sq('sin', h)}`)],
+          [co('sin'), atom(frac('1', fn('sec', u)))],
+        );
       case 'tan':
-        return [
-          ...(halved ? [atom(frac(`2${fn('tan', v)}`, `1-${sq('tan', v)}`))] : []),
+        return order(isDouble ? [atom(frac(`2${fn('tan', h)}`, `1-${sq('tan', h)}`))] : [], [
           atom(frac(fn('sin', u), fn('cos', u))),
           atom(frac('1', fn('cot', u))),
-          atom(fn('cot', complement)),
-        ];
+          co('cot'),
+        ]);
       case 'sec':
-        return [atom(frac('1', fn('cos', u))), atom(fn('csc', complement))];
+        return [atom(frac('1', fn('cos', u))), co('csc')];
       case 'csc':
-        return [atom(frac('1', fn('sin', u))), atom(fn('sec', complement))];
+        return [atom(frac('1', fn('sin', u))), co('sec')];
       case 'cot':
-        return [atom(frac(fn('cos', u), fn('sin', u))), atom(frac('1', fn('tan', u))), atom(fn('tan', complement))];
+        return [atom(frac(fn('cos', u), fn('sin', u))), atom(frac('1', fn('tan', u))), co('tan')];
       case 'arcsin':
         return [sum(`\\frac{\\pi}{2}-${fn('arccos', u)}`), atom(fn('arctan', frac(u, `\\sqrt{1-${g}^{2}}`)))];
       case 'arccos':
@@ -105,11 +139,11 @@ export function trigTerms(latex: string): TrigTerm[] {
       case 'arctan':
         return [atom(fn('arcsin', frac(u, `\\sqrt{1+${g}^{2}}`)))];
       case 'sinh':
-        return [atom(frac(`e^{${u}}-e^{-${g}}`, '2')), product(`${fn('tanh', u)}${fn('cosh', u)}`)];
+        return [atom(frac(`e^{${u}}-e^{-${m}}`, '2')), product(`${fn('tanh', u)}${fn('cosh', u)}`)];
       case 'cosh':
-        return [atom(frac(`e^{${u}}+e^{-${g}}`, '2'))];
+        return [atom(frac(`e^{${u}}+e^{-${m}}`, '2'))];
       case 'tanh':
-        return [atom(frac(fn('sinh', u), fn('cosh', u))), atom(frac(`e^{2${g}}-1`, `e^{2${g}}+1`))];
+        return [atom(frac(fn('sinh', u), fn('cosh', u))), atom(frac(`e^{${doubled(arg)}}-1`, `e^{${doubled(arg)}}+1`))];
     }
     return [];
   };
@@ -118,7 +152,7 @@ export function trigTerms(latex: string): TrigTerm[] {
   const squareForms = (name: string, arg: Node): Option[] => {
     const u = text(arg);
     if (u === undefined) return [];
-    const double = fn('cos', simple(arg) ? `2${u}` : `2\\left(${u}\\right)`);
+    const double = fn('cos', doubled(arg));
     switch (name) {
       case 'sin':
         return [sum(`1-${sq('cos', u)}`), atom(frac(`1-${double}`, '2')), atom(frac('1', sq('csc', u)))];
@@ -137,19 +171,20 @@ export function trigTerms(latex: string): TrigTerm[] {
   };
 
   // Combinations that collapse into a single function: 1 − cos²x, sin x / cos x, 2 sin x cos x …
+  // These undo every form offered above, so a conversion can always be taken back.
   const combined = (node: Node): Option[] => {
-    if (node.t !== 'bin') return [];
+    if (node.t !== 'bin' || node.op === '^') return [];
     const { a, b } = node;
     const [pa, pb, sa, sb] = [plain(a), plain(b), squared(a), squared(b)];
     const u = (arg: Node) => text(arg) ?? '';
-    const pair = (first: string, second: string) => {
-      const [x, y] = node.op === '/' ? [pa, pb] : [sa, sb];
-      return x && y && x.fn === first && y.fn === second && same(x.arg, y.arg) ? x.arg : undefined;
-    };
+    type Call = ReturnType<typeof plain>;
+    // The shared argument when x and y are `first` and `second` of the same thing.
+    const pair = (x: Call, y: Call, first: string, second: string) =>
+      x && y && x.fn === first && y.fn === second && same(x.arg, y.arg) ? x.arg : undefined;
     const out: Option[] = [];
     let arg: Node | undefined;
     if (node.op === '+') {
-      if (pair('sin', 'cos') || pair('cos', 'sin')) out.push(atom('1'));
+      if (pair(sa, sb, 'sin', 'cos') || pair(sa, sb, 'cos', 'sin')) out.push(atom('1'));
       const other = isNum(a, 1) ? sb : isNum(b, 1) ? sa : undefined;
       if (other?.fn === 'tan') out.push(atom(sq('sec', u(other.arg))));
       if (other?.fn === 'cot') out.push(atom(sq('csc', u(other.arg))));
@@ -158,23 +193,42 @@ export function trigTerms(latex: string): TrigTerm[] {
       if (isNum(a, 1) && sb?.fn === 'sin') out.push(atom(sq('cos', u(sb.arg))));
       if (isNum(b, 1) && sa?.fn === 'sec') out.push(atom(sq('tan', u(sa.arg))));
       if (isNum(b, 1) && sa?.fn === 'csc') out.push(atom(sq('cot', u(sa.arg))));
-      if ((arg = pair('cos', 'sin'))) out.push(atom(fn('cos', simple(arg) ? `2${u(arg)}` : `2\\left(${u(arg)}\\right)`)));
+      if ((arg = pair(sa, sb, 'cos', 'sin'))) out.push(atom(fn('cos', doubled(arg))));
+      // 2cos²v − 1 and 1 − 2sin²v.
+      const [ta, tb] = [twice(a), twice(b)];
+      const [da, db] = [ta && squared(ta), tb && squared(tb)];
+      if (isNum(b, 1) && da?.fn === 'cos') out.push(atom(fn('cos', doubled(da.arg))));
+      if (isNum(a, 1) && db?.fn === 'sin') out.push(atom(fn('cos', doubled(db.arg))));
     } else if (node.op === '/') {
-      if ((arg = pair('sin', 'cos'))) out.push(atom(fn('tan', u(arg))));
-      if ((arg = pair('cos', 'sin'))) out.push(atom(fn('cot', u(arg))));
-      const reciprocal: Record<string, string> = { sin: 'csc', cos: 'sec', tan: 'cot', csc: 'sin', sec: 'cos', cot: 'tan' };
-      if (isNum(a, 1) && pb) out.push(atom(fn(reciprocal[pb.fn], u(pb.arg))));
-      if (isNum(a, 1) && sb) out.push(atom(sq(reciprocal[sb.fn], u(sb.arg))));
+      if ((arg = pair(pa, pb, 'sin', 'cos'))) out.push(atom(fn('tan', u(arg))));
+      if ((arg = pair(pa, pb, 'cos', 'sin'))) out.push(atom(fn('cot', u(arg))));
+      if ((arg = pair(pa, pb, 'sinh', 'cosh'))) out.push(atom(fn('tanh', u(arg))));
+      if ((arg = pair(sa, sb, 'sin', 'cos'))) out.push(atom(sq('tan', u(arg))));
+      if ((arg = pair(sa, sb, 'cos', 'sin'))) out.push(atom(sq('cot', u(arg))));
+      if (isNum(a, 1) && pb && pb.fn in RECIPROCAL) out.push(atom(fn(RECIPROCAL[pb.fn], u(pb.arg))));
+      if (isNum(a, 1) && sb && sb.fn in RECIPROCAL) out.push(atom(sq(RECIPROCAL[sb.fn], u(sb.arg))));
+      // (1 ∓ cos w) / 2 is sin² or cos² of half of w.
+      if (isNum(b, 2) && (isBin(a, '+') || isBin(a, '-')) && isNum(a.a, 1)) {
+        const cos = plain(a.b);
+        if (cos?.fn === 'cos') out.push(atom(sq(a.op === '-' ? 'sin' : 'cos', halved(cos.arg))));
+      }
+      // 2tan v / (1 − tan²v).
+      const top = twice(a);
+      const tan = top && plain(top);
+      if (tan?.fn === 'tan' && isBin(b, '-') && isNum(b.a, 1) && pair(tan, squared(b.b), 'tan', 'tan')) {
+        out.push(atom(fn('tan', doubled(tan.arg))));
+      }
     } else if (node.op === '*') {
       // 2·sin·cos in either order, or the bare product sin·cos.
-      const inner = a.t === 'bin' && a.op === '*' && isNum(a.a, 2) ? plain(a.b) : undefined;
-      const first = inner ?? pa;
-      const matches =
-        first && pb && same(first.arg, pb.arg) && ((first.fn === 'sin' && pb.fn === 'cos') || (first.fn === 'cos' && pb.fn === 'sin'));
-      if (matches) {
-        const double = fn('sin', simple(pb.arg) ? `2${u(pb.arg)}` : `2\\left(${u(pb.arg)}\\right)`);
-        out.push(atom(inner ? double : frac(double, '2')));
+      const half = twice(a);
+      const first = half ? plain(half) : pa;
+      if ((arg = pair(first, pb, 'sin', 'cos') ?? pair(first, pb, 'cos', 'sin'))) {
+        const double = fn('sin', doubled(arg));
+        out.push(atom(half ? double : frac(double, '2')));
       }
+      if ((arg = pair(pa, pb, 'tan', 'cos') ?? pair(pa, pb, 'cos', 'tan'))) out.push(atom(fn('sin', u(arg))));
+      if ((arg = pair(pa, pb, 'cot', 'sin') ?? pair(pa, pb, 'sin', 'cot'))) out.push(atom(fn('cos', u(arg))));
+      if ((arg = pair(pa, pb, 'tanh', 'cosh') ?? pair(pa, pb, 'cosh', 'tanh'))) out.push(atom(fn('sinh', u(arg))));
     }
     return out;
   };
@@ -185,7 +239,7 @@ export function trigTerms(latex: string): TrigTerm[] {
   const swallows = (node: Node): 'nothing' | 'factors' | 'everything' => {
     if (node.t === 'bin' && node.op === '*') return swallows(node.b);
     if (node.t === 'neg') return swallows(node.a);
-    if (node.t === 'big' || node.t === 'deriv') return 'everything';
+    if (node.t === 'big' || node.t === 'deriv' || (node.t === 'bind' && node.wrt !== '_' && node.fn !== 'solve' && !node.fn.startsWith('fm'))) return 'everything';
     const isCall = node.t === 'call' || (node.t === 'bin' && node.op === '^' && node.a.t === 'call');
     const source = text(node) ?? '';
     if (!isCall || !/^\\(?!left|sqrt|frac|dfrac|tfrac|lfloor|lceil)[a-zA-Z]/.test(source)) return 'nothing';
@@ -194,34 +248,68 @@ export function trigTerms(latex: string): TrigTerm[] {
   };
   const startsWithFunction = (option: string) => /^\\(arc)?(sin|cos|tan|sec|csc|cot)h?(?![a-zA-Z])/.test(option);
 
-  const add = (node: Node, options: Option[], context: Context, previous: ReturnType<typeof swallows> = 'nothing') => {
-    const span = spanOf(node);
+  const add = (
+    span: [number, number] | undefined,
+    options: Option[],
+    context: Context,
+    previous: ReturnType<typeof swallows> = 'nothing',
+  ) => {
     if (!span || options.length === 0) return;
     const [start, end] = span;
+    const before = latex.slice(0, start);
     // An explicit multiplication sign keeps the replacement out of the previous factor,
-    // and keeps a leading digit from running into a number before it.
+    // and keeps a leading digit from running into whatever is written before it.
+    const multiplied = /(\\cdot|\\times|\*)\s*$/.test(before);
+    const afterFactor = /([0-9.a-zA-Z})\]]|\\right\s*\|)\s*$/.test(before);
+    // Already wrapped in brackets or braces in the source: nothing more is needed.
+    const wrapped = /[({[]\s*$/.test(before) && /^\s*(\\right\s*[)\]]|[)}\]])/.test(latex.slice(end));
     const separate = (option: string) => {
+      if (multiplied || wrapped) return option;
       const absorbed = previous === 'everything' || (previous === 'factors' && !startsWithFunction(option));
-      const digits = /[0-9.]\s*$/.test(latex.slice(0, start)) && /^[0-9]/.test(option);
+      const digits = afterFactor && /^[0-9]/.test(option);
       return absorbed || digits ? `\\cdot ${option}` : option;
     };
-    // Already wrapped in brackets or braces in the source: nothing more is needed.
-    const wrapped = /[({[]\s*$/.test(latex.slice(0, start)) && /^\s*(\\right\s*[)\]]|[)}\]])/.test(latex.slice(end));
     const bracket = (shape: Shape) => {
       if (shape === 'atom' || wrapped) return false;
       if (shape === 'sum') return context !== 'top' && context !== 'add';
       return context === 'power' || context === 'argument';
     };
-    terms.push({
-      start,
-      end,
-      source: latex.slice(start, end),
-      options: options.map((o) => separate(bracket(o.shape) ? `\\left(${o.latex}\\right)` : o.latex)),
-    });
+    const source = latex.slice(start, end);
+    const built = options.map((o) => separate(bracket(o.shape) ? `\\left(${o.latex}\\right)` : o.latex));
+    // Pieces found twice share one entry, and no form is listed twice or as itself.
+    const existing = terms.find((term) => term.start === start && term.end === end);
+    const term = existing ?? { start, end, source, options: [] };
+    for (const option of built) if (option !== source && !term.options.includes(option)) term.options.push(option);
+    if (!existing && term.options.length > 0) terms.push(term);
+  };
+
+  // The last two terms of a longer sum or product (the sin²x + cos²x in 3 + sin²x + cos²x)
+  // can collapse on their own, as long as no bracket stands between them.
+  const tail = (node: Extract<Node, { t: 'bin' }>) => {
+    const left = node.a;
+    if (left.t !== 'bin') return;
+    const sums = (op: string) => op === '+' || op === '-';
+    const [first, second] = [spanOf(left.b), spanOf(node.b)];
+    if (!first || !second) return;
+    const between = latex.slice(first[1], second[0]);
+    const span: [number, number] = [first[0], second[1]];
+    if (sums(node.op) && sums(left.op) && /^\s*[+-]\s*$/.test(between)) {
+      if (left.op === '+') return add(span, combined({ t: 'bin', op: node.op as '+' | '-', a: left.b, b: node.b }), 'add');
+      // After a minus sign the pair is negated as a whole: a − p + q is a − (p − q).
+      // The piece then takes the sign with it, so what is shown reads as an identity.
+      const sign = /-\s*$/.exec(latex.slice(0, first[0]));
+      if (!sign) return;
+      const options = combined({ t: 'bin', op: node.op === '+' ? '-' : '+', a: left.b, b: node.b });
+      add([sign.index, second[1]], options.map((o) => atom(`-${o.latex}`)), 'add');
+    } else if (node.op === '*' && left.op === '*' && /^\s*(\\cdot|\\times|\*)?\s*$/.test(between)) {
+      // 2·sin·cos is already offered whole.
+      if (combined(node).length > 0) return;
+      add(span, combined({ t: 'bin', op: '*', a: left.b, b: node.b }), 'multiply', swallows(left.a));
+    }
   };
 
   const walk = (node: Node, context: Context, previous: ReturnType<typeof swallows> = 'nothing'): void => {
-    add(node, combined(node), context, previous);
+    add(spanOf(node), combined(node), context, previous);
     switch (node.t) {
       case 'num':
       case 'var':
@@ -234,14 +322,15 @@ export function trigTerms(latex: string): TrigTerm[] {
           // otherwise the base's forms raised to the same power.
           const base = node.a;
           const exponent = text(node.b);
-          if (isNum(node.b, 2) && CIRCULAR.has(base.fn)) add(node, squareForms(base.fn, base.args[0]), context, previous);
+          if (isNum(node.b, 2) && CIRCULAR.has(base.fn)) add(spanOf(node), squareForms(base.fn, base.args[0]), context, previous);
           else if (exponent !== undefined) {
             const raised = forms(base.fn, base.args[0]).map((o) => atom(`\\left(${o.latex}\\right)^{${exponent}}`));
-            add(node, raised, context, previous);
+            add(spanOf(node), raised, context, previous);
           }
           walk(base.args[0], 'argument');
           return walk(node.b, 'multiply');
         }
+        tail(node);
         if (node.op === '+') {
           walk(node.a, 'add');
           return walk(node.b, 'add');
@@ -259,7 +348,7 @@ export function trigTerms(latex: string): TrigTerm[] {
         return walk(node.b, 'multiply', swallows(node.a));
       }
       case 'call':
-        if (TRIG.has(node.fn) && node.args.length === 1) add(node, forms(node.fn, node.args[0]), context, previous);
+        if (TRIG.has(node.fn) && node.args.length === 1) add(spanOf(node), forms(node.fn, node.args[0]), context, previous);
         return node.args.forEach((arg) => walk(arg, 'argument'));
       case 'app':
         node.args.forEach((arg) => walk(arg, 'argument'));
@@ -280,6 +369,9 @@ export function trigTerms(latex: string): TrigTerm[] {
         walk(node.hi, 'multiply');
         return walk(node.body, 'multiply');
       case 'deriv':
+        return walk(node.body, 'multiply');
+      case 'bind':
+        node.args.forEach((arg) => walk(arg, 'argument'));
         return walk(node.body, 'multiply');
     }
   };

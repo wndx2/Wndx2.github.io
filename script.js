@@ -9,7 +9,8 @@ document.addEventListener('DOMContentLoaded', () => {
             'n': "https://sleepywndud.github.io",
             'l': "https://lucasis.pro",
             'a': "https://claude.ai/new",
-            'g': "https://github.com/wndx2"
+            'g': "https://github.com/wndx2",
+            'r': "https://wndx2.github.io/arki"
         };
 
         const url = shortcuts[event.key.toLowerCase()];

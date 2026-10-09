@@ -4,11 +4,13 @@ import { MathfieldElement } from 'mathlive';
 import 'mathlive/static.css';
 import './styles.css';
 import { App } from './App';
+import { setUpKeyboard } from './ui/keyboard';
 
 // Fonts come from the stylesheet above (bundled by Vite), which also styles the
 // typeset labels on the graph. Key sounds are off.
 MathfieldElement.fontsDirectory = null;
 MathfieldElement.soundsDirectory = null;
+setUpKeyboard();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

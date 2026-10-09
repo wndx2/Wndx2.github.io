@@ -1,7 +1,7 @@
 import { useEffect, useImperativeHandle, useRef, type Ref } from 'react';
 import { convertLatexToMarkup } from 'mathlive';
 import { findPoints, type PointOfInterest } from './points';
-import { DARK, LIGHT, draw, type Drawable, type Label, type Trace, type View } from './render';
+import { DARK, LIGHT, draw, scaleY, type Drawable, type Label, type Trace, type View } from './render';
 import { Spring, decay } from './spring';
 
 export interface GraphHandle {
@@ -24,6 +24,8 @@ const POINT_RADIUS = 12;
 // A press that moves further than this is a drag, not a click.
 const CLICK_SLOP = 6;
 
+// How close to an axis line the pointer has to be to count as on it, in pixels.
+const AXIS_RADIUS = 18;
 const clampScale = (s: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -32,7 +34,7 @@ type Animation =
   | { kind: 'glide'; vx: number; vy: number }
   // Zooming about a fixed point on screen.
   | { kind: 'zoom'; log: Spring; sx: number; sy: number; x: number; y: number }
-  | { kind: 'home'; cx: Spring; cy: Spring; log: Spring };
+  | { kind: 'home'; cx: Spring; cy: Spring; log: Spring; aspect: Spring };
 
 export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -44,7 +46,7 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
   useEffect(() => {
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext('2d')!;
-    const view: View = { cx: 0, cy: 0, scale: 50 };
+    const view: View = { cx: 0, cy: 0, scale: 50, aspect: 1 };
     let width = 0;
     let height = 0;
     let frame = 0;
@@ -56,16 +58,20 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
     // The ones the user clicked to keep labelled, and the one under the mouse.
     let pinned: PointOfInterest[] = [];
     let hovered: PointOfInterest | undefined;
+    // Where the mouse is over the canvas, and the axis it is on with Shift held:
+    // that axis is highlighted, and is the one a scroll would stretch.
+    let mouse: { x: number; y: number } | undefined;
+    let stretching: 'x' | 'y' | undefined;
 
     const homeView = (): View => {
       const inset = live.current.insetLeft;
       const scale = Math.min(64, Math.max(28, (width - inset) / 21));
-      return { cx: -inset / 2 / scale, cy: 0, scale };
+      return { cx: -inset / 2 / scale, cy: 0, scale, aspect: 1 };
     };
 
     const toScreen = (x: number, y: number): [number, number] => [
       width / 2 + (x - view.cx) * view.scale,
-      height / 2 - (y - view.cy) * view.scale,
+      height / 2 - (y - view.cy) * scaleY(view),
     ];
 
     const nearestPoint = (sx: number, sy: number, radius: number, key?: string) => {
@@ -130,7 +136,7 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
       }
       const labelled = hovered && !pinned.includes(hovered) ? [...pinned, hovered] : pinned;
       const theme = live.current.dark ? DARK : LIGHT;
-      placeLabels(draw(ctx, width, height, view, theme, live.current.items, trace, points, labelled));
+      placeLabels(draw(ctx, width, height, view, theme, live.current.items, trace, points, labelled, stretching));
     };
 
     const tick = (now: number) => {
@@ -141,7 +147,7 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
         const x = decay(animation.vx, dt);
         const y = decay(animation.vy, dt);
         view.cx -= x.distance / view.scale;
-        view.cy += y.distance / view.scale;
+        view.cy += y.distance / scaleY(view);
         animation.vx = x.velocity;
         animation.vy = y.velocity;
         if (Math.hypot(x.velocity, y.velocity) < 6) animation = undefined;
@@ -154,18 +160,20 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
         }
         view.scale = Math.exp(a.log.value);
         view.cx = a.x - (a.sx - width / 2) / view.scale;
-        view.cy = a.y + (a.sy - height / 2) / view.scale;
+        view.cy = a.y + (a.sy - height / 2) / scaleY(view);
       } else if (animation?.kind === 'home') {
         const a = animation;
-        for (const spring of [a.cx, a.cy, a.log]) spring.step(dt / 1000, 0.45);
+        const springs = [a.cx, a.cy, a.log, a.aspect];
+        for (const spring of springs) spring.step(dt / 1000, 0.45);
         const unit = 1 / view.scale;
-        if (a.cx.settled(unit * 0.05) && a.cy.settled(unit * 0.05) && a.log.settled(1e-4)) {
-          for (const spring of [a.cx, a.cy, a.log]) spring.finish();
+        if (a.cx.settled(unit * 0.05) && a.cy.settled(unit * 0.05) && a.log.settled(1e-4) && a.aspect.settled(1e-4)) {
+          for (const spring of springs) spring.finish();
           animation = undefined;
         }
         view.cx = a.cx.value;
         view.cy = a.cy.value;
         view.scale = Math.exp(a.log.value);
+        view.aspect = Math.exp(a.aspect.value);
       }
       render();
       if (animation) frame = requestAnimationFrame(tick);
@@ -178,7 +186,7 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
 
     const toPlane = (sx: number, sy: number): [number, number] => [
       view.cx + (sx - width / 2) / view.scale,
-      view.cy - (sy - height / 2) / view.scale,
+      view.cy - (sy - height / 2) / scaleY(view),
     ];
 
     // Scales the view so the plane point under (sx, sy) stays under it.
@@ -186,7 +194,40 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
       const [x, y] = toPlane(sx, sy);
       view.scale = clampScale(view.scale * factor);
       view.cx = x - (sx - width / 2) / view.scale;
-      view.cy = y + (sy - height / 2) / view.scale;
+      view.cy = y + (sy - height / 2) / scaleY(view);
+    };
+
+    // Which axis the pointer is on, if either: within a few pixels of its line, which
+    // takes in the numbers beside it. Near the origin the closer axis wins.
+    const axisAt = (sx: number, sy: number): 'x' | 'y' | undefined => {
+      const [originX, originY] = toScreen(0, 0);
+      const fromXAxis = Math.abs(sy - originY);
+      const fromYAxis = Math.abs(sx - originX);
+      if (Math.min(fromXAxis, fromYAxis) > AXIS_RADIUS) return undefined;
+      return fromXAxis <= fromYAxis ? 'x' : 'y';
+    };
+
+    // Works out the axis to highlight from where the mouse is and whether Shift is down.
+    const updateStretching = (shift: boolean) => {
+      const axis = shift && mouse && !hovered && pointers.size === 0 ? axisAt(mouse.x, mouse.y) : undefined;
+      canvas.style.cursor = hovered ? 'pointer' : axis === 'x' ? 'ew-resize' : axis === 'y' ? 'ns-resize' : '';
+      if (axis === stretching) return;
+      stretching = axis;
+      redraw();
+    };
+
+    // Stretches one axis about the plane point under (sx, sy), leaving the other alone.
+    const stretchAt = (axis: 'x' | 'y', sx: number, sy: number, factor: number) => {
+      const [x, y] = toPlane(sx, sy);
+      const yScale = scaleY(view);
+      if (axis === 'x') {
+        view.scale = clampScale(view.scale * factor);
+        view.aspect = yScale / view.scale;
+        view.cx = x - (sx - width / 2) / view.scale;
+      } else {
+        view.aspect = clampScale(yScale * factor) / view.scale;
+        view.cy = y + (sy - height / 2) / scaleY(view);
+      }
     };
 
     const zoomBy = (factor: number, sx = (width + live.current.insetLeft) / 2, sy = height / 2) => {
@@ -215,10 +256,12 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
       const cx = new Spring(view.cx);
       const cy = new Spring(view.cy);
       const log = new Spring(Math.log(view.scale));
+      const aspect = new Spring(Math.log(view.aspect));
       cx.target = target.cx;
       cy.target = target.cy;
       log.target = Math.log(target.scale);
-      animation = { kind: 'home', cx, cy, log };
+      aspect.target = 0;
+      animation = { kind: 'home', cx, cy, log, aspect };
       redraw();
     };
 
@@ -228,7 +271,7 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
     // so steep curves are as easy to grab as flat ones.
     const hitTest = (sx: number, sy: number): Trace | undefined => {
       const [x, y] = toPlane(sx, sy);
-      const px = 1 / view.scale;
+      const yScale = scaleY(view);
       let best: Trace | undefined;
       let bestDistance = HIT_RADIUS;
       const list = live.current.items;
@@ -237,13 +280,18 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
         let distance = Infinity;
         let at = 0;
         if (plot.kind === 'point') {
-          distance = Math.hypot(plot.x - x, plot.y - y) * view.scale - 4;
+          distance = Math.hypot((plot.x - x) * view.scale, (plot.y - y) * yScale) - 4;
         } else if (plot.kind === 'fx' || plot.kind === 'fy') {
           at = plot.kind === 'fx' ? x : y;
           const other = plot.kind === 'fx' ? y : x;
+          // Pixels per unit along the plot's variable, and across it (the plot's value).
+          const along = plot.kind === 'fx' ? view.scale : yScale;
+          const across = plot.kind === 'fx' ? yScale : view.scale;
+          const px = 1 / along;
           const value = plot.f(at);
-          const slope = (plot.f(at + px) - plot.f(at - px)) / (2 * px);
-          distance = (Math.abs(value - other) * view.scale) / Math.sqrt(1 + (Number.isFinite(slope) ? slope * slope : 0));
+          // The slope as it appears on screen.
+          const slope = ((plot.f(at + px) - plot.f(at - px)) / (2 * px)) * (across / along);
+          distance = (Math.abs(value - other) * across) / Math.sqrt(1 + (Number.isFinite(slope) ? slope * slope : 0));
         }
         if (distance < bestDistance) {
           bestDistance = distance;
@@ -268,6 +316,7 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
       canvas.setPointerCapture(e.pointerId);
       // Any touch takes over from whatever was animating.
       animation = undefined;
+      stretching = undefined;
       const p = position(e);
       pointers.set(e.pointerId, p);
       const point = pointers.size === 1 ? nearestPoint(p.x, p.y, POINT_RADIUS) : undefined;
@@ -299,9 +348,10 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
           if (point !== hovered || hit?.id !== trace?.id || hit?.at !== trace?.at) {
             hovered = point;
             trace = hit;
-            canvas.style.cursor = point ? 'pointer' : '';
             redraw();
           }
+          mouse = p;
+          updateStretching(e.shiftKey);
         }
         return;
       }
@@ -314,7 +364,7 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
       }
       if (mode === 'pan') {
         view.cx -= (p.x - previous.x) / view.scale;
-        view.cy += (p.y - previous.y) / view.scale;
+        view.cy += (p.y - previous.y) / scaleY(view);
         history.push({ t: e.timeStamp, ...p });
         while (history.length > 2 && e.timeStamp - history[0].t > 100) history.shift();
       } else if (mode === 'trace' && trace) {
@@ -329,7 +379,7 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
         const spreadBefore = Math.hypot(previous.x - other.x, previous.y - other.y);
         const spreadAfter = Math.hypot(p.x - other.x, p.y - other.y);
         view.cx -= (after.x - before.x) / view.scale;
-        view.cy += (after.y - before.y) / view.scale;
+        view.cy += (after.y - before.y) / scaleY(view);
         if (spreadBefore > 0) zoomAt(after.x, after.y, spreadAfter / spreadBefore);
       }
       redraw();
@@ -374,7 +424,15 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
       redraw();
     };
 
+    // Shift can go down or up while the mouse sits still on an axis.
+    const onShift = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') updateStretching(e.type === 'keydown');
+    };
+    const onWindowBlur = () => updateStretching(false);
+
     const onPointerLeave = () => {
+      mouse = undefined;
+      updateStretching(false);
       if (mode === 'idle' && (trace || hovered)) {
         trace = undefined;
         hovered = undefined;
@@ -388,8 +446,15 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
       const p = position(e);
       // Pinch on a trackpad arrives as ctrl+wheel with small deltas.
       const unit = e.deltaMode === 1 ? 16 : 1;
-      const delta = Math.max(-120, Math.min(120, e.deltaY * unit));
-      zoomAt(p.x, p.y, Math.exp(-delta * (e.ctrlKey ? 0.012 : 0.0025)));
+      // With Shift held, many systems turn a vertical scroll into a horizontal one.
+      const raw = e.shiftKey && e.deltaY === 0 ? e.deltaX : e.deltaY;
+      const delta = Math.max(-120, Math.min(120, raw * unit));
+      const factor = Math.exp(-delta * (e.ctrlKey ? 0.012 : 0.0025));
+      // Shift-scrolling on an axis stretches that axis alone.
+      mouse = p;
+      updateStretching(e.shiftKey);
+      if (stretching) stretchAt(stretching, p.x, p.y, factor);
+      else zoomAt(p.x, p.y, factor);
       redraw();
     };
 
@@ -429,6 +494,9 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
     canvas.addEventListener('pointerleave', onPointerLeave);
     canvas.addEventListener('wheel', onWheel, { passive: false });
     canvas.addEventListener('dblclick', onDoubleClick);
+    window.addEventListener('keydown', onShift);
+    window.addEventListener('keyup', onShift);
+    window.addEventListener('blur', onWindowBlur);
 
     return () => {
       observer.disconnect();
@@ -439,6 +507,9 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
       canvas.removeEventListener('pointercancel', onPointerUp);
       canvas.removeEventListener('pointerleave', onPointerLeave);
       canvas.removeEventListener('wheel', onWheel);
+      window.removeEventListener('keydown', onShift);
+      window.removeEventListener('keyup', onShift);
+      window.removeEventListener('blur', onWindowBlur);
       canvas.removeEventListener('dblclick', onDoubleClick);
     };
   }, []);

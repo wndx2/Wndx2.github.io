@@ -3,7 +3,7 @@
 // Every case is reduced to finding the zeros of a one-variable function across the
 // visible part of the plane.
 
-import type { Drawable, View } from './render';
+import { scaleY, type Drawable, type View } from './render';
 
 export interface PointOfInterest {
   x: number;
@@ -77,8 +77,8 @@ function zeros(h: (u: number) => number, from: number, to: number, steps: number
 export function findPoints(items: Drawable[], w: number, h: number, view: View): PointOfInterest[] {
   const left = view.cx - w / 2 / view.scale;
   const right = view.cx + w / 2 / view.scale;
-  const bottom = view.cy - h / 2 / view.scale;
-  const top = view.cy + h / 2 / view.scale;
+  const bottom = view.cy - h / 2 / scaleY(view);
+  const top = view.cy + h / 2 / scaleY(view);
   const found: PointOfInterest[] = [];
   const add = (x: number, y: number, key: string) => {
     if (x >= left && x <= right && y >= bottom && y <= top) found.push({ x, y, key });
@@ -132,7 +132,7 @@ export function findPoints(items: Drawable[], w: number, h: number, view: View):
   // Several pairs can meet at one spot (three lines through the origin); keep one dot.
   const unique: PointOfInterest[] = [];
   for (const p of found) {
-    const duplicate = unique.some((u) => Math.hypot(u.x - p.x, u.y - p.y) * view.scale < 0.5);
+    const duplicate = unique.some((u) => Math.hypot((u.x - p.x) * view.scale, (u.y - p.y) * scaleY(view)) < 0.5);
     if (!duplicate) unique.push(p);
   }
   return unique;

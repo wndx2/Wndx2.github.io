@@ -5,12 +5,18 @@ import type { Plot } from '../math/analyze';
 import { decimalToLatex, exactForm } from '../math/exact';
 import type { PointOfInterest } from './points';
 
-// `cx, cy` is the point of the plane at the centre of the canvas; `scale` is pixels per unit.
+// `cx, cy` is the point of the plane at the centre of the canvas; `scale` is pixels per
+// unit along x. `aspect` is how much longer a unit of y is drawn than a unit of x: 1
+// until an axis is stretched on its own.
 export interface View {
   cx: number;
   cy: number;
   scale: number;
+  aspect: number;
 }
+
+// Pixels per unit along y.
+export const scaleY = (view: View) => view.scale * view.aspect;
 
 export interface Theme {
   background: string;
@@ -19,6 +25,8 @@ export interface Theme {
   axis: string;
   label: string;
   marker: string;
+  // The site's accent, for the axis that a shift-scroll would stretch.
+  accent: string;
 }
 
 export const LIGHT: Theme = {
@@ -28,6 +36,7 @@ export const LIGHT: Theme = {
   axis: 'rgba(0, 0, 0, 0.62)',
   label: 'rgba(0, 0, 0, 0.58)',
   marker: '#8e8e93',
+  accent: '#2929c8',
 };
 
 export const DARK: Theme = {
@@ -37,6 +46,7 @@ export const DARK: Theme = {
   axis: 'rgba(255, 255, 255, 0.6)',
   label: 'rgba(255, 255, 255, 0.58)',
   marker: '#98989d',
+  accent: '#ffc800',
 };
 
 export interface Drawable {
@@ -82,34 +92,38 @@ function gridSteps(scale: number): { major: number; minor: number } {
   return { major: 10 * power, minor: 2 * power };
 }
 
-function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number, view: View, theme: Theme) {
+function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number, view: View, theme: Theme, highlight?: 'x' | 'y') {
   const { cx, cy, scale } = view;
+  const yScale = scaleY(view);
   const left = cx - w / 2 / scale;
   const right = cx + w / 2 / scale;
-  const bottom = cy - h / 2 / scale;
-  const top = cy + h / 2 / scale;
+  const bottom = cy - h / 2 / yScale;
+  const top = cy + h / 2 / yScale;
   const sx = (x: number) => Math.round(w / 2 + (x - cx) * scale) + 0.5;
-  const sy = (y: number) => Math.round(h / 2 - (y - cy) * scale) + 0.5;
-  const { major, minor } = gridSteps(scale);
+  const sy = (y: number) => Math.round(h / 2 - (y - cy) * yScale) + 0.5;
+  // Each axis picks its own spacing, since they can be stretched apart.
+  const stepsX = gridSteps(scale);
+  const stepsY = gridSteps(yScale);
 
-  const lines = (step: number, color: string, skipEvery: number) => {
+  const lines = (level: 'major' | 'minor', color: string) => {
+    const skip = (steps: { major: number; minor: number }) => (level === 'minor' ? Math.round(steps.major / steps.minor) : 0);
     ctx.beginPath();
-    for (let k = Math.ceil(left / step); k <= right / step; k++) {
-      if (skipEvery && k % skipEvery === 0) continue;
-      ctx.moveTo(sx(k * step), 0);
-      ctx.lineTo(sx(k * step), h);
+    for (let k = Math.ceil(left / stepsX[level]); k <= right / stepsX[level]; k++) {
+      if (skip(stepsX) && k % skip(stepsX) === 0) continue;
+      ctx.moveTo(sx(k * stepsX[level]), 0);
+      ctx.lineTo(sx(k * stepsX[level]), h);
     }
-    for (let k = Math.ceil(bottom / step); k <= top / step; k++) {
-      if (skipEvery && k % skipEvery === 0) continue;
-      ctx.moveTo(0, sy(k * step));
-      ctx.lineTo(w, sy(k * step));
+    for (let k = Math.ceil(bottom / stepsY[level]); k <= top / stepsY[level]; k++) {
+      if (skip(stepsY) && k % skip(stepsY) === 0) continue;
+      ctx.moveTo(0, sy(k * stepsY[level]));
+      ctx.lineTo(w, sy(k * stepsY[level]));
     }
     ctx.strokeStyle = color;
     ctx.lineWidth = 1;
     ctx.stroke();
   };
-  lines(minor, theme.minor, Math.round(major / minor));
-  lines(major, theme.major, 0);
+  lines('minor', theme.minor);
+  lines('major', theme.major);
 
   const axisX = sx(0);
   const axisY = sy(0);
@@ -121,6 +135,19 @@ function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number, view: Vie
   ctx.strokeStyle = theme.axis;
   ctx.lineWidth = 1.25;
   ctx.stroke();
+  if (highlight) {
+    ctx.beginPath();
+    if (highlight === 'x') {
+      ctx.moveTo(0, axisY);
+      ctx.lineTo(w, axisY);
+    } else {
+      ctx.moveTo(axisX, 0);
+      ctx.lineTo(axisX, h);
+    }
+    ctx.strokeStyle = theme.accent;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
 
   // Labels sit beside their axis and stick to the edge of the canvas when the axis scrolls away.
   ctx.font = `12px ${FONT}`;
@@ -136,16 +163,16 @@ function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number, view: Vie
   const labelY = Math.min(Math.max(axisY + 7, 7), h - 19);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  for (let k = Math.ceil(left / major); k <= right / major; k++) {
-    if (k !== 0) text(formatNumber(k * major), sx(k * major), labelY);
+  for (let k = Math.ceil(left / stepsX.major); k <= right / stepsX.major; k++) {
+    if (k !== 0) text(formatNumber(k * stepsX.major), sx(k * stepsX.major), labelY);
   }
 
   const pinnedLeft = axisX - 7 < 30;
   const labelX = pinnedLeft ? 8 : Math.min(axisX - 7, w - 8);
   ctx.textAlign = pinnedLeft ? 'left' : 'right';
   ctx.textBaseline = 'middle';
-  for (let k = Math.ceil(bottom / major); k <= top / major; k++) {
-    if (k !== 0) text(formatNumber(k * major), labelX, sy(k * major));
+  for (let k = Math.ceil(bottom / stepsY.major); k <= top / stepsY.major; k++) {
+    if (k !== 0) text(formatNumber(k * stepsY.major), labelX, sy(k * stepsY.major));
   }
 
   if (axisX > 20 && axisX < w && axisY > 0 && axisY < h - 20) {
@@ -280,7 +307,8 @@ function drawImplicit(
   color: string,
 ) {
   const { f } = plot;
-  const F = (px: number, py: number) => f(view.cx + (px - w / 2) / view.scale, view.cy - (py - h / 2) / view.scale);
+  const yScale = scaleY(view);
+  const F = (px: number, py: number) => f(view.cx + (px - w / 2) / view.scale, view.cy - (py - h / 2) / yScale);
   const cols = Math.ceil(w / COARSE) + 1;
   const rows = Math.ceil(h / COARSE) + 1;
   if (samples.length < cols * rows) samples = new Float64Array(cols * rows);
@@ -465,7 +493,7 @@ function drawLabelledDot(
   fixed: boolean,
 ): Label | undefined {
   const x = w / 2 + (point[0] - view.cx) * view.scale;
-  const y = h / 2 - (point[1] - view.cy) * view.scale;
+  const y = h / 2 - (point[1] - view.cy) * scaleY(view);
   if (x < -20 || x > w + 20 || y < -20 || y > h + 20) return undefined;
 
   ctx.beginPath();
@@ -476,13 +504,14 @@ function drawLabelledDot(
   ctx.strokeStyle = theme.background;
   ctx.stroke();
 
-  // Show one more digit than a pixel can resolve at this zoom.
-  const digits = Math.max(0, Math.min(12, Math.ceil(Math.log10(view.scale)) + 1));
-  // Deep zooms need a tighter match, or a genuinely tiny value would be called 0.
-  const tolerance = Math.min(1e-11, 1e-6 / view.scale);
-  const text = (v: number) =>
-    exactForm(v, tolerance, fixed ? 1000 : 12) ?? decimalToLatex(parseFloat(v.toFixed(digits)));
-  return { x, y, latex: `\\left(${text(point[0])},\\ ${text(point[1])}\\right)` };
+  const text = (v: number, scale: number) => {
+    // Show one more digit than a pixel can resolve at this zoom.
+    const digits = Math.max(0, Math.min(12, Math.ceil(Math.log10(scale)) + 1));
+    // Deep zooms need a tighter match, or a genuinely tiny value would be called 0.
+    const tolerance = Math.min(1e-11, 1e-6 / scale);
+    return exactForm(v, tolerance, fixed ? 1000 : 12) ?? decimalToLatex(parseFloat(v.toFixed(digits)));
+  };
+  return { x, y, latex: `\\left(${text(point[0], view.scale)},\\ ${text(point[1], scaleY(view))}\\right)` };
 }
 
 export function draw(
@@ -496,16 +525,19 @@ export function draw(
   // Intersections and intercepts: every one gets a small dot, the labelled ones a label.
   points: PointOfInterest[],
   labelled: PointOfInterest[],
+  // The axis to pick out, while the pointer is on it with Shift held.
+  highlight?: 'x' | 'y',
 ): Label[] {
   ctx.fillStyle = theme.background;
   ctx.fillRect(0, 0, w, h);
-  drawGrid(ctx, w, h, view, theme);
+  drawGrid(ctx, w, h, view, theme, highlight);
 
   const { cx, cy, scale } = view;
+  const yScale = scaleY(view);
   const toX = (px: number) => cx + (px - w / 2) / scale;
-  const toY = (py: number) => cy - (py - h / 2) / scale;
+  const toY = (py: number) => cy - (py - h / 2) / yScale;
   const fromX = (x: number) => w / 2 + (x - cx) * scale;
-  const fromY = (y: number) => h / 2 - (y - cy) * scale;
+  const fromY = (y: number) => h / 2 - (y - cy) * yScale;
 
   ctx.lineWidth = CURVE_WIDTH;
   ctx.lineJoin = 'round';
@@ -560,10 +592,10 @@ export function draw(
 
   for (const p of points) {
     ctx.beginPath();
-    ctx.arc(fromX(p.x), fromY(p.y), 4, 0, Math.PI * 2);
+    ctx.arc(fromX(p.x), fromY(p.y), 3.25, 0, Math.PI * 2);
     ctx.fillStyle = theme.marker;
     ctx.fill();
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1.25;
     ctx.strokeStyle = theme.background;
     ctx.stroke();
   }

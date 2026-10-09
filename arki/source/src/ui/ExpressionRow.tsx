@@ -4,11 +4,12 @@ import type { Analysis } from '../math/analyze';
 import { nameToLatex } from '../math/parser';
 import { valueToLatex } from '../math/exact';
 import { applyTrigOption, trigTerms, type TrigTerm } from '../math/trig';
-import { CloseIcon, MoreIcon, WarningIcon } from './icons';
+import { CloseIcon, MoreIcon, TableIcon, WarningIcon } from './icons';
 import { MathField } from './MathField';
 import { PALETTE, colorOf, parseHex, type CurveColor } from './palette';
 import { Popover } from './Popover';
 import { Slider } from './Slider';
+import { DEFAULT_TABLE, Table, tableColumns, type TableRange } from './Table';
 
 export interface Expression {
   id: string;
@@ -18,6 +19,8 @@ export interface Expression {
   // Slider range, used when the expression is `name = number`.
   min: number;
   max: number;
+  // Present while the expression's table of values is open.
+  table?: TableRange;
 }
 
 interface RowProps {
@@ -25,6 +28,8 @@ interface RowProps {
   analysis: Analysis;
   dark: boolean;
   focusToken: number;
+  // The value of a stand-alone expression, given everything defined in the list.
+  evaluate(latex: string): number | undefined;
   onChange(patch: Partial<Expression>): void;
   onEnter(): void;
   onRemove(): void;
@@ -34,7 +39,7 @@ interface RowProps {
 
 const plainName = (name: string) => nameToLatex(name).replace(/[\\{}]/g, '');
 
-export function ExpressionRow({ expression, analysis, dark, focusToken, ...on }: RowProps) {
+export function ExpressionRow({ expression, analysis, dark, focusToken, evaluate, ...on }: RowProps) {
   const swatch = useRef<HTMLButtonElement>(null);
   const more = useRef<HTMLButtonElement>(null);
   const [styling, setStyling] = useState(false);
@@ -47,6 +52,7 @@ export function ExpressionRow({ expression, analysis, dark, focusToken, ...on }:
   }, [terms.length]);
   const { plot, slider, error, softError, missing = [] } = analysis;
   const color = colorOf(expression.color, dark);
+  const columns = useMemo(() => tableColumns(plot), [plot]);
   const showMessage = error && !softError && missing.length === 0;
   // Results are typeset, and shown in exact form (π/2, √2, 1/3) when they have one.
   const valueMarkup = useMemo(
@@ -134,10 +140,24 @@ export function ExpressionRow({ expression, analysis, dark, focusToken, ...on }:
             <MoreIcon />
           </button>
         )}
+        {columns && (
+          <button
+            className="icon-button row-more"
+            aria-label="Table of values"
+            aria-expanded={!!expression.table}
+            onClick={() => on.onChange({ table: expression.table ? undefined : DEFAULT_TABLE })}
+          >
+            <TableIcon />
+          </button>
+        )}
         <button className="icon-button row-delete" aria-label="Delete expression" onClick={on.onRemove}>
           <CloseIcon />
         </button>
       </div>
+
+      {columns && expression.table && (
+        <Table columns={columns} range={expression.table} evaluate={evaluate} onChange={(table) => on.onChange({ table })} />
+      )}
 
       {converting && more.current && terms.length > 0 && (
         <TrigPopover
