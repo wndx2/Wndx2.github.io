@@ -1,6 +1,7 @@
 // The maths keyboard's first layout: MathLive's numeric one, with the ∀ key swapped for
-// a derivative at a value — `d/dx (…, …)`, or the second derivative with Shift. The rest
-// is MathLive's own definition, repeated here because a layout can only be replaced whole.
+// a derivative at a value — `d/dx (…, …)`, or the second derivative with Shift — `n` for
+// `y`, and the imaginary unit for braces, which restrict a graph to a range. The rest is
+// MathLive's own definition, repeated here because a layout can only be replaced whole.
 const NUMERIC = {
   label: '123',
   labelClass: 'MLK__tex-math',
@@ -16,7 +17,7 @@ const NUMERIC = {
           { latex: 'g(#?)', class: 'small' },
         ],
       },
-      { latex: 'n', shift: 'a', variants: ['i', 'j', 'p', 'k', 'a', 'u'] },
+      { latex: 'y', shift: 'a', variants: ['n', 'i', 'j', 'p', 'k', 'a', 'u'] },
       '[separator-5]',
       '[7]',
       '[8]',
@@ -28,7 +29,8 @@ const NUMERIC = {
         shift: '\\ln',
         variants: ['\\exp', '\\times 10^{#?}', '\\ln', '\\log_{10}', '\\log', '\\lg', '\\operatorname{lb}'],
       },
-      { latex: '\\imaginaryI', variants: ['\\Re', '\\Im', '\\imaginaryJ', '\\Vert #0 \\Vert'] },
+      // Sent as keystrokes, like MathLive's own bracket keys, so smartFence pairs them.
+      { label: '{', key: '{', shift: { label: '}', key: '}' }, variants: [{ latex: '\\rbrace', key: '}' }, ':', ','] },
       {
         latex: '\\pi',
         shift: '\\sin',
