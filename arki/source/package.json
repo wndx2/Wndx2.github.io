@@ -1,0 +1,25 @@
+{
+  "name": "arki",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && rm -rf ../assets ../index.html && vite build",
+    "preview": "vite preview",
+    "test": "tsx src/math/math.test.ts"
+  },
+  "dependencies": {
+    "mathlive": "^0.111.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  }
+}
