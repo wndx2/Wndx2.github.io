@@ -29,11 +29,7 @@ function loadExpressions(): Expression[] {
   } catch {
     // Unreadable storage just means starting fresh.
   }
-  return [
-    newExpression('y=\\sin\\left(ax\\right)', 0),
-    newExpression('a=1', 1),
-    newExpression('x^2+y^2=9', 1),
-  ];
+  return [newExpression('\\left(x^2+y^2-1\\right)^3=x^2y^3', 1)];
 }
 
 function useMediaQuery(query: string): boolean {
