@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { MathfieldElement } from 'mathlive';
+import { repairBackspace } from './backspace';
 
 declare module 'react' {
   namespace JSX {
@@ -65,7 +66,9 @@ export function MathField(props: MathFieldProps) {
     field.addEventListener('input', onInput);
     field.addEventListener('keydown', onKeyDown, { capture: true });
     field.addEventListener('move-out', onMoveOut);
+    const restoreBackspace = repairBackspace(field, onInput);
     return () => {
+      restoreBackspace();
       field.removeEventListener('input', onInput);
       field.removeEventListener('keydown', onKeyDown, { capture: true });
       field.removeEventListener('move-out', onMoveOut);
