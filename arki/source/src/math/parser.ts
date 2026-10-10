@@ -96,7 +96,7 @@ const FUNCTION_ALIASES: Record<string, string> = {
   binompd: 'binomialpd', binomcd: 'binomialcd', invbinomcd: 'invbinomialcd',
   poissonpd: 'poissonpd', poissoncd: 'poissoncd', invpoissoncd: 'invpoissoncd',
   geopd: 'geopd', geocd: 'geocd', invgeocd: 'invgeocd', hypergeopd: 'hypergeopd', hypergeocd: 'hypergeocd',
-  solve: 'solve', fmin: 'fmin', fmax: 'fmax',
+  solve: 'solve', fmin: 'fmin', fmax: 'fmax', polygon: 'polygon',
 };
 
 // Names are matched as written first, then without regard to case (NormCD, nCr, GCD).

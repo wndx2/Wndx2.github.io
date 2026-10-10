@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { analyze, type Analysis, type Plot } from './analyze';
 import { decimalToLatex, exactForm, valueToLatex, complexToLatex } from './exact';
 import { applyTrigOption, trigTerms } from './trig';
+import { labelExpressions, labelToLatex } from '../ui/label';
 
 const one = (latex: string, ...context: string[]): Analysis => analyze([latex, ...context])[0];
 
@@ -438,5 +439,32 @@ assert.equal(complexToLatex(0.5, -Math.SQRT2), '\\frac{1}{2}-\\sqrt{2}i');
 assert.equal(complexToLatex(-1, 1 + Math.PI), '-1+\\left(\\pi+1\\right)i');
 assert.equal(complexToLatex(2, 0), '2');
 assert.equal(complexToLatex(0, 1e-7), '10^{-7}i');
+
+// Points say how they can be dragged: by the numbers written in them, or by their sliders.
+assert.deepEqual(plot(one('\\left(2,-3.5\\right)'), 'point').drag, [
+  { kind: 'literal', span: [6, 7] },
+  { kind: 'literal', span: [8, 12] },
+]);
+assert.deepEqual(plot(one('\\left(a,\\frac{1}{2}\\right)', 'a=1'), 'point').drag, [
+  { kind: 'slider', name: 'a' },
+  { kind: 'literal', span: [8, 19] },
+]);
+assert.deepEqual(plot(one('\\left(a,b^2\\right)', 'a=1', 'b=2'), 'point').drag, [{ kind: 'slider', name: 'a' }, undefined]);
+// Nothing to drag by: a computed variable, or an expression of sliders.
+assert.equal(plot(one('\\left(c,2a\\right)', 'a=1', 'c=a+1'), 'point').drag, undefined);
+
+// Point labels: text with quoted expressions replaced by their values.
+assert.deepEqual(labelExpressions('a = ${a}, twice ${2*a}, ${sin(pi/2)}'), ['a', '2*a', '\\sin(\\pi/2)']);
+assert.equal(labelToLatex('a = ${a} m', ['3']), '\\text{a = }3\\text{ m}');
+assert.equal(labelToLatex('50% of {x}_1', []), '\\text{50\\% of \\{x\\}\\_1}');
+assert.equal(labelToLatex('${a}${b}', ['1', '2']), '12');
+near(value(labelExpressions('${sin(pi/2)+2*a}')[0], 'a=3'), 7);
+
+// Polygons: a closed shape through the points given, which can use sliders.
+assert.deepEqual(plot(one('\\operatorname{polygon}\\left(\\left(0,0\\right),\\left(2,0\\right),\\left(1,a\\right)\\right)', 'a=3'), 'polygon').vertices, [[0, 0], [2, 0], [1, 3]]);
+assert.match(one('\\operatorname{polygon}\\left(\\left(0,0\\right),\\left(2,0\\right),3\\right)').error ?? '', /made of points/);
+assert.equal(one('\\operatorname{polygon}\\left(\\left(0,0\\right)\\right)').softError, true);
+assert.match(one('1+\\operatorname{polygon}\\left(\\left(0,0\\right),\\left(2,0\\right),\\left(1,1\\right)\\right)').error ?? '', /can’t be used as a number/);
+assert.match(one('\\operatorname{polygon}\\left(\\left(0,0\\right),\\left(x,0\\right),\\left(1,1\\right)\\right)').error ?? '', /x or y/);
 
 console.log('math: all checks passed');

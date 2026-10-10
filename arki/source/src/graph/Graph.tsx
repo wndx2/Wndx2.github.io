@@ -1,26 +1,41 @@
 import { useEffect, useImperativeHandle, useRef, type Ref } from 'react';
 import { convertLatexToMarkup } from 'mathlive';
 import { findPoints, type PointOfInterest } from './points';
-import { DARK, LIGHT, draw, scaleY, type Drawable, type Label, type Trace, type View } from './render';
+import { DARK, LIGHT, draw, scaleY, sizeOf, type Drawable, type GraphSettings, type Label, type Trace, type View } from './render';
 import { Spring, decay } from './spring';
+
+// The part of the plane on show: the values at the edges of the graph.
+export interface Bounds {
+  xMin: number;
+  xMax: number;
+  yMin: number;
+  yMax: number;
+}
 
 export interface GraphHandle {
   zoomBy(factor: number): void;
   home(): void;
+  bounds(): Bounds;
+  // Shows exactly this part of the plane, stretching an axis if that is what it takes.
+  setBounds(bounds: Bounds): void;
 }
 
 interface GraphProps {
   ref: Ref<GraphHandle>;
   items: Drawable[];
   dark: boolean;
-  // Width covered by the expression panel; "centre" means the centre of what's left.
-  insetLeft: number;
+  settings: GraphSettings;
+  // A point was dragged to a new place on the plane.
+  onMovePoint(id: string, x: number, y: number): void;
 }
 
 const MIN_SCALE = 1e-6;
 const MAX_SCALE = 1e8;
 const HIT_RADIUS = 14;
 const POINT_RADIUS = 12;
+// How close a press has to be to a movable point to pick it up; wider for a finger.
+const GRAB_RADIUS = 14;
+const TOUCH_GRAB_RADIUS = 24;
 // A press that moves further than this is a drag, not a click.
 const CLICK_SLOP = 6;
 
@@ -40,11 +55,11 @@ type Animation =
   | { kind: 'zoom'; log: Spring; sx: number; sy: number; x: number; y: number }
   | { kind: 'home'; cx: Spring; cy: Spring; log: Spring; aspect: Spring };
 
-export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
+export function Graph({ ref, items, dark, settings, onMovePoint }: GraphProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const labelsRef = useRef<HTMLDivElement>(null);
-  const live = useRef({ items, dark, insetLeft });
-  live.current = { items, dark, insetLeft };
+  const live = useRef({ items, dark, settings, onMovePoint });
+  live.current = { items, dark, settings, onMovePoint };
   const api = useRef<GraphHandle & { redraw(): void }>(null);
 
   useEffect(() => {
@@ -68,11 +83,8 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
     let mouse: { x: number; y: number } | undefined;
     let stretching: 'x' | 'y' | undefined;
 
-    const homeView = (): View => {
-      const inset = live.current.insetLeft;
-      const scale = Math.min(64, Math.max(28, (width - inset) / 21));
-      return { cx: -inset / 2 / scale, cy: 0, scale, aspect: 1 };
-    };
+    // The origin at the centre of the page, whatever the expression panel covers.
+    const homeView = (): View => ({ cx: 0, cy: 0, scale: Math.min(64, Math.max(28, width / 21)), aspect: 1 });
 
     const toScreen = (x: number, y: number): [number, number] => [
       width / 2 + (x - view.cx) * view.scale,
@@ -97,7 +109,7 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
     // Coordinate labels are HTML placed over the canvas, so they can be typeset maths.
     // The elements are reused between frames; only their position changes while panning.
     const layer = labelsRef.current!;
-    const sizes = new Map<Element, { latex: string; w: number; h: number }>();
+    const sizes = new Map<Element, { latex: string; k: number; w: number; h: number }>();
     const placeLabels = (labels: Label[]) => {
       while (layer.children.length > labels.length) {
         sizes.delete(layer.lastElementChild!);
@@ -108,17 +120,20 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
         el.className = 'graph-label';
         layer.append(el);
       }
+      // Labels are a different size in projector mode, so they are measured again for it.
+      const k = sizeOf(live.current.settings);
       labels.forEach((label, i) => {
         const el = layer.children[i] as HTMLElement;
         let size = sizes.get(el);
-        if (!size || size.latex !== label.latex) {
+        if (!size || size.latex !== label.latex || size.k !== k) {
           el.innerHTML = convertLatexToMarkup(label.latex, { defaultMode: 'math' });
-          size = { latex: label.latex, w: el.offsetWidth, h: el.offsetHeight };
+          size = { latex: label.latex, k, w: el.offsetWidth, h: el.offsetHeight };
           sizes.set(el, size);
         }
         // Centred above the dot; below it near the top edge, and kept inside the canvas.
         const left = Math.max(8, Math.min(width - size.w - 8, label.x - size.w / 2));
-        const top = label.y - 14 - size.h < 8 ? label.y + 14 : label.y - 14 - size.h;
+        const gap = 14 * k;
+        const top = label.y - gap - size.h < 8 ? label.y + gap : label.y - gap - size.h;
         el.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
       });
     };
@@ -141,7 +156,7 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
       }
       const labelled = hovered && !pinned.includes(hovered) ? [...pinned, hovered] : pinned;
       const theme = live.current.dark ? DARK : LIGHT;
-      placeLabels(draw(ctx, width, height, view, theme, live.current.items, trace, points, labelled, stretching));
+      placeLabels(draw(ctx, width, height, view, theme, live.current.items, trace, points, labelled, stretching, live.current.settings));
     };
 
     const tick = (now: number) => {
@@ -245,7 +260,7 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
       }
     };
 
-    const zoomBy = (factor: number, sx = (width + live.current.insetLeft) / 2, sy = height / 2) => {
+    const zoomBy = (factor: number, sx = width / 2, sy = height / 2) => {
       if (reducedMotion()) {
         animation = undefined;
         zoomAt(sx, sy, factor);
@@ -280,7 +295,22 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
       redraw();
     };
 
-    api.current = { zoomBy: (factor) => zoomBy(factor), home, redraw };
+    const bounds = (): Bounds => {
+      const [xMin, yMax] = toPlane(0, 0);
+      const [xMax, yMin] = toPlane(width, height);
+      return { xMin, xMax, yMin, yMax };
+    };
+    const setBounds = ({ xMin, xMax, yMin, yMax }: Bounds) => {
+      if (!(xMax > xMin && yMax > yMin) || width === 0 || height === 0) return;
+      animation = undefined;
+      view.scale = clampScale(width / (xMax - xMin));
+      view.aspect = clampScale(height / (yMax - yMin)) / view.scale;
+      view.cx = (xMin + xMax) / 2;
+      view.cy = (yMin + yMax) / 2;
+      redraw();
+    };
+
+    api.current = { zoomBy: (factor) => zoomBy(factor), home, bounds, setBounds, redraw };
 
     // Finds the plot under the pointer, measuring distance perpendicular to the curve
     // so steep curves are as easy to grab as flat ones.
@@ -316,8 +346,34 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
       return best;
     };
 
+    // The movable point nearest the pointer, with where the pointer is relative to it.
+    const movablePoint = (sx: number, sy: number, radius: number) => {
+      let best: { id: string; dx: number; dy: number } | undefined;
+      let bestDistance = radius;
+      const list = live.current.items;
+      for (let i = list.length - 1; i >= 0; i--) {
+        const { id, plot } = list[i];
+        if (plot.kind !== 'point' || !plot.drag) continue;
+        const [px, py] = toScreen(plot.x, plot.y);
+        const distance = Math.hypot(px - sx, py - sy);
+        if (distance <= bestDistance) {
+          bestDistance = distance;
+          best = { id, dx: px - sx, dy: py - sy };
+        }
+      }
+      return best;
+    };
+
+    // A coordinate rounded to what one pixel can tell apart, so a dragged point lands on
+    // tidy numbers rather than a string of digits.
+    const snap = (value: number, scale: number) => {
+      const step = 10 ** -Math.ceil(Math.log10(scale));
+      return parseFloat((Math.round(value / step) * step).toPrecision(12));
+    };
+
     const pointers = new Map<number, { x: number; y: number }>();
-    let mode: 'idle' | 'pan' | 'trace' | 'pinch' | 'point' = 'idle';
+    let mode: 'idle' | 'pan' | 'trace' | 'pinch' | 'point' | 'move' = 'idle';
+    let moving: ReturnType<typeof movablePoint>;
     let pressed: { point: PointOfInterest; x: number; y: number } | undefined;
     let history: { t: number; x: number; y: number }[] = [];
 
@@ -334,8 +390,15 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
       stretching = undefined;
       const p = position(e);
       pointers.set(e.pointerId, p);
-      const point = pointers.size === 1 ? nearestPoint(p.x, p.y, POINT_RADIUS) : undefined;
-      if (point) {
+      const grab = e.pointerType === 'mouse' ? GRAB_RADIUS : TOUCH_GRAB_RADIUS;
+      moving = pointers.size === 1 ? movablePoint(p.x, p.y, grab) : undefined;
+      const point = pointers.size === 1 && !moving ? nearestPoint(p.x, p.y, POINT_RADIUS) : undefined;
+      if (moving) {
+        // Its coordinates show while it is held.
+        mode = 'move';
+        trace = { id: moving.id, at: 0 };
+        canvas.dataset.dragging = '';
+      } else if (point) {
         // Might be a click on the point or the start of a pan; movement decides.
         mode = 'point';
         pressed = { point, ...p };
@@ -345,7 +408,7 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
         trace = hit;
         mode = hit ? 'trace' : 'pan';
         history = [{ t: e.timeStamp, ...p }];
-        if (!hit) canvas.dataset.dragging = '';
+        if (!hit && !live.current.settings.locked) canvas.dataset.dragging = '';
       } else if (pointers.size === 2) {
         mode = 'pinch';
         trace = undefined;
@@ -361,7 +424,10 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
       const previous = pointers.get(e.pointerId);
       if (!previous) {
         if (e.pointerType === 'mouse') {
-          const point = nearestPoint(p.x, p.y, POINT_RADIUS);
+          const movable = movablePoint(p.x, p.y, GRAB_RADIUS);
+          if (movable) canvas.dataset.movable = '';
+          else delete canvas.dataset.movable;
+          const point = movable ? undefined : nearestPoint(p.x, p.y, POINT_RADIUS);
           const hit = point ? undefined : hitTest(p.x, p.y);
           if (point !== hovered || hit?.id !== trace?.id || hit?.at !== trace?.at) {
             hovered = point;
@@ -378,9 +444,14 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
         mode = 'pan';
         pressed = undefined;
         history = [{ t: e.timeStamp, ...previous }];
-        canvas.dataset.dragging = '';
+        if (!live.current.settings.locked) canvas.dataset.dragging = '';
       }
-      if (mode === 'pan') {
+      // A locked view ignores the drags and pinches that would move it.
+      const locked = live.current.settings.locked;
+      if (mode === 'move' && moving) {
+        const [x, y] = toPlane(p.x + moving.dx, p.y + moving.dy);
+        live.current.onMovePoint(moving.id, snap(x, view.scale), snap(y, scaleY(view)));
+      } else if (mode === 'pan' && !locked) {
         view.cx -= (p.x - previous.x) / view.scale;
         view.cy += (p.y - previous.y) / scaleY(view);
         history.push({ t: e.timeStamp, ...p });
@@ -390,7 +461,7 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
         const [x, y] = toPlane(p.x, p.y);
         if (item?.plot.kind === 'fx') trace = { id: trace.id, at: x };
         else if (item?.plot.kind === 'fy') trace = { id: trace.id, at: y };
-      } else if (mode === 'pinch' && pointers.size === 2) {
+      } else if (mode === 'pinch' && pointers.size === 2 && !locked) {
         const other = [...pointers.entries()].find(([id]) => id !== e.pointerId)![1];
         const before = { x: (previous.x + other.x) / 2, y: (previous.y + other.y) / 2 };
         const after = { x: (p.x + other.x) / 2, y: (p.y + other.y) / 2 };
@@ -422,7 +493,7 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
         return;
       }
       if (pointers.size > 0) return;
-      if (mode === 'pan' && e.type === 'pointerup' && !reducedMotion()) {
+      if (mode === 'pan' && e.type === 'pointerup' && !reducedMotion() && !live.current.settings.locked) {
         // Hand the finger's velocity to the glide so there is no seam at release.
         const first = history[0];
         const last = history[history.length - 1];
@@ -446,7 +517,8 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
       }
       pressed = undefined;
       stretching = undefined;
-      if (mode === 'trace' && e.pointerType !== 'mouse') trace = undefined;
+      if ((mode === 'trace' || mode === 'move') && e.pointerType !== 'mouse') trace = undefined;
+      moving = undefined;
       mode = 'idle';
       delete canvas.dataset.dragging;
       redraw();
@@ -470,6 +542,7 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      if (live.current.settings.locked) return;
       animation = undefined;
       const p = position(e);
       // Pinch on a trackpad arrives as ctrl+wheel with small deltas.
@@ -487,6 +560,7 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
     };
 
     const onDoubleClick = (e: MouseEvent) => {
+      if (live.current.settings.locked) return;
       const p = position(e);
       if (nearestPoint(p.x, p.y, POINT_RADIUS)) return;
       zoomBy(e.shiftKey ? 0.5 : 2, p.x, p.y);
@@ -545,14 +619,16 @@ export function Graph({ ref, items, dark, insetLeft }: GraphProps) {
   useImperativeHandle(ref, () => ({
     zoomBy: (factor) => api.current?.zoomBy(factor),
     home: () => api.current?.home(),
+    bounds: () => api.current!.bounds(),
+    setBounds: (bounds) => api.current?.setBounds(bounds),
   }));
 
   useEffect(() => {
     api.current?.redraw();
-  }, [items, dark]);
+  }, [items, dark, settings]);
 
   return (
-    <div className="graph">
+    <div className="graph" data-projector={settings.projector || undefined}>
       <canvas ref={canvasRef} aria-label="Graph" />
       <div className="graph-labels" ref={labelsRef} />
     </div>

@@ -53,7 +53,27 @@ export interface Drawable {
   id: string;
   plot: Plot;
   color: string;
+  // LaTeX kept beside a point; empty for its coordinates.
+  label?: string;
+  // How a point is drawn; a filled dot unless set.
+  pointStyle?: PointStyle;
+  // How a curve is drawn; a solid line unless set.
+  lineStyle?: LineStyle;
+  // The curve's thickness in pixels; CURVE_WIDTH unless set.
+  lineWidth?: number;
+  // From 0 (invisible) to 1 (solid); solid unless set.
+  opacity?: number;
+  // Whether the inside of a polygon or an inequality is shaded; it is unless set to false.
+  fill?: boolean;
 }
+
+export type PointStyle = 'open' | 'cross';
+export type LineStyle = 'dashed' | 'dotted';
+
+// Dash patterns for the usual curve width, which grow with a thicker line; with round
+// caps a zero-length dash is a dot.
+const DASHES: Record<LineStyle, number[]> = { dashed: [7, 6], dotted: [0, 6] };
+const dashes = (style: LineStyle, width: number) => DASHES[style].map((length) => (length * width) / CURVE_WIDTH);
 
 // A highlighted point on one plot; `at` is the value of that plot's independent variable.
 export interface Trace {
@@ -62,7 +82,15 @@ export interface Trace {
 }
 
 const FONT = 'ChosunSm, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
-const CURVE_WIDTH = 2.5;
+// How much heavier and larger everything is drawn in projector mode.
+const PROJECTOR = 1.7;
+export const sizeOf = (settings: GraphSettings) => (settings.projector ? PROJECTOR : 1);
+
+// The site's bar lies over the top of the canvas; anything pinned to the top edge clears it.
+const TOP_BAR = 44;
+export const CURVE_WIDTH = 2.5;
+// How strongly the inside of a region or polygon is tinted with its colour.
+const SHADE = 0.16;
 const SUPERSCRIPT = '⁰¹²³⁴⁵⁶⁷⁸⁹';
 
 export function formatNumber(v: number, digits = 6): string {
@@ -82,6 +110,31 @@ export function formatNumber(v: number, digits = 6): string {
   return v < 0 ? `−${text}` : text;
 }
 
+// What is drawn behind the curves.
+export interface GraphSettings {
+  grid: boolean;
+  // Rings and spokes about the origin in place of the squared grid.
+  polar: boolean;
+  // Everything drawn heavier and larger, to be read across a room.
+  projector: boolean;
+  // The view stays where it is: no panning or zooming by hand.
+  locked: boolean;
+  axes: boolean;
+  // The numbers along the axes, which go when the axes do.
+  numbers: boolean;
+  // What each axis measures, written at its positive end; nothing when empty.
+  xLabel: string;
+  yLabel: string;
+  // The gap between gridlines on each axis as typed (`2`, `pi/2`); empty leaves it to
+  // the zoom. `xStepValue` and `yStepValue` are what those work out to.
+  xStep: string;
+  yStep: string;
+  xStepValue?: number;
+  yStepValue?: number;
+}
+
+export const DEFAULT_SETTINGS: GraphSettings = { grid: true, polar: false, projector: false, locked: false, axes: true, numbers: true, xLabel: '', yLabel: '', xStep: '', yStep: '' };
+
 function gridSteps(scale: number): { major: number; minor: number } {
   const raw = 84 / scale;
   const power = 10 ** Math.floor(Math.log10(raw));
@@ -92,7 +145,52 @@ function gridSteps(scale: number): { major: number; minor: number } {
   return { major: 10 * power, minor: 2 * power };
 }
 
-function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number, view: View, theme: Theme, highlight?: 'x' | 'y') {
+const gcd = (a: number, b: number): number => (b === 0 ? Math.abs(a) : gcd(b, a % b));
+
+interface Steps {
+  major: number;
+  minor: number;
+  // Writes the number at the k-th major line.
+  label(k: number): string;
+  // Every how many major lines get a number, so they don't run together.
+  every: number;
+}
+
+// The gridlines for one axis: at the step that was asked for, unless that would crowd
+// the screen with lines, and otherwise at a round step that suits the zoom.
+function stepsFor(scale: number, wanted: number | undefined): Steps {
+  if (!wanted || !(wanted * scale >= 6)) {
+    const auto = gridSteps(scale);
+    return { ...auto, label: (k) => formatNumber(k * auto.major), every: 1 };
+  }
+  const mantissa = wanted / 10 ** Math.floor(Math.log10(wanted));
+  const parts = Math.abs(mantissa - 1) < 1e-9 || Math.abs(mantissa - 5) < 1e-9 ? 5 : 4;
+  // A step that is a simple fraction of π is counted in π: π/2, π, 3π/2 …
+  let label = (k: number) => formatNumber(k * wanted);
+  for (let q = 1; q <= 12; q++) {
+    const p = Math.round((wanted / Math.PI) * q);
+    if (p < 1 || Math.abs(wanted / Math.PI - p / q) > 1e-9) continue;
+    label = (k) => {
+      const shared = gcd(k * p, q);
+      const [top, bottom] = [(k * p) / shared, q / shared];
+      return `${top === 1 ? '' : top === -1 ? '−' : formatNumber(top)}π${bottom === 1 ? '' : `/${bottom}`}`;
+    };
+    break;
+  }
+  return { major: wanted, minor: wanted / parts, label, every: Math.max(1, Math.ceil(44 / (wanted * scale))) };
+}
+
+function drawGrid(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  view: View,
+  theme: Theme,
+  settings: GraphSettings,
+  highlight?: 'x' | 'y',
+) {
+  // Lines and lettering grow together in projector mode.
+  const k = sizeOf(settings);
   const { cx, cy, scale } = view;
   const yScale = scaleY(view);
   const left = cx - w / 2 / scale;
@@ -102,11 +200,11 @@ function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number, view: Vie
   const sx = (x: number) => Math.round(w / 2 + (x - cx) * scale) + 0.5;
   const sy = (y: number) => Math.round(h / 2 - (y - cy) * yScale) + 0.5;
   // Each axis picks its own spacing, since they can be stretched apart.
-  const stepsX = gridSteps(scale);
-  const stepsY = gridSteps(yScale);
+  const stepsX = stepsFor(scale, settings.xStepValue);
+  const stepsY = stepsFor(yScale, settings.yStepValue);
 
   const lines = (level: 'major' | 'minor', color: string) => {
-    const skip = (steps: { major: number; minor: number }) => (level === 'minor' ? Math.round(steps.major / steps.minor) : 0);
+    const skip = (steps: Steps) => (level === 'minor' ? Math.round(steps.major / steps.minor) : 0);
     ctx.beginPath();
     for (let k = Math.ceil(left / stepsX[level]); k <= right / stepsX[level]; k++) {
       if (skip(stepsX) && k % skip(stepsX) === 0) continue;
@@ -119,21 +217,76 @@ function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number, view: Vie
       ctx.lineTo(w, sy(k * stepsY[level]));
     }
     ctx.strokeStyle = color;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = k;
     ctx.stroke();
   };
-  lines('minor', theme.minor);
-  lines('major', theme.major);
-
   const axisX = sx(0);
   const axisY = sy(0);
+
+  // The polar grid: a ring at every step out from the origin, and a spoke every 15°
+  // with the 30° ones drawn stronger. Stretched axes make the rings ellipses.
+  const polar = () => {
+    // How far from the origin the screen reaches, nearest and farthest, in plane units.
+    const nearX = Math.max(left, Math.min(0, right));
+    const nearY = Math.max(bottom, Math.min(0, top));
+    const near = Math.hypot(nearX, nearY);
+    const far = Math.hypot(Math.max(Math.abs(left), Math.abs(right)), Math.max(Math.abs(bottom), Math.abs(top)));
+    const rings = (level: 'major' | 'minor', color: string) => {
+      const step = stepsX[level];
+      const skip = level === 'minor' ? Math.round(stepsX.major / stepsX.minor) : 0;
+      if ((far - near) / step > 600) return;
+      ctx.beginPath();
+      for (let k = Math.max(1, Math.ceil(near / step)); k * step <= far; k++) {
+        if (skip && k % skip === 0) continue;
+        ctx.moveTo(axisX + k * step * scale, axisY);
+        ctx.ellipse(axisX, axisY, k * step * scale, k * step * yScale, 0, 0, Math.PI * 2);
+      }
+      ctx.strokeStyle = color;
+      ctx.lineWidth = k;
+      ctx.stroke();
+    };
+    const spokes = (major: boolean, color: string) => {
+      ctx.beginPath();
+      for (let k = 0; k < 24; k++) {
+        // The axes themselves are drawn separately.
+        if ((k % 2 === 0) !== major || k % 6 === 0) continue;
+        const angle = (k * Math.PI) / 12;
+        ctx.moveTo(axisX, axisY);
+        ctx.lineTo(axisX + Math.cos(angle) * far * scale, axisY - Math.sin(angle) * far * yScale);
+      }
+      ctx.strokeStyle = color;
+      ctx.lineWidth = k;
+      ctx.stroke();
+    };
+    rings('minor', theme.minor);
+    spokes(false, theme.minor);
+    rings('major', theme.major);
+    spokes(true, theme.major);
+    if (!settings.axes) {
+      // With the axes off, their four directions are still spokes of the grid.
+      ctx.beginPath();
+      ctx.moveTo(axisX, 0);
+      ctx.lineTo(axisX, h);
+      ctx.moveTo(0, axisY);
+      ctx.lineTo(w, axisY);
+      ctx.stroke();
+    }
+  };
+
+  if (settings.grid && settings.polar) polar();
+  else if (settings.grid) {
+    lines('minor', theme.minor);
+    lines('major', theme.major);
+  }
+  if (!settings.axes) return;
+
   ctx.beginPath();
   ctx.moveTo(axisX, 0);
   ctx.lineTo(axisX, h);
   ctx.moveTo(0, axisY);
   ctx.lineTo(w, axisY);
   ctx.strokeStyle = theme.axis;
-  ctx.lineWidth = 1.25;
+  ctx.lineWidth = 1.25 * k;
   ctx.stroke();
   if (highlight) {
     ctx.beginPath();
@@ -145,34 +298,49 @@ function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number, view: Vie
       ctx.lineTo(axisX, h);
     }
     ctx.strokeStyle = theme.accent;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3 * k;
     ctx.stroke();
   }
 
   // Labels sit beside their axis and stick to the edge of the canvas when the axis scrolls away.
-  ctx.font = `12px ${FONT}`;
   ctx.fillStyle = theme.label;
   ctx.strokeStyle = theme.background;
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 3 * Math.sqrt(k);
   ctx.lineJoin = 'round';
   const text = (label: string, x: number, y: number) => {
     ctx.strokeText(label, x, y);
     ctx.fillText(label, x, y);
   };
 
-  const labelY = Math.min(Math.max(axisY + 7, 7), h - 19);
+  // Each axis is named at its positive end, on the side its numbers aren't.
+  ctx.font = `600 ${13 * k}px ${FONT}`;
+  if (settings.xLabel) {
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    text(settings.xLabel, w - 10, Math.min(Math.max(axisY - 6, 22), h - 6));
+  }
+  if (settings.yLabel) {
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    text(settings.yLabel, Math.min(Math.max(axisX + 8, 8), w - 8 - ctx.measureText(settings.yLabel).width), TOP_BAR + 8);
+  }
+
+  if (!settings.numbers) return;
+  ctx.font = `${12 * k}px ${FONT}`;
+
+  const labelY = Math.min(Math.max(axisY + 7, 7), h - 7 - 12 * k);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   for (let k = Math.ceil(left / stepsX.major); k <= right / stepsX.major; k++) {
-    if (k !== 0) text(formatNumber(k * stepsX.major), sx(k * stepsX.major), labelY);
+    if (k !== 0 && k % stepsX.every === 0) text(stepsX.label(k), sx(k * stepsX.major), labelY);
   }
 
-  const pinnedLeft = axisX - 7 < 30;
+  const pinnedLeft = axisX - 7 < 30 * k;
   const labelX = pinnedLeft ? 8 : Math.min(axisX - 7, w - 8);
   ctx.textAlign = pinnedLeft ? 'left' : 'right';
   ctx.textBaseline = 'middle';
   for (let k = Math.ceil(bottom / stepsY.major); k <= top / stepsY.major; k++) {
-    if (k !== 0) text(formatNumber(k * stepsY.major), labelX, sy(k * stepsY.major));
+    if (k !== 0 && k % stepsY.every === 0) text(stepsY.label(k), labelX, sy(k * stepsY.major));
   }
 
   if (axisX > 20 && axisX < w && axisY > 0 && axisY < h - 20) {
@@ -270,6 +438,24 @@ function strokeFunction(
   ctx.stroke();
 }
 
+// How far θ has to run before a polar curve starts retracing itself, as far as a few
+// samples can tell. Dashes only stay dashes if the curve is drawn once over.
+function polarSpan(f: (theta: number) => number): number {
+  const repeats = (shift: number, sign: number) => {
+    for (let i = 0; i < 24; i++) {
+      const theta = 0.37 + i * 0.731;
+      const [here, there] = [f(theta), sign * f(theta + shift)];
+      if (Number.isNaN(here) && Number.isNaN(there)) continue;
+      if (!(Math.abs(here - there) <= 1e-9 * Math.max(1, Math.abs(here)))) return false;
+    }
+    return true;
+  };
+  // r(θ + π) = −r(θ) lands on the same points, as r = cos θ does.
+  if (repeats(Math.PI, -1)) return Math.PI;
+  if (repeats(2 * Math.PI, 1)) return 2 * Math.PI;
+  return 12 * Math.PI;
+}
+
 function strokeParametric(
   ctx: CanvasRenderingContext2D,
   point: (t: number) => [number, number],
@@ -305,6 +491,7 @@ function drawImplicit(
   h: number,
   view: View,
   color: string,
+  shade: boolean,
 ) {
   const { f } = plot;
   const yScale = scaleY(view);
@@ -319,7 +506,7 @@ function drawImplicit(
   const fineCols = cols * 2;
   const points = new Map<number, [number, number]>();
   const links = new Map<number, number[]>();
-  const fill = plot.region ? new Path2D() : undefined;
+  const fill = plot.region && shade ? new Path2D() : undefined;
 
   const link = (a: number, b: number) => {
     const la = links.get(a);
@@ -424,10 +611,12 @@ function drawImplicit(
   }
 
   if (fill) {
-    ctx.globalAlpha = 0.16;
+    // Shaded lightly, on top of whatever opacity the expression has been given.
+    const alpha = ctx.globalAlpha;
+    ctx.globalAlpha = SHADE * alpha;
     ctx.fillStyle = color;
     ctx.fill(fill);
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = alpha;
   }
 
   // Join the segments into polylines: open chains first (from their loose ends), then loops.
@@ -454,9 +643,12 @@ function drawImplicit(
   };
   for (const [key, neighbours] of links) if (neighbours.length === 1 && !visited.has(key)) walk(key);
   for (const key of links.keys()) if (!visited.has(key)) walk(key);
-  if (plot.strict) ctx.setLineDash([7, 6]);
+  // A strict inequality's boundary isn't part of it, which a broken line says; one that
+  // already has a line style of its own keeps it.
+  const dash = ctx.getLineDash();
+  if (plot.strict && dash.length === 0) ctx.setLineDash(dashes('dashed', ctx.lineWidth));
   ctx.stroke();
-  ctx.setLineDash([]);
+  ctx.setLineDash(dash);
 }
 
 // Where a trace sits on a plot, in plane coordinates.
@@ -479,6 +671,18 @@ export interface Label {
   latex: string;
 }
 
+// A point's coordinates as they are written in a label.
+function coordinates(view: View, point: [number, number], fixed: boolean): string {
+  const text = (v: number, scale: number) => {
+    // Show one more digit than a pixel can resolve at this zoom.
+    const digits = Math.max(0, Math.min(12, Math.ceil(Math.log10(scale)) + 1));
+    // Deep zooms need a tighter match, or a genuinely tiny value would be called 0.
+    const tolerance = Math.min(1e-11, 1e-6 / scale);
+    return exactForm(v, tolerance, fixed ? 1000 : 12) ?? decimalToLatex(parseFloat(v.toFixed(digits)));
+  };
+  return `\\left(${text(point[0], view.scale)},\\ ${text(point[1], scaleY(view))}\\right)`;
+}
+
 // Draws the dot and returns its coordinate label.
 function drawLabelledDot(
   ctx: CanvasRenderingContext2D,
@@ -491,27 +695,21 @@ function drawLabelledDot(
   // A traced point sits wherever the pointer is, so only simple fractions are worth
   // recognising there; a fixed point (an intersection, a turning point) gets the full search.
   fixed: boolean,
+  k: number,
 ): Label | undefined {
   const x = w / 2 + (point[0] - view.cx) * view.scale;
   const y = h / 2 - (point[1] - view.cy) * scaleY(view);
   if (x < -20 || x > w + 20 || y < -20 || y > h + 20) return undefined;
 
   ctx.beginPath();
-  ctx.arc(x, y, 6, 0, Math.PI * 2);
+  ctx.arc(x, y, 6 * k, 0, Math.PI * 2);
   ctx.fillStyle = color;
   ctx.fill();
   ctx.lineWidth = 2;
   ctx.strokeStyle = theme.background;
   ctx.stroke();
 
-  const text = (v: number, scale: number) => {
-    // Show one more digit than a pixel can resolve at this zoom.
-    const digits = Math.max(0, Math.min(12, Math.ceil(Math.log10(scale)) + 1));
-    // Deep zooms need a tighter match, or a genuinely tiny value would be called 0.
-    const tolerance = Math.min(1e-11, 1e-6 / scale);
-    return exactForm(v, tolerance, fixed ? 1000 : 12) ?? decimalToLatex(parseFloat(v.toFixed(digits)));
-  };
-  return { x, y, latex: `\\left(${text(point[0], view.scale)},\\ ${text(point[1], scaleY(view))}\\right)` };
+  return { x, y, latex: coordinates(view, point, fixed) };
 }
 
 export function draw(
@@ -527,10 +725,11 @@ export function draw(
   labelled: PointOfInterest[],
   // The axis to pick out, while the pointer is on it with Shift held.
   highlight?: 'x' | 'y',
+  settings: GraphSettings = DEFAULT_SETTINGS,
 ): Label[] {
   ctx.fillStyle = theme.background;
   ctx.fillRect(0, 0, w, h);
-  drawGrid(ctx, w, h, view, theme, highlight);
+  drawGrid(ctx, w, h, view, theme, settings, highlight);
 
   const { cx, cy, scale } = view;
   const yScale = scaleY(view);
@@ -539,12 +738,16 @@ export function draw(
   const fromX = (x: number) => w / 2 + (x - cx) * scale;
   const fromY = (y: number) => h / 2 - (y - cy) * yScale;
 
-  ctx.lineWidth = CURVE_WIDTH;
+  const k = sizeOf(settings);
+  ctx.lineWidth = CURVE_WIDTH * k;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
-  for (const { plot, color } of items) {
+  for (const { plot, color, lineStyle, lineWidth = CURVE_WIDTH, opacity = 1, fill = true } of items) {
+    ctx.globalAlpha = opacity;
     ctx.strokeStyle = color;
+    ctx.lineWidth = lineWidth * k;
+    ctx.setLineDash(lineStyle ? dashes(lineStyle, lineWidth * k) : []);
     switch (plot.kind) {
       case 'fx':
         strokeFunction(ctx, (px) => fromY(plot.f(toX(px))), w, h, false);
@@ -553,7 +756,7 @@ export function draw(
         strokeFunction(ctx, (py) => fromX(plot.f(toY(py))), h, w, true);
         break;
       case 'implicit':
-        drawImplicit(ctx, plot, w, h, view, color);
+        drawImplicit(ctx, plot, w, h, view, color, fill);
         break;
       case 'parametric':
         strokeParametric(ctx, (t) => [fromX(plot.x(t)), fromY(plot.y(t))], 0, 2 * Math.PI, 2000);
@@ -566,23 +769,77 @@ export function draw(
             return [fromX(r * Math.cos(theta)), fromY(r * Math.sin(theta))];
           },
           0,
-          12 * Math.PI,
+          lineStyle ? polarSpan(plot.f) : 12 * Math.PI,
           6000,
         );
         break;
+      case 'polygon': {
+        const corners = plot.vertices.map(([x, y]): [number, number] => [fromX(x), fromY(y)]);
+        // One corner that can't be placed leaves no shape to draw.
+        if (!corners.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y))) break;
+        ctx.beginPath();
+        corners.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+        ctx.closePath();
+        if (fill) {
+          ctx.globalAlpha = SHADE * opacity;
+          ctx.fillStyle = color;
+          ctx.fill();
+          ctx.globalAlpha = opacity;
+        }
+        ctx.stroke();
+        break;
+      }
       case 'point':
         break;
     }
   }
 
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 1;
+
   // Points go on top of every curve.
-  for (const { plot, color } of items) {
+  for (const { plot, color, pointStyle, opacity = 1 } of items) {
+    ctx.globalAlpha = 1;
     if (plot.kind !== 'point') continue;
     const x = fromX(plot.x);
     const y = fromY(plot.y);
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (plot.drag) {
+      // A halo marks a point that can be picked up and moved.
+      ctx.beginPath();
+      ctx.arc(x, y, 12 * k, 0, Math.PI * 2);
+      ctx.globalAlpha = 0.22 * opacity;
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+    ctx.globalAlpha = opacity;
+    if (pointStyle === 'cross') {
+      // Outlined in the background colour first, like the dot, so it reads over a curve.
+      const arm = 5 * k;
+      ctx.beginPath();
+      ctx.moveTo(x - arm, y - arm);
+      ctx.lineTo(x + arm, y + arm);
+      ctx.moveTo(x - arm, y + arm);
+      ctx.lineTo(x + arm, y - arm);
+      ctx.lineWidth = 5.5 * k;
+      ctx.strokeStyle = theme.background;
+      ctx.stroke();
+      ctx.lineWidth = 2.5 * k;
+      ctx.strokeStyle = color;
+      ctx.stroke();
+      continue;
+    }
     ctx.beginPath();
-    ctx.arc(x, y, 5.5, 0, Math.PI * 2);
+    ctx.arc(x, y, (pointStyle === 'open' ? 5 : 5.5) * k, 0, Math.PI * 2);
+    if (pointStyle === 'open') {
+      // A ring with the background showing through its middle.
+      ctx.fillStyle = theme.background;
+      ctx.fill();
+      ctx.lineWidth = 2.25 * k;
+      ctx.strokeStyle = color;
+      ctx.stroke();
+      continue;
+    }
     ctx.fillStyle = color;
     ctx.fill();
     ctx.lineWidth = 2;
@@ -590,9 +847,11 @@ export function draw(
     ctx.stroke();
   }
 
+  ctx.globalAlpha = 1;
+
   for (const p of points) {
     ctx.beginPath();
-    ctx.arc(fromX(p.x), fromY(p.y), 3.25, 0, Math.PI * 2);
+    ctx.arc(fromX(p.x), fromY(p.y), 3.25 * k, 0, Math.PI * 2);
     ctx.fillStyle = theme.marker;
     ctx.fill();
     ctx.lineWidth = 1.25;
@@ -600,16 +859,25 @@ export function draw(
     ctx.stroke();
   }
   const labels: Label[] = [];
+  // Labels switched on for points stay up for as long as the point is in view.
+  for (const { plot, label } of items) {
+    if (plot.kind !== 'point' || label === undefined) continue;
+    const x = fromX(plot.x);
+    const y = fromY(plot.y);
+    if (!(x >= -20 && x <= w + 20 && y >= -20 && y <= h + 20)) continue;
+    labels.push({ x, y, latex: label || coordinates(view, [plot.x, plot.y], true) });
+  }
   for (const p of labelled) {
-    const label = drawLabelledDot(ctx, w, h, view, theme, [p.x, p.y], theme.axis, true);
+    const label = drawLabelledDot(ctx, w, h, view, theme, [p.x, p.y], theme.axis, true, k);
     if (label) labels.push(label);
   }
 
   if (trace) {
     const item = items.find((it) => it.id === trace.id);
     const point = item && tracePoint(item.plot, trace.at);
-    const label = item && point && drawLabelledDot(ctx, w, h, view, theme, point, item.color, false);
-    if (label) labels.push(label);
+    const label = item && point && drawLabelledDot(ctx, w, h, view, theme, point, item.color, false, k);
+    // A point with a label of its own keeps that one.
+    if (label && item.label === undefined) labels.push(label);
   }
   return labels;
 }

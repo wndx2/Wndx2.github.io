@@ -14,7 +14,7 @@ declare module 'react' {
 // MathLive already knows (sin, ln, gcd, …). Spelled as on a Casio where it has them.
 const TYPED_FUNCTIONS = [
   'solve', 'fMin', 'fMax', 'nCr', 'nPr', 'lcm', 'trunc', 'round', 'RndFix', 'Int', 'Frac', 'modexp',
-  'sign', 'abs', 'conj', 'arccot', 'csch', 'random', 'randint', 'RanInt', 'RanNorm', 'RanBin',
+  'sign', 'abs', 'conj', 'polygon', 'arccot', 'csch', 'random', 'randint', 'RanInt', 'RanNorm', 'RanBin',
   'NormPD', 'NormCD', 'InvNormCD', 'tPD', 'tCD', 'InvTCD', 'ChiPD', 'ChiCD', 'InvChiCD', 'FPD', 'FCD', 'InvFCD',
   'BinomialPD', 'BinomialCD', 'InvBinomialCD', 'PoissonPD', 'PoissonCD', 'InvPoissonCD',
   'GeoPD', 'GeoCD', 'InvGeoCD', 'HypergeoPD', 'HypergeoCD',

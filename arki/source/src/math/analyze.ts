@@ -4,7 +4,7 @@
 import { ARITY, BINDERS, builtins } from './builtins';
 import { complex, tidy, type Complex } from './complex';
 import { differentiate } from './differentiate';
-import { MathError, nameToLatex, parse, type Node, type Statement } from './parser';
+import { MathError, nameToLatex, parse, spanOf, type Node, type Statement } from './parser';
 
 type Fn1 = (u: number) => number;
 
@@ -17,7 +17,14 @@ export type Plot =
   | { kind: 'implicit'; f: (x: number, y: number) => number; region: boolean; strict: boolean }
   | { kind: 'parametric'; x: (t: number) => number; y: (t: number) => number }
   | { kind: 'polar'; f: (theta: number) => number }
-  | { kind: 'point'; x: number; y: number };
+  // A closed shape through its vertices, in the order they were given.
+  | { kind: 'polygon'; vertices: [number, number][] }
+  // `drag` says how each coordinate can be changed by dragging the point, if it can.
+  | { kind: 'point'; x: number; y: number; drag?: [PointHandle | undefined, PointHandle | undefined] };
+
+// What dragging a point along one axis rewrites: a number written in the point itself
+// (the range of the source it occupies), or the slider the coordinate is.
+export type PointHandle = { kind: 'literal'; span: [number, number] } | { kind: 'slider'; name: string };
 
 export interface Analysis {
   empty?: boolean;
@@ -240,6 +247,8 @@ function gen(node: Node, scope: Scope): string {
 }
 
 function checkCall(fn: string, args: Node[]) {
+  // A shape, not a value: it is only understood as an expression of its own.
+  if (fn === 'polygon') throw new MathError('A polygon can’t be used as a number');
   const [min, max] = ARITY[fn] ?? [1, 1];
   if (args.length < min || args.length > max) throw new MathError(`“${fn}” takes ${arityText(min, max)}`);
 }
@@ -427,6 +436,8 @@ function evaluate(body: Node, world: World, isComplex: boolean): Complex {
 const result = (z: Complex): Analysis => (z.im === 0 ? { value: z.re } : { value: z.re, imaginary: z.im });
 
 const sub = (a: Node, b: Node): Node => ({ t: 'bin', op: '-', a, b });
+// A plain number, which is what makes a definition a slider.
+const isLiteral = (node: Node) => node.t === 'num' || (node.t === 'neg' && node.a.t === 'num');
 const isVar = (node: Node, name: string) => node.t === 'var' && node.name === name;
 
 export function analyze(sources: string[]): Analysis[] {
@@ -549,7 +560,8 @@ export function analyze(sources: string[]): Analysis[] {
       entry.complex ||= refersToComplex(entry);
       return describe(entry, st, world);
     } catch (err) {
-      return { error: err instanceof MathError ? err.message : 'Couldn’t evaluate this' };
+      if (err instanceof MathError) return { error: err.message, softError: err.soft };
+      return { error: 'Couldn’t evaluate this' };
     }
   });
 }
@@ -573,8 +585,7 @@ function describe(entry: Entry, st: Statement, world: World): Analysis {
   const usesXY = free.has('x') || free.has('y');
 
   if (def?.kind === 'var') {
-    const body = def.body;
-    const literal = body.t === 'num' || (body.t === 'neg' && body.a.t === 'num');
+    const literal = isLiteral(def.body);
     if (isComplex) return result(world.Z[def.name]);
     return literal ? { slider: { name: def.name, value: world.S[def.name] } } : { value: world.S[def.name] };
   }
@@ -593,7 +604,25 @@ function describe(entry: Entry, st: Statement, world: World): Analysis {
       const [px, py] = lhs.items;
       if (usesXY) throw new MathError('A point can’t depend on x or y');
       if (free.has('t')) return { plot: { kind: 'parametric', x: make(['t'], px), y: make(['t'], py) } };
-      return { plot: { kind: 'point', x: make([], px)(), y: make([], py)() } };
+      const handle = (node: Node): PointHandle | undefined => {
+        const span = spanOf(node);
+        if (span && freeOf(node).size === 0) return { kind: 'literal', span };
+        const def = node.t === 'var' ? world.defs.get(node.name) : undefined;
+        if (def?.kind === 'var' && isLiteral(def.body)) return { kind: 'slider', name: def.name };
+        return undefined;
+      };
+      const drag: [PointHandle | undefined, PointHandle | undefined] = [handle(px), handle(py)];
+      const point = { kind: 'point' as const, x: make([], px)(), y: make([], py)() };
+      return { plot: drag[0] || drag[1] ? { ...point, drag } : point };
+    }
+    if (lhs.t === 'call' && lhs.fn === 'polygon') {
+      if (lhs.args.length < 3) throw new MathError('A polygon needs at least three points', lhs.args.length < 2);
+      if (usesXY) throw new MathError('A polygon can’t depend on x or y');
+      const vertices = lhs.args.map((arg): [number, number] => {
+        if (arg.t !== 'tuple' || arg.items.length !== 2) throw new MathError('A polygon is made of points, like (1, 2)');
+        return [make([], arg.items[0])(), make([], arg.items[1])()];
+      });
+      return { plot: { kind: 'polygon', vertices } };
     }
     if (free.has('y')) throw new MathError('Write this as an equation, like y = …');
     if (free.has('x')) return { plot: curve('fx', lhs) };
