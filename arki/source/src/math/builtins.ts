@@ -568,6 +568,11 @@ export const builtins = {
   frac: (x: number) => x - Math.trunc(x),
   sign: Math.sign,
   sqrt: Math.sqrt,
+  // The parts of a complex number, as they are for a real one.
+  re: (x: number) => x,
+  im: (x: number) => x * 0,
+  conj: (x: number) => x,
+  arg: (x: number) => (x < 0 ? Math.PI : x * 0),
   min: Math.min,
   max: Math.max,
   mod: (a: number, b: number) => a - b * Math.floor(a / b),

@@ -330,6 +330,17 @@ export function trigTerms(latex: string): TrigTerm[] {
           walk(base.args[0], 'argument');
           return walk(node.b, 'multiply');
         }
+        const under = node.op === '/' && isNum(node.a, 1) ? (plain(node.b) ?? squared(node.b)) : undefined;
+        if (under && under.fn in RECIPROCAL) {
+          // 1 / csc x is sin x written another way, so it is one piece with everything
+          // sin x converts to, rather than a csc x to convert underneath the 1.
+          const [name, u] = [RECIPROCAL[under.fn], text(under.arg) ?? ''];
+          const isSquare = !plain(node.b);
+          const self = frac('1', isSquare ? sq(under.fn, u) : fn(under.fn, u));
+          const others = (isSquare ? squareForms : forms)(name, under.arg).filter((o) => o.latex !== self);
+          add(spanOf(node), others, context, previous);
+          return walk(under.arg, 'argument');
+        }
         tail(node);
         if (node.op === '+') {
           walk(node.a, 'add');

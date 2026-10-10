@@ -77,6 +77,7 @@ const FUNCTION_ALIASES: Record<string, string> = {
   arcsinh: 'arsinh', arccosh: 'arcosh', arctanh: 'artanh',
   ln: 'ln', log: 'log', lg: 'log', exp: 'exp',
   abs: 'abs', floor: 'floor', ceil: 'ceil', round: 'round',
+  re: 're', real: 're', im: 'im', imag: 'im', conj: 'conj', arg: 'arg',
   sign: 'sign', sgn: 'sign', signum: 'sign',
   min: 'min', max: 'max', mod: 'mod',
   tg: 'tan', ctg: 'cot', cotg: 'cot', cosec: 'csc', arctg: 'arctan',
@@ -127,7 +128,7 @@ const COMMAND_CHARS: Record<string, string> = {
 
 const COMMAND_RENAMES: Record<string, string> = {
   mleft: 'left', mright: 'right', dfrac: 'frac', tfrac: 'frac', cfrac: 'frac',
-  exponentialE: 'e', differentialD: 'd', partial: 'd', rightarrow: 'to', binom: 'binom', dbinom: 'binom', tbinom: 'binom',
+  exponentialE: 'e', imaginaryI: 'i', differentialD: 'd', partial: 'd', rightarrow: 'to', binom: 'binom', dbinom: 'binom', tbinom: 'binom',
 };
 
 const CHAR_RENAMES: Record<string, string> = {

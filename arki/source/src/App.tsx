@@ -11,6 +11,9 @@ import type { TableRange } from './ui/Table';
 const STORAGE_KEY = 'arki:expressions:v1';
 const THEME_KEY = 'arki:theme';
 const PANEL_WIDTH = 360;
+const PANEL_MIN_WIDTH = 280;
+const PANEL_MIN_HEIGHT = 120;
+const PANEL_KEY = 'arki:panel:v1';
 const PANEL_MARGIN = 12;
 const NARROW = '(max-width: 640px)';
 
@@ -139,6 +142,70 @@ function useKeyboardSwitch(): [boolean, (on: boolean) => void] {
   return [on, setOn];
 }
 
+interface PanelSize {
+  // Width beside the graph on a wide screen; height above the bottom edge on a narrow one,
+  // where the panel is as tall as its contents until it has been dragged.
+  width: number;
+  height?: number;
+}
+
+// The panel's size, which its edge can be dragged to change, kept between visits.
+function usePanelSize(narrow: boolean) {
+  const [size, setSize] = useState<PanelSize>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(PANEL_KEY) ?? 'null');
+      if (typeof saved?.width === 'number') return { width: saved.width, height: typeof saved.height === 'number' ? saved.height : undefined };
+    } catch {
+      // Unreadable storage just means the usual size.
+    }
+    return { width: PANEL_WIDTH };
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(PANEL_KEY, JSON.stringify(size));
+    } catch {
+      // The size still holds for this visit.
+    }
+  }, [size]);
+
+  const resize = (to: number) =>
+    setSize((s) =>
+      narrow
+        ? { ...s, height: Math.max(PANEL_MIN_HEIGHT, Math.min(to, window.innerHeight)) }
+        : { ...s, width: Math.max(PANEL_MIN_WIDTH, Math.min(to, window.innerWidth - 2 * PANEL_MARGIN)) },
+    );
+  const reset = () => setSize((s) => (narrow ? { width: s.width } : { ...s, width: PANEL_WIDTH }));
+
+  // The edge follows the pointer from wherever it was picked up.
+  const onPointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    const panel = e.currentTarget.parentElement!.getBoundingClientRect();
+    const start = narrow ? panel.height + e.clientY : panel.width - e.clientX;
+    const handle = e.currentTarget;
+    // Capture keeps the drag going when the pointer runs ahead of the edge.
+    handle.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => resize(narrow ? start - ev.clientY : start + ev.clientX);
+    const stop = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', stop);
+      handle.removeEventListener('pointercancel', stop);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', stop);
+    handle.addEventListener('pointercancel', stop);
+    e.preventDefault();
+  };
+  const onKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+    const grow = narrow ? 'ArrowUp' : 'ArrowRight';
+    const shrink = narrow ? 'ArrowDown' : 'ArrowLeft';
+    if (e.key !== grow && e.key !== shrink) return;
+    e.preventDefault();
+    const panel = e.currentTarget.parentElement!.getBoundingClientRect();
+    resize((narrow ? panel.height : panel.width) + (e.key === grow ? 24 : -24));
+  };
+
+  return { size, handle: { onPointerDown, onKeyDown, onDoubleClick: reset } };
+}
+
 export function App() {
   useKeyboardInset();
   const [expressions, setExpressions] = useState(loadExpressions);
@@ -147,6 +214,7 @@ export function App() {
   const [keyboardOn, setKeyboardOn] = useKeyboardSwitch();
   const [dark, toggleTheme] = useTheme();
   const narrow = useMediaQuery(NARROW);
+  const panel = usePanelSize(narrow);
   const graph = useRef<GraphHandle>(null);
 
   useEffect(() => {
@@ -161,7 +229,11 @@ export function App() {
 
   // Works out a value typed into a table, which may use the sliders and functions here.
   const evaluate = useCallback(
-    (latex: string) => analyze([latex, ...expressions.map((e) => e.latex)])[0].value,
+    (latex: string) => {
+      const { value, imaginary } = analyze([latex, ...expressions.map((e) => e.latex)])[0];
+      // A table runs along a real axis.
+      return imaginary ? undefined : value;
+    },
     [expressions],
   );
 
@@ -217,7 +289,7 @@ export function App() {
     setKeyboardOn(!keyboardOn);
   };
 
-  const inset = panelOpen && !narrow ? PANEL_WIDTH + PANEL_MARGIN : 0;
+  const inset = panelOpen && !narrow ? panel.size.width + PANEL_MARGIN : 0;
 
   return (
     <div className="app" data-panel={panelOpen ? 'open' : 'closed'}>
@@ -241,7 +313,22 @@ export function App() {
         </div>
       </nav>
 
-      <aside className="panel" aria-label="Expressions" inert={!panelOpen}>
+      <aside
+        className="panel"
+        aria-label="Expressions"
+        inert={!panelOpen}
+        data-sized={panel.size.height === undefined ? undefined : ''}
+        style={{ '--panel-width': `${panel.size.width}px`, '--panel-height': `${panel.size.height ?? 0}px` } as React.CSSProperties}
+      >
+        {/* The edge facing the graph: drag it to resize the panel, double-click to reset. */}
+        <div
+          className="panel-resizer"
+          role="separator"
+          aria-label="Resize expressions"
+          aria-orientation={narrow ? 'horizontal' : 'vertical'}
+          tabIndex={0}
+          {...panel.handle}
+        />
         <header className="panel-header">
           <h2>Expressions</h2>
           <button

@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { analyze, type Analysis, type Plot } from './analyze';
-import { decimalToLatex, exactForm, valueToLatex } from './exact';
+import { decimalToLatex, exactForm, valueToLatex, complexToLatex } from './exact';
 import { applyTrigOption, trigTerms } from './trig';
 
 const one = (latex: string, ...context: string[]): Analysis => analyze([latex, ...context])[0];
@@ -232,6 +232,7 @@ assert.deepEqual(one('y=\\int_{0}^{x}at\\,dt').missing, ['a']);
 
 // Trig conversions: every offered form must equal the original, wherever it sits.
 const trigSamples = [
+  'y=\\frac{1}{\\csc x}', 'y=3\\frac{1}{\\sec\\left(2x\\right)}+1', 'y=\\frac{1}{\\tan^{2}x}', 'y=x^{\\frac{1}{\\cot x}}',
   'y=\\sin^{2}x', 'y=\\cos^2x+1', 'y=2\\tan^{2}\\left(x\\right)', 'y=3-\\sec^2x', 'y=\\csc^{2}x\\cot^{2}x',
   'y=\\sin x', 'y=x\\cos\\left(x\\right)', 'y=-\\tan x', 'y=\\sec x-\\csc x', 'y=\\frac{\\cot x}{2}',
   'y=\\sin\\left(2x\\right)', 'y=5-\\cos\\left(2x\\right)', 'y=\\tan\\left(2x\\right)^{2}', 'y=\\sin^{3}x', 'y=\\cos\\left(x\\right)^{4}',
@@ -297,6 +298,16 @@ assert.equal(trigTerms('y=x\\sin x')[0].options.at(-1), '\\cdot 2\\sin\\left(\\f
 // A power after a bracketed product applies to the whole product.
 near(value('\\left(a\\left(1+a\\right)\\right)^{2}', 'a=2'), 36);
 near(value('a\\left(1+a\\right)^{2}', 'a=2'), 18);
+// A reciprocal is converted whole, as the function it stands for.
+const reciprocal = trigTerms('y=\\frac{1}{\\csc\\left(x\\right)}');
+assert.deepEqual(reciprocal.map((t) => t.source), ['\\frac{1}{\\csc\\left(x\\right)}']);
+assert.deepEqual(reciprocal[0].options, [
+  '\\sin\\left(x\\right)', '\\cos\\left(\\frac{\\pi}{2}-x\\right)', '\\tan\\left(x\\right)\\cos\\left(x\\right)',
+  '2\\sin\\left(\\frac{x}{2}\\right)\\cos\\left(\\frac{x}{2}\\right)',
+]);
+assert.deepEqual(trigTerms('y=\\frac{1}{\\sec^{2}x}').map((t) => t.source), ['\\frac{1}{\\sec^{2}x}']);
+assert.equal(trigTerms('y=\\frac{1}{\\sec^{2}x}')[0].options[1], '1-\\sin^{2}\\left(x\\right)');
+assert.equal(trigTerms('y=\\frac{1}{\\cos\\left(\\sin x\\right)}').length, 2);
 assert.deepEqual(trigTerms('y=x^2+1'), []);
 assert.deepEqual(trigTerms('y=\\sin('), []);
 
@@ -357,5 +368,75 @@ assert.equal(valueToLatex(Math.sin(1)), '0.841471');
 assert.equal(valueToLatex(NaN), '\\text{undefined}');
 assert.equal(decimalToLatex(-2.5e-7), '-2.5\\times10^{-7}');
 assert.equal(exactForm(1e-12, 1e-14), undefined);
+
+// Complex numbers: `i` is the imaginary unit wherever the name is otherwise free.
+const z = (latex: string, ...context: string[]): [number, number] => {
+  const a = one(latex, ...context);
+  assert.equal(a.error, undefined, `unexpected error in ${latex}: ${a.error}`);
+  return [a.value!, a.imaginary ?? 0];
+};
+const nearZ = (latex: string, re: number, im: number, ...context: string[]) => {
+  const [a, b] = z(latex, ...context);
+  near(a, re, 1e-9);
+  near(b, im, 1e-9);
+};
+assert.deepEqual(z('i^2'), [-1, 0]);
+assert.deepEqual(z('\\imaginaryI^2'), [-1, 0]);
+assert.deepEqual(z('\\left(1+2i\\right)\\left(3-i\\right)'), [5, 5]);
+assert.deepEqual(z('\\frac{1}{i}'), [0, -1]);
+assert.deepEqual(z('\\left(1+i\\right)^2'), [0, 2]);
+assert.deepEqual(z('i^{-3}'), [0, 1]);
+nearZ('\\frac{3+4i}{1-2i}', -1, 2);
+nearZ('e^{i\\pi}', -1, 0);
+nearZ('e^{\\frac{i\\pi}{2}}', 0, 1);
+nearZ('\\sqrt{i}', Math.SQRT1_2, Math.SQRT1_2);
+nearZ('i^i', Math.exp(-Math.PI / 2), 0);
+nearZ('\\ln i', 0, Math.PI / 2);
+nearZ('\\sin\\left(i\\right)', 0, Math.sinh(1));
+nearZ('\\cos\\left(1+i\\right)', Math.cos(1) * Math.cosh(1), -Math.sin(1) * Math.sinh(1));
+nearZ('\\arcsin\\left(2\\right)+0i', Math.PI / 2, Math.log(2 - Math.sqrt(3)));
+assert.deepEqual(z('\\left|3+4i\\right|'), [5, 0]);
+assert.deepEqual(z('\\operatorname{Re}\\left(3+4i\\right)'), [3, 0]);
+assert.deepEqual(z('\\operatorname{Im}\\left(3+4i\\right)'), [4, 0]);
+assert.deepEqual(z('\\operatorname{conj}\\left(3+4i\\right)'), [3, -4]);
+nearZ('\\arg\\left(-1+i\\right)', (3 * Math.PI) / 4, 0);
+// Real results stay as they were inside a complex expression.
+assert.deepEqual(z('\\sqrt[3]{-8}+i'), [-2, 1]);
+assert.deepEqual(z('\\left(-8\\right)^{\\frac{1}{3}}+i'), [-2, 1]);
+// Values with no real answer come out complex without `i` being written.
+assert.deepEqual(z('\\sqrt{-4}'), [0, 2]);
+nearZ('\\ln\\left(-1\\right)', 0, Math.PI);
+assert.ok(Number.isNaN(value('\\frac{0}{0}')));
+assert.equal(one('\\frac{0}{0}').imaginary, undefined);
+// Definitions carry complex values along, and functions take them.
+assert.deepEqual(z('a^2', 'a=1+i'), [0, 2]);
+assert.deepEqual(z('b+1', 'a=\\sqrt{-9}', 'b=2a'), [1, 6]);
+assert.deepEqual(z('f\\left(i\\right)', 'f\\left(t\\right)=t^2+1'), [0, 0]);
+assert.deepEqual(z('f\\left(2\\right)', 'f\\left(t\\right)=t+i'), [2, 1]);
+assert.deepEqual(z('a=2+3i'), [2, 3]);
+assert.equal(one('a=2+3i').slider, undefined);
+assert.deepEqual(z('\\sum_{n=0}^{3}i^n'), [0, 0]);
+nearZ('\\int_0^{\\pi}e^{ix}\\,\\mathrm{d}x', 0, 2);
+// The name still works as a sum's index, and as a slider when defined as one.
+near(value('\\sum_{i=1}^{4}i^2'), 30);
+assert.deepEqual(one('i=3').slider, { name: 'i', value: 3 });
+near(value('i^2', 'i=3'), 9);
+assert.equal(one('2i').missing, undefined);
+// A graph is drawn where the result is real.
+near(plot(one('y=\\left|x+i\\right|'), 'fx').f(0), 1);
+near(plot(one('y=\\operatorname{Re}\\left(e^{ix}\\right)'), 'fx').f(Math.PI), -1);
+assert.ok(Number.isNaN(plot(one('y=x+i'), 'fx').f(1)));
+near(plot(one('y=x^2+\\operatorname{Im}\\left(a\\right)', 'a=2i'), 'fx').d1(3), 6, 1e-5);
+assert.match(one('\\operatorname{floor}\\left(1.5+i\\right)').error ?? '', /complex/);
+// Real expressions are untouched by all this.
+near(plot(one('y=\\operatorname{Re}\\left(x\\right)'), 'fx').f(2), 2);
+near(value('\\arg\\left(-2\\right)'), Math.PI);
+
+assert.equal(complexToLatex(3, 2), '3+2i');
+assert.equal(complexToLatex(0, -1), '-i');
+assert.equal(complexToLatex(0.5, -Math.SQRT2), '\\frac{1}{2}-\\sqrt{2}i');
+assert.equal(complexToLatex(-1, 1 + Math.PI), '-1+\\left(\\pi+1\\right)i');
+assert.equal(complexToLatex(2, 0), '2');
+assert.equal(complexToLatex(0, 1e-7), '10^{-7}i');
 
 console.log('math: all checks passed');

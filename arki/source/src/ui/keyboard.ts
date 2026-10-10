@@ -17,7 +17,7 @@ const NUMERIC = {
           { latex: 'g(#?)', class: 'small' },
         ],
       },
-      { latex: 'y', shift: 'a', variants: ['n', 'i', 'j', 'p', 'k', 'a', 'u'] },
+      { latex: 'y', shift: 'i', variants: ['i', 'n', 'j', 'p', 'k', 'a', 'u'] },
       '[separator-5]',
       '[7]',
       '[8]',

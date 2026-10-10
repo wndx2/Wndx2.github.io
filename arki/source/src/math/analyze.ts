@@ -2,6 +2,7 @@
 // together because expressions refer to each other (sliders, user functions).
 
 import { ARITY, BINDERS, builtins } from './builtins';
+import { complex, tidy, type Complex } from './complex';
 import { differentiate } from './differentiate';
 import { MathError, nameToLatex, parse, type Node, type Statement } from './parser';
 
@@ -23,6 +24,8 @@ export interface Analysis {
   plot?: Plot;
   // A constant result to show next to the expression.
   value?: number;
+  // The imaginary part of that result, when it has one.
+  imaginary?: number;
   // Set when the expression is `name = number`, which the UI shows as a slider.
   slider?: { name: string; value: number };
   error?: string;
@@ -40,11 +43,16 @@ interface Entry {
   def?: Def;
   free: Set<string>;
   locals: Set<string>;
+  // Involves the imaginary unit, directly or through something it refers to, so it is
+  // evaluated with complex numbers.
+  complex?: boolean;
   error?: MathError;
   missing: string[];
 }
 
 const CONSTANTS: Record<string, string> = { pi: 'Math.PI', e: 'Math.E', infty: 'Infinity' };
+// The imaginary unit, unless the name has been given another meaning (a sum's index, a slider).
+const IMAGINARY = 'i';
 const NO_LOCALS: ReadonlySet<string> = new Set();
 
 const parseCache = new Map<string, Statement | MathError>();
@@ -140,6 +148,8 @@ function definitionOf(st: Statement): Def | undefined {
 interface Scope {
   locals: Map<string, string>;
   defs: Map<string, Def>;
+  // The variables whose values are complex; only the complex generator needs to know.
+  complexVars?: ReadonlySet<string>;
 }
 
 const quote = (name: string) => `“${nameToLatex(name).replace(/[\\{}]/g, '')}”`;
@@ -164,10 +174,7 @@ function gen(node: Node, scope: Scope): string {
       return `(${gen(node.a, scope)}${node.op}${gen(node.b, scope)})`;
     }
     case 'call': {
-      const [min, max] = ARITY[node.fn] ?? [1, 1];
-      if (node.args.length < min || node.args.length > max) {
-        throw new MathError(`“${node.fn}” takes ${arityText(min, max)}`);
-      }
+      checkCall(node.fn, node.args);
       return `B.${node.fn}(${node.args.map((arg) => gen(arg, scope)).join(',')})`;
     }
     case 'app': {
@@ -210,10 +217,7 @@ function gen(node: Node, scope: Scope): string {
       return `B.integrate(${gen(node.lo, scope)},${gen(node.hi, scope)},(${id})=>${gen(node.body, inner)})`;
     }
     case 'bind': {
-      const [min, max] = BINDERS[node.fn];
-      if (node.args.length < min || node.args.length > max) {
-        throw new MathError(`“${node.fn}” takes an expression and ${arityText(min, max)}`);
-      }
+      checkBinder(node.fn, node.args);
       const id = `$${node.wrt}`;
       const inner: Scope = { ...scope, locals: new Map(scope.locals).set(node.wrt, id) };
       if (node.fn === 'deriv' || node.fn === 'deriv2') {
@@ -232,6 +236,18 @@ function gen(node: Node, scope: Scope): string {
       const inner: Scope = { ...scope, locals: new Map(scope.locals).set(node.wrt, id) };
       return `B.deriv((${id})=>${gen(node.body, inner)},${gen({ t: 'var', name: node.wrt }, scope)})`;
     }
+  }
+}
+
+function checkCall(fn: string, args: Node[]) {
+  const [min, max] = ARITY[fn] ?? [1, 1];
+  if (args.length < min || args.length > max) throw new MathError(`“${fn}” takes ${arityText(min, max)}`);
+}
+
+function checkBinder(fn: string, args: Node[]) {
+  const [min, max] = BINDERS[fn];
+  if (args.length < min || args.length > max) {
+    throw new MathError(`“${fn}” takes an expression and ${arityText(min, max)}`);
   }
 }
 
@@ -254,14 +270,161 @@ function genPower(base: Node, exponent: Node, scope: Scope): string {
   return `B.pow(${gen(base, scope)},${gen(exponent, scope)})`;
 }
 
+const COMPLEX_OPS = { '+': 'add', '-': 'sub', '*': 'mul', '/': 'div' } as const;
+
+// The same expression as `gen` makes, but computing with complex numbers: every value
+// is a Complex and every operation a call into the complex library.
+function genC(node: Node, scope: Scope): string {
+  // `body` as a function of the variable it binds.
+  const over = (name: string, body: Node) => {
+    const id = `$${name}`;
+    return `(${id})=>${genC(body, { ...scope, locals: new Map(scope.locals).set(name, id) })}`;
+  };
+  switch (node.t) {
+    case 'num':
+      return `C.of(${node.v})`;
+    case 'var': {
+      const local = scope.locals.get(node.name);
+      if (local) return local;
+      if (node.name in CONSTANTS) return `C.of(${CONSTANTS[node.name]})`;
+      const def = scope.defs.get(node.name);
+      if (!def && node.name === IMAGINARY) return 'C.I';
+      if (!def) throw new MathError(`${quote(node.name)} isn’t defined`);
+      if (def.kind === 'fn') throw new MathError(`${quote(node.name)} is a function and needs an argument`);
+      return scope.complexVars?.has(node.name) ? `Z.${node.name}` : `C.of(S.${node.name})`;
+    }
+    case 'neg':
+      return `C.neg(${genC(node.a, scope)})`;
+    case 'bin': {
+      if (node.op === '^') return genPowerC(node.a, node.b, scope);
+      return `C.${COMPLEX_OPS[node.op]}(${genC(node.a, scope)},${genC(node.b, scope)})`;
+    }
+    case 'call': {
+      checkCall(node.fn, node.args);
+      return `C.call(${[JSON.stringify(node.fn), ...node.args.map((arg) => genC(arg, scope))].join(',')})`;
+    }
+    case 'app': {
+      const def = scope.locals.has(node.name) ? undefined : scope.defs.get(node.name);
+      const args = node.args.map((arg) => genC(arg, scope));
+      if (def?.kind === 'fn') {
+        if (args.length !== def.params.length) {
+          const n = def.params.length;
+          throw new MathError(`${quote(node.name)} takes ${n} argument${n === 1 ? '' : 's'}`);
+        }
+        const call = `G.${node.name}(${args.join(',')})`;
+        return node.pow ? `C.pow(${call},${genC(node.pow, scope)})` : call;
+      }
+      if (args.length !== 1) throw new MathError(`${quote(node.name)} isn’t a function`);
+      const factor = genC({ t: 'var', name: node.name }, scope);
+      const group = node.pow ? genPowerC(node.args[0], node.pow, scope) : args[0];
+      return `C.mul(${factor},${group})`;
+    }
+    case 'tuple':
+      throw new MathError('A point can’t be used as a number');
+    case 'big':
+      return `C.${node.kind}(${genC(node.lo, scope)},${genC(node.hi, scope)},${over(node.index, node.body)})`;
+    case 'piece': {
+      // Only equality means anything between complex numbers; an order needs real ones.
+      let code = node.otherwise ? genC(node.otherwise, scope) : 'C.of(NaN)';
+      for (const branch of [...node.branches].reverse()) {
+        const operands = branch.when.operands.map((operand) => genC(operand, scope));
+        const tests = branch.when.rels.map((rel, i) =>
+          rel === '=' ? `C.eq(${operands[i]},${operands[i + 1]})` : `C.real(${operands[i]})${rel}C.real(${operands[i + 1]})`,
+        );
+        code = `(${tests.join('&&')}?${branch.value ? genC(branch.value, scope) : 'C.of(1)'}:${code})`;
+      }
+      return code;
+    }
+    case 'int':
+      return `C.integrate(${genC(node.lo, scope)},${genC(node.hi, scope)},${over(node.wrt, node.body)})`;
+    case 'bind': {
+      checkBinder(node.fn, node.args);
+      if (node.fn === 'deriv' || node.fn === 'deriv2') {
+        const isFunction = (name: string) => scope.defs.get(name)?.kind === 'fn';
+        let derived = differentiate(node.body, node.wrt, isFunction);
+        if (node.fn === 'deriv2') derived = differentiate(derived, node.wrt, isFunction);
+        const symbolic = !JSON.stringify(derived).includes('"t":"deriv"');
+        if (symbolic) return `(${over(node.wrt, derived)})(${genC(node.args[0], scope)})`;
+      }
+      const args = node.args.map((arg) => genC(arg, scope));
+      return `C.bind(${[JSON.stringify(node.fn), over(node.wrt, node.body), ...args].join(',')})`;
+    }
+    case 'deriv':
+      return `C.bind("deriv",${over(node.wrt, node.body)},${genC({ t: 'var', name: node.wrt }, scope)})`;
+  }
+}
+
+function genPowerC(base: Node, exponent: Node, scope: Scope): string {
+  if (exponent.t === 'bin' && exponent.op === '/' && exponent.a.t === 'num' && exponent.b.t === 'num') {
+    const p = exponent.a.v;
+    const q = exponent.b.v;
+    if (Number.isInteger(p) && Number.isInteger(q) && q % 2 !== 0) {
+      return `C.rpow(${genC(base, scope)},${p},${q})`;
+    }
+  }
+  return `C.pow(${genC(base, scope)},${genC(exponent, scope)})`;
+}
+
 type Values = Record<string, number>;
 type Functions = Record<string, (...args: number[]) => number>;
 
-function build(params: string[], body: Node, defs: Map<string, Def>, S: Values, F: Functions) {
-  const locals = new Map(params.map((p) => [p, `$${p}`]));
-  const source = `return (${[...locals.values()].join(',')})=>${gen(body, { locals, defs })}`;
-  return new Function('B', 'S', 'F', source)(builtins, S, F) as (...args: number[]) => number;
+// Everything a compiled expression can refer to: variables and functions, each in a
+// real and a complex table.
+interface World {
+  defs: Map<string, Def>;
+  S: Values;
+  F: Functions;
+  Z: Record<string, Complex>;
+  G: Record<string, (...args: Complex[]) => Complex>;
+  complexVars: Set<string>;
 }
+
+function build(params: string[], body: Node, world: World) {
+  const locals = new Map(params.map((p) => [p, `$${p}`]));
+  const source = `return (${[...locals.values()].join(',')})=>${gen(body, { locals, defs: world.defs })}`;
+  return new Function('B', 'S', 'F', source)(builtins, world.S, world.F) as (...args: number[]) => number;
+}
+
+function buildC(params: string[], body: Node, world: World) {
+  const locals = new Map(params.map((p) => [p, `$${p}`]));
+  const scope: Scope = { locals, defs: world.defs, complexVars: world.complexVars };
+  const source = `return (${[...locals.values()].join(',')})=>${genC(body, scope)}`;
+  return new Function('C', 'S', 'Z', 'G', source)(complex, world.S, world.Z, world.G) as (...args: Complex[]) => Complex;
+}
+
+// A complex-mode expression as a function of real numbers, for plotting: it has a value
+// only where the result is real.
+function buildReal(params: string[], body: Node, world: World) {
+  const f = buildC(params, body, world);
+  return (...args: number[]) => {
+    try {
+      return complex.real(f(...args.map((arg) => complex.of(arg))));
+    } catch {
+      return NaN;
+    }
+  };
+}
+
+const isFinite = (z: Complex) => Number.isFinite(z.re) && Number.isFinite(z.im);
+
+// The value of a constant expression. One that has no real value (√−4, ln −1) is tried
+// again with complex numbers.
+function evaluate(body: Node, world: World, isComplex: boolean): Complex {
+  if (!isComplex) {
+    const value = build([], body, world)();
+    if (!Number.isNaN(value)) return complex.of(value);
+  }
+  let z: Complex;
+  try {
+    z = tidy(buildC([], body, world)());
+  } catch (err) {
+    if (isComplex) throw err;
+    return complex.of(NaN);
+  }
+  return isComplex || (isFinite(z) && z.im !== 0) ? z : complex.of(NaN);
+}
+
+const result = (z: Complex): Analysis => (z.im === 0 ? { value: z.re } : { value: z.re, imaginary: z.im });
 
 const sub = (a: Node, b: Node): Node => ({ t: 'bin', op: '-', a, b });
 const isVar = (node: Node, name: string) => node.t === 'var' && node.name === name;
@@ -319,6 +482,10 @@ export function analyze(sources: string[]): Analysis[] {
     for (const name of entry.free) {
       if (entry.locals.has(name)) continue;
       const dep = entryOfDef.get(name);
+      if (!dep && name === IMAGINARY) {
+        entry.complex = true;
+        continue;
+      }
       if (!dep) {
         entry.missing.push(name);
         continue;
@@ -341,14 +508,27 @@ export function analyze(sources: string[]): Analysis[] {
 
   // Only healthy definitions are visible to the code generator.
   const live = new Map(order.map((def) => [def.name, def]));
-  const S: Values = {};
-  const F: Functions = {};
+  const world: World = { defs: live, S: {}, F: {}, Z: {}, G: {}, complexVars: new Set() };
+  // Complex values spread to whatever is defined in terms of them. Definitions are
+  // settled in dependency order, so this is known by the time it is asked.
+  const refersToComplex = (entry: Entry) =>
+    [...entry.free].some((name) => !entry.locals.has(name) && entryOfDef.get(name)?.complex);
 
   for (const def of order) {
     const entry = entryOfDef.get(def.name)!;
+    entry.complex ||= refersToComplex(entry);
     try {
-      if (def.kind === 'fn') F[def.name] = build(def.params, def.body, live, S, F);
-      else S[def.name] = build([], def.body, live, S, F)();
+      if (def.kind === 'fn') {
+        if (!entry.complex) world.F[def.name] = build(def.params, def.body, world);
+        world.G[def.name] = buildC(def.params, def.body, world);
+      } else {
+        const z = evaluate(def.body, world, entry.complex);
+        entry.complex ||= z.im !== 0;
+        if (entry.complex) {
+          world.Z[def.name] = z;
+          world.complexVars.add(def.name);
+        } else world.S[def.name] = z.re;
+      }
     } catch (err) {
       entry.error = err instanceof MathError ? err : new MathError('Couldn’t evaluate this');
       live.delete(def.name);
@@ -366,18 +546,25 @@ export function analyze(sources: string[]): Analysis[] {
       };
     }
     try {
-      return describe(entry, st, live, S, F);
+      entry.complex ||= refersToComplex(entry);
+      return describe(entry, st, world);
     } catch (err) {
       return { error: err instanceof MathError ? err.message : 'Couldn’t evaluate this' };
     }
   });
 }
 
-function describe(entry: Entry, st: Statement, defs: Map<string, Def>, S: Values, F: Functions): Analysis {
-  const make = (params: string[], body: Node) => build(params, body, defs, S, F);
-  const isFunction = (name: string) => defs.get(name)?.kind === 'fn';
+function describe(entry: Entry, st: Statement, world: World): Analysis {
+  const isComplex = !!entry.complex;
+  const make = (params: string[], body: Node) => (isComplex ? buildReal : build)(params, body, world);
+  const isFunction = (name: string) => world.defs.get(name)?.kind === 'fn';
   const curve = (kind: 'fx' | 'fy', body: Node): Plot => {
     const v = kind === 'fx' ? 'x' : 'y';
+    if (isComplex) {
+      // The rules for differentiating assume real numbers, so these are measured instead.
+      const f = make([v], body);
+      return { kind, f, d1: (u) => builtins.deriv(f, u), d2: (u) => builtins.deriv2(f, u) };
+    }
     const d1 = differentiate(body, v, isFunction);
     const d2 = differentiate(d1, v, isFunction);
     return { kind, f: make([v], body), d1: make([v], d1), d2: make([v], d2) };
@@ -388,7 +575,8 @@ function describe(entry: Entry, st: Statement, defs: Map<string, Def>, S: Values
   if (def?.kind === 'var') {
     const body = def.body;
     const literal = body.t === 'num' || (body.t === 'neg' && body.a.t === 'num');
-    return literal ? { slider: { name: def.name, value: S[def.name] } } : { value: S[def.name] };
+    if (isComplex) return result(world.Z[def.name]);
+    return literal ? { slider: { name: def.name, value: world.S[def.name] } } : { value: world.S[def.name] };
   }
   if (def?.kind === 'fn') {
     if (def.params.length !== 1) return {};
@@ -409,7 +597,7 @@ function describe(entry: Entry, st: Statement, defs: Map<string, Def>, S: Values
     }
     if (free.has('y')) throw new MathError('Write this as an equation, like y = …');
     if (free.has('x')) return { plot: curve('fx', lhs) };
-    return { value: make([], lhs)() };
+    return result(evaluate(lhs, world, isComplex));
   }
 
   if (rel === '=') {

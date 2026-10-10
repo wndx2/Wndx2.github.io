@@ -368,7 +368,8 @@ button {
   left: max(12px, env(safe-area-inset-left));
   display: flex;
   flex-direction: column;
-  width: 360px;
+  width: var(--panel-width, 360px);
+  max-width: calc(100% - 24px);
   max-height: calc(100% - var(--navbar) - 24px - var(--keyboard-inset));
   border-radius: 22px;
   border-top: 0.5px solid var(--material-edge);
@@ -386,6 +387,40 @@ button {
   transform: translateX(calc(-100% - 24px));
   opacity: 0;
   pointer-events: none;
+}
+
+/* The edge that is dragged to resize the panel: a strip along its right-hand side,
+   wider than it looks so it is easy to catch. */
+.panel-resizer {
+  position: absolute;
+  top: 22px;
+  right: -6px;
+  bottom: 22px;
+  z-index: 1;
+  width: 14px;
+  cursor: ew-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.panel-resizer::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 36px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 160ms ease;
+}
+
+.panel-resizer:hover::after,
+.panel-resizer:active::after,
+.panel-resizer:focus-visible::after {
+  opacity: 0.35;
 }
 
 .panel-header {
@@ -1044,6 +1079,7 @@ math-field::part(menu-toggle) {
     bottom: max(8px, env(safe-area-inset-bottom), calc(var(--keyboard-inset) + 8px));
     left: 8px;
     width: auto;
+    max-width: none;
     max-height: min(46%, calc(100% - var(--keyboard-inset) - 16px - var(--navbar)));
     transition:
       transform 420ms var(--ease-settle),
@@ -1053,6 +1089,31 @@ math-field::part(menu-toggle) {
 
   .app[data-panel='closed'] .panel {
     transform: translateY(calc(100% + 16px));
+  }
+
+  /* Once dragged, the panel keeps the height it was given, as far as there is room. */
+  .panel[data-sized] {
+    height: var(--panel-height);
+    max-height: calc(100% - var(--keyboard-inset) - 16px - var(--navbar));
+  }
+
+  /* Here the edge to drag is the top one, marked with a grabber. */
+  .panel-resizer {
+    top: -8px;
+    right: auto;
+    bottom: auto;
+    left: 50%;
+    width: 96px;
+    height: 24px;
+    cursor: ns-resize;
+    transform: translateX(-50%);
+  }
+
+  .panel-resizer::after {
+    top: 13px;
+    width: 36px;
+    height: 4px;
+    opacity: 0.25;
   }
 
   /* The panel is short here, so the table runs its full length and the panel scrolls. */

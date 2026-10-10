@@ -163,3 +163,14 @@ export function decimalToLatex(v: number): string {
 export function valueToLatex(v: number, significant = 6): string {
   return exactForm(v) ?? decimalToLatex(parseFloat(v.toPrecision(significant)));
 }
+
+// A complex value as re + im·i, each part in its exact form where it has one.
+export function complexToLatex(re: number, im: number, significant = 6): string {
+  if (im === 0 || Number.isNaN(re) || Number.isNaN(im)) return valueToLatex(re + im, significant);
+  const size = valueToLatex(Math.abs(im), significant);
+  // A sum has to be bracketed before it can multiply i: (1 + π)i.
+  const factor = size === '1' ? '' : /[+-]/.test(size.replace(/\{[^{}]*\}/g, '')) ? `\\left(${size}\\right)` : size;
+  const imaginary = `${factor}i`;
+  if (re === 0) return (im < 0 ? '-' : '') + imaginary;
+  return `${valueToLatex(re, significant)}${im < 0 ? '-' : '+'}${imaginary}`;
+}

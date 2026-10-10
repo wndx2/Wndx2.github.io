@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { convertLatexToMarkup } from 'mathlive';
 import type { Analysis } from '../math/analyze';
 import { nameToLatex } from '../math/parser';
-import { valueToLatex } from '../math/exact';
+import { complexToLatex } from '../math/exact';
 import { applyTrigOption, trigTerms, type TrigTerm } from '../math/trig';
 import { CloseIcon, MoreIcon, TableIcon, WarningIcon } from './icons';
 import { MathField } from './MathField';
@@ -56,8 +56,11 @@ export function ExpressionRow({ expression, analysis, dark, focusToken, evaluate
   const showMessage = error && !softError && missing.length === 0;
   // Results are typeset, and shown in exact form (π/2, √2, 1/3) when they have one.
   const valueMarkup = useMemo(
-    () => (analysis.value === undefined ? undefined : convertLatexToMarkup(`=${valueToLatex(analysis.value)}`, { defaultMode: 'math' })),
-    [analysis.value],
+    () =>
+      analysis.value === undefined
+        ? undefined
+        : convertLatexToMarkup(`=${complexToLatex(analysis.value, analysis.imaginary ?? 0)}`, { defaultMode: 'math' }),
+    [analysis.value, analysis.imaginary],
   );
 
   const setSlider = (value: number) => {
