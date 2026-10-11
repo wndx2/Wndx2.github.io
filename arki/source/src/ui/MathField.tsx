@@ -20,6 +20,23 @@ const TYPED_FUNCTIONS = [
   'GeoPD', 'GeoCD', 'InvGeoCD', 'HypergeoPD', 'HypergeoCD',
 ];
 
+// The smallest a long expression is shrunk to, as a share of the usual size, so it still fits.
+const MIN_FIT = 0.6;
+
+// Shrinks the field's text until the whole expression fits its width, as on a phone where
+// a long equation would otherwise run off the edge. MathLive clips what doesn't fit, and
+// its field can't be swiped along, so this is the only way to see the rest at a glance.
+function fitToWidth(field: MathfieldElement) {
+  const content = field.shadowRoot?.querySelector<HTMLElement>('[part=content]');
+  if (!content) return;
+  field.style.fontSize = '';
+  const overflow = content.scrollWidth - content.clientWidth;
+  if (overflow <= 1 || content.clientWidth === 0) return;
+  const base = parseFloat(getComputedStyle(field).fontSize);
+  const scale = Math.max(MIN_FIT, (content.clientWidth - 2) / content.scrollWidth);
+  field.style.fontSize = `${Math.floor(base * scale * 10) / 10}px`;
+}
+
 interface MathFieldProps {
   value: string;
   // Changes whenever this field should take focus.
@@ -67,7 +84,26 @@ export function MathField(props: MathFieldProps) {
     field.addEventListener('keydown', onKeyDown, { capture: true });
     field.addEventListener('move-out', onMoveOut);
     const restoreBackspace = repairBackspace(field, onInput);
+    // A field that changes width (the panel dragged, the phone turned) is fitted again,
+    // and so is every field once the fonts have arrived and the text has its real width.
+    let fitting = 0;
+    const fit = () => {
+      cancelAnimationFrame(fitting);
+      fitting = requestAnimationFrame(() => fitToWidth(field));
+    };
+    let width = 0;
+    const resized = new ResizeObserver(([entry]) => {
+      if (Math.abs(entry.contentRect.width - width) < 1) return;
+      width = entry.contentRect.width;
+      fit();
+    });
+    resized.observe(field);
+    field.addEventListener('input', fit);
+    document.fonts.ready.then(fit);
     return () => {
+      cancelAnimationFrame(fitting);
+      resized.disconnect();
+      field.removeEventListener('input', fit);
       restoreBackspace();
       field.removeEventListener('input', onInput);
       field.removeEventListener('keydown', onKeyDown, { capture: true });
@@ -79,6 +115,7 @@ export function MathField(props: MathFieldProps) {
   useEffect(() => {
     const field = ref.current!;
     if (field.value !== props.value) field.setValue(props.value, { silenceNotifications: true });
+    requestAnimationFrame(() => fitToWidth(field));
   }, [props.value]);
 
   useEffect(() => {

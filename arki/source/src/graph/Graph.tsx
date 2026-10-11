@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, type Ref } from 'react';
+import { useEffect, useImperativeHandle, useLayoutEffect, useRef, type Ref } from 'react';
 import { convertLatexToMarkup } from 'mathlive';
 import { findPoints, type PointOfInterest } from './points';
 import { DARK, LIGHT, draw, projectImplicit, scaleY, sizeOf, type Drawable, type GraphSettings, type Label, type Trace, type View } from './render';
@@ -68,7 +68,7 @@ export function Graph({ ref, items, dark, settings, onMovePoint }: GraphProps) {
   const labelsRef = useRef<HTMLDivElement>(null);
   const live = useRef({ items, dark, settings, onMovePoint });
   live.current = { items, dark, settings, onMovePoint };
-  const api = useRef<GraphHandle & { redraw(): void }>(null);
+  const api = useRef<GraphHandle & { redraw(): void; renderNow(): void }>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -363,7 +363,7 @@ export function Graph({ ref, items, dark, settings, onMovePoint }: GraphProps) {
         canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('No image'))), 'image/png');
       });
 
-    api.current = { zoomBy: (factor) => zoomBy(factor), home, bounds, setBounds, aspect: () => view.aspect, fitBounds, snapshot, redraw };
+    api.current = { zoomBy: (factor) => zoomBy(factor), home, bounds, setBounds, aspect: () => view.aspect, fitBounds, snapshot, redraw, renderNow: render };
 
     // Finds the plot under the pointer, measuring distance perpendicular to the curve
     // so steep curves are as easy to grab as flat ones.
@@ -697,7 +697,13 @@ export function Graph({ ref, items, dark, settings, onMovePoint }: GraphProps) {
 
   useEffect(() => {
     api.current?.redraw();
-  }, [items, dark, settings]);
+  }, [items, settings]);
+
+  // In the new colours straight away, before the page is painted, so a cross-fade between
+  // themes has the graph in its new colours to fade to.
+  useLayoutEffect(() => {
+    api.current?.renderNow();
+  }, [dark]);
 
   return (
     <div className="graph" data-projector={settings.projector || undefined}>

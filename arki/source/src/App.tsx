@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Graph, type Bounds, type GraphHandle } from './graph/Graph';
 import { DEFAULT_SETTINGS, type Drawable, type GraphSettings } from './graph/render';
 import { analyze } from './math/analyze';
@@ -117,7 +118,8 @@ function useTheme(): [boolean, () => void] {
     }
   });
   const dark = chosen ?? system;
-  useEffect(() => {
+  // Set before the browser paints, so a cross-fade between themes captures the new one.
+  useLayoutEffect(() => {
     const root = document.documentElement;
     root.dataset.theme = dark ? 'dark' : 'light';
     // MathLive's keyboard takes its theme from this attribute.
@@ -125,7 +127,12 @@ function useTheme(): [boolean, () => void] {
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0e0e10' : '#ffffff');
   }, [dark]);
   const toggle = () => {
-    setChosen(!dark);
+    // Where the browser can, the whole page cross-fades from one theme to the other,
+    // the graph included, instead of every colour snapping at once.
+    const apply = () => flushSync(() => setChosen(!dark));
+    if (document.startViewTransition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      document.startViewTransition(apply);
+    } else apply();
     try {
       localStorage.setItem(THEME_KEY, dark ? 'light' : 'dark');
     } catch {
@@ -309,19 +316,27 @@ interface Notice {
   action?: { label: string; run(): void };
 }
 
-function useNotice(): [Notice | undefined, (notice: Notice) => void, () => void] {
-  const [notice, setNotice] = useState<Notice>();
+// How long a notice takes to fade away (as in the stylesheet).
+const NOTICE_EXIT = 180;
+
+function useNotice(): [(Notice & { leaving?: boolean }) | undefined, (notice: Notice) => void, () => void] {
+  const [notice, setNotice] = useState<Notice & { leaving?: boolean }>();
   const timer = useRef(0);
-  const show = useCallback((next: Notice) => {
-    clearTimeout(timer.current);
-    setNotice(next);
-    // One that offers an action stays long enough to be acted on.
-    timer.current = window.setTimeout(() => setNotice(undefined), next.action ? 8000 : 2400);
-  }, []);
+  // It fades out, then goes.
   const hide = useCallback(() => {
     clearTimeout(timer.current);
-    setNotice(undefined);
+    setNotice((current) => current && { ...current, leaving: true });
+    timer.current = window.setTimeout(() => setNotice(undefined), NOTICE_EXIT);
   }, []);
+  const show = useCallback(
+    (next: Notice) => {
+      clearTimeout(timer.current);
+      setNotice(next);
+      // One that offers an action stays long enough to be acted on.
+      timer.current = window.setTimeout(hide, next.action ? 8000 : 2400);
+    },
+    [hide],
+  );
   return [notice, show, hide];
 }
 
@@ -818,6 +833,75 @@ export function App() {
     focusOn(folder.id);
   };
 
+  // The folded-away tools: whether they are out, and the panel's height to grow to.
+  const [dockOpen, setDockOpen] = useState(false);
+  const dockRef = useRef<HTMLDivElement>(null);
+  const dockItems = useRef<HTMLDivElement>(null);
+  const dockToggle = useRef<HTMLButtonElement>(null);
+  const [dockHeight, setDockHeight] = useState(0);
+  useLayoutEffect(() => {
+    if (dockOpen && dockItems.current) setDockHeight(dockItems.current.offsetHeight);
+  }, [dockOpen, narrow]);
+  // A press anywhere else, or Escape, folds the panel away again. The settings that open
+  // from it sit outside it on the page, and don't count as elsewhere.
+  useEffect(() => {
+    if (!dockOpen || narrow) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Element;
+      if (!dockRef.current?.contains(target) && !target.closest('.popover')) setDockOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDockOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [dockOpen, narrow]);
+  // On a phone the sheet of tools fades away before it goes, rather than vanishing.
+  // It goes once the fade (260ms in the stylesheet) is over.
+  const [sheetClosing, setSheetClosing] = useState(false);
+  const closing = useRef(0);
+  const finishClosing = () => {
+    clearTimeout(closing.current);
+    setSheetClosing(false);
+    setDockOpen(false);
+  };
+  const closeSheet = () => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return finishClosing();
+    setSheetClosing(true);
+    clearTimeout(closing.current);
+    closing.current = window.setTimeout(finishClosing, 260);
+  };
+  useEffect(() => () => clearTimeout(closing.current), []);
+  useEffect(() => {
+    if (!dockOpen || !narrow) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeSheet();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [dockOpen, narrow]);
+
+  // The settings open above the panel of tools, or by the star on a phone, where the
+  // tools have gone again by then.
+  const settingsAnchor = narrow ? dockToggle.current : dockRef.current;
+  // Folding the tools away puts the settings away with them, on a wide screen.
+  useEffect(() => {
+    if (!dockOpen && !narrow) setSettingsOpen(false);
+  }, [dockOpen, narrow]);
+
+  const tools: { name: string; icon: React.ReactNode; run(): void; disabled?: boolean; expanded?: boolean; ref?: React.Ref<HTMLButtonElement> }[] = [
+    { name: 'Graph settings', icon: <WrenchIcon />, run: () => setSettingsOpen((open) => !open), expanded: settingsOpen, ref: settingsButton },
+    { name: 'Zoom in', icon: <PlusIcon />, run: () => graph.current?.zoomBy(2), disabled: settings.locked },
+    { name: 'Zoom out', icon: <MinusIcon />, run: () => graph.current?.zoomBy(0.5), disabled: settings.locked },
+    { name: 'Reset view', icon: <HomeIcon />, run: () => graph.current?.home(), disabled: settings.locked },
+    { name: 'Copy link', icon: <LinkIcon />, run: shareLink },
+    { name: 'Copy image', icon: <ImageIcon />, run: copyImage },
+  ];
+
   const toggleKeyboard = () => {
     // Switching it on with nothing being edited starts editing the last expression.
     const last = [...visible].reverse().find((e) => e.note === undefined && e.folder === undefined && !e.data);
@@ -952,90 +1036,115 @@ export function App() {
         <SidebarIcon />
       </button>
 
-      <div className="controls">
-        <button
-          ref={settingsButton}
-          className="icon-button glass"
-          aria-label="Graph settings"
-          aria-expanded={settingsOpen}
-          onClick={() => setSettingsOpen((open) => !open)}
-        >
-          <WrenchIcon />
-        </button>
-        {settingsOpen && settingsButton.current && (
-          <Popover anchor={settingsButton.current} label="Graph settings" className="settings" onClose={() => setSettingsOpen(false)}>
-            <Switch label="Grid" on={settings.grid} onChange={(grid) => changeSettings({ grid })} />
-            <Switch
-              label="Polar grid"
-              on={settings.grid && settings.polar}
-              disabled={!settings.grid}
-              onChange={(polar) => changeSettings({ polar })}
-            />
-            <Switch label="Projector mode" on={settings.projector} onChange={(projector) => changeSettings({ projector })} />
-            <Switch label="Lock view" on={settings.locked} onChange={(locked) => changeSettings({ locked })} />
-            <Switch label="Tangent line on trace" on={settings.tangent} onChange={(tangent) => changeSettings({ tangent })} />
-            <Switch label="Axes" on={settings.axes} onChange={(axes) => changeSettings({ axes })} />
-            <Switch
-              label="Axis numbers"
-              on={settings.axes && settings.numbers}
-              disabled={!settings.axes}
-              onChange={(numbers) => changeSettings({ numbers })}
-            />
-            {(['xLabel', 'yLabel'] as const).map((axis) => (
-              <label key={axis} className="settings-field">
-                <span>{axis === 'xLabel' ? 'x-axis label' : 'y-axis label'}</span>
-                <input
-                  className="hex-field"
-                  placeholder="None"
-                  disabled={!settings.axes}
-                  value={settings[axis]}
-                  onChange={(e) => changeSettings({ [axis]: e.currentTarget.value })}
-                />
-              </label>
+      {/* The graph's tools, folded away behind one faint button with the star on it. On a
+          wide screen the button grows into a panel of them; on a phone they cover the
+          screen, big enough to tap, and go again once one is chosen. */}
+      <div className="dock" ref={dockRef} data-open={dockOpen && !narrow ? '' : undefined} style={{ '--dock-height': `${dockHeight}px` } as React.CSSProperties}>
+        {!narrow && (
+          <div className="dock-items" ref={dockItems} inert={!dockOpen}>
+            {tools.map((tool) => (
+              <button key={tool.name} ref={tool.ref} className="dock-item" disabled={tool.disabled} aria-expanded={tool.expanded} onClick={tool.run}>
+                {tool.icon}
+                <span>{tool.name}</span>
+              </button>
             ))}
-            <div className="bounds">
-              {(['xStep', 'yStep'] as const).map((axis) => (
-                <label key={axis}>
-                  <span>{axis === 'xStep' ? 'x step' : 'y step'}</span>
-                  <input
-                    className="hex-field"
-                    aria-label={axis === 'xStep' ? 'x step' : 'y step'}
-                    aria-invalid={settings[axis].trim() !== '' && drawn[`${axis}Value`] === undefined}
-                    placeholder="Auto"
-                    spellCheck={false}
-                    autoCapitalize="off"
-                    value={settings[axis]}
-                    onChange={(e) => changeSettings({ [axis]: e.currentTarget.value })}
-                  />
-                </label>
-              ))}
-            </div>
-            {graph.current && <BoundsFields graph={graph.current} />}
-          </Popover>
+          </div>
         )}
-        <div className="glass control-group">
-          <button className="icon-button" aria-label="Zoom in" disabled={settings.locked} onClick={() => graph.current?.zoomBy(2)}>
-            <PlusIcon />
-          </button>
-          <button className="icon-button" aria-label="Zoom out" disabled={settings.locked} onClick={() => graph.current?.zoomBy(0.5)}>
-            <MinusIcon />
-          </button>
-        </div>
-        <button className="icon-button glass" aria-label="Reset view" disabled={settings.locked} onClick={() => graph.current?.home()}>
-          <HomeIcon />
+        <button
+          ref={dockToggle}
+          className="dock-toggle"
+          aria-label={dockOpen ? 'Close tools' : 'Tools'}
+          aria-expanded={dockOpen}
+          onClick={() => setDockOpen((open) => !open)}
+        >
+          <img src={star} alt="" />
         </button>
-        <div className="glass control-group">
-          <button className="icon-button" aria-label="Copy link to this graph" title="Copy link" onClick={shareLink}>
-            <LinkIcon />
-          </button>
-          <button className="icon-button" aria-label="Copy graph as an image" title="Copy image" onClick={copyImage}>
-            <ImageIcon />
+      </div>
+      {settingsOpen && settingsAnchor && (
+      <Popover anchor={settingsAnchor} label="Graph settings" className="settings" side={narrow ? undefined : 'left'} onClose={() => setSettingsOpen(false)}>
+        <Switch label="Grid" on={settings.grid} onChange={(grid) => changeSettings({ grid })} />
+        <Switch
+          label="Polar grid"
+          on={settings.grid && settings.polar}
+          disabled={!settings.grid}
+          onChange={(polar) => changeSettings({ polar })}
+        />
+        <Switch label="Projector mode" on={settings.projector} onChange={(projector) => changeSettings({ projector })} />
+        <Switch label="Lock view" on={settings.locked} onChange={(locked) => changeSettings({ locked })} />
+        <Switch label="Tangent line on trace" on={settings.tangent} onChange={(tangent) => changeSettings({ tangent })} />
+        <Switch label="Axes" on={settings.axes} onChange={(axes) => changeSettings({ axes })} />
+        <Switch
+          label="Axis numbers"
+          on={settings.axes && settings.numbers}
+          disabled={!settings.axes}
+          onChange={(numbers) => changeSettings({ numbers })}
+        />
+        {(['xLabel', 'yLabel'] as const).map((axis) => (
+          <label key={axis} className="settings-field">
+            <span>{axis === 'xLabel' ? 'x-axis label' : 'y-axis label'}</span>
+            <input
+              className="hex-field"
+              placeholder="None"
+              disabled={!settings.axes}
+              value={settings[axis]}
+              onChange={(e) => changeSettings({ [axis]: e.currentTarget.value })}
+            />
+          </label>
+        ))}
+        <div className="bounds">
+          {(['xStep', 'yStep'] as const).map((axis) => (
+            <label key={axis}>
+              <span>{axis === 'xStep' ? 'x step' : 'y step'}</span>
+              <input
+                className="hex-field"
+                aria-label={axis === 'xStep' ? 'x step' : 'y step'}
+                aria-invalid={settings[axis].trim() !== '' && drawn[`${axis}Value`] === undefined}
+                placeholder="Auto"
+                spellCheck={false}
+                autoCapitalize="off"
+                value={settings[axis]}
+                onChange={(e) => changeSettings({ [axis]: e.currentTarget.value })}
+              />
+            </label>
+          ))}
+        </div>
+        {graph.current && <BoundsFields graph={graph.current} />}
+      </Popover>
+      )}
+
+      {dockOpen && narrow && (
+        <div
+          className="tools-sheet"
+          role="dialog"
+          aria-label="Tools"
+          data-closing={sheetClosing || undefined}
+          onClick={(e) => e.target === e.currentTarget && closeSheet()}
+        >
+          <div className="tools-grid">
+            {tools.map((tool, i) => (
+              <button
+                key={tool.name}
+                className="tools-choice"
+                style={{ '--i': i } as React.CSSProperties}
+                disabled={tool.disabled}
+                onClick={() => {
+                  closeSheet();
+                  tool.run();
+                }}
+              >
+                {tool.icon}
+                <span>{tool.name}</span>
+              </button>
+            ))}
+          </div>
+          <button className="tools-close" onClick={closeSheet}>
+            Close
           </button>
         </div>
-      </div>
+      )}
 
       {notice && (
-        <div className="notice glass" role="status">
+        <div className="notice glass" role="status" data-leaving={notice.leaving || undefined}>
           <span>{notice.text}</span>
           {notice.action && (
             <button

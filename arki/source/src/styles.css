@@ -38,6 +38,15 @@
   --material-thick: rgba(244, 244, 247, 0.78);
   --material-thin: rgba(255, 255, 255, 0.7);
   --material-edge: rgba(255, 255, 255, 0.7);
+  /* Glass: clear enough to see the graph through, evenly tinted, with a bright rim. */
+  --glass: rgba(255, 255, 255, 0.2);
+  --glass-rim: rgba(255, 255, 255, 0.75);
+  --glass-inset: rgba(255, 255, 255, 0.5);
+  /* Denser glass for menus, whose text has to stay readable over a busy graph. */
+  --glass-strong: rgba(255, 255, 255, 0.42);
+  /* Small controls: a pill of glass on whatever is behind it. */
+  --glass-pill: rgba(255, 255, 255, 0.32);
+  --glass-pill-hover: rgba(255, 255, 255, 0.52);
   --solid: #ffffff;
   --hairline: rgba(0, 0, 0, 0.1);
   --fill: rgba(118, 118, 128, 0.12);
@@ -78,6 +87,12 @@
   --material-thick: rgba(34, 34, 38, 0.78);
   --material-thin: rgba(58, 58, 64, 0.7);
   --material-edge: rgba(255, 255, 255, 0.1);
+  --glass: rgba(28, 28, 32, 0.2);
+  --glass-rim: rgba(255, 255, 255, 0.16);
+  --glass-inset: rgba(255, 255, 255, 0.08);
+  --glass-strong: rgba(30, 30, 34, 0.42);
+  --glass-pill: rgba(255, 255, 255, 0.05);
+  --glass-pill-hover: rgba(255, 255, 255, 0.1);
   --solid: #2c2c2e;
   --hairline: rgba(255, 255, 255, 0.12);
   --fill: rgba(118, 118, 128, 0.24);
@@ -408,11 +423,14 @@ button {
   max-width: calc(100% - 24px);
   max-height: calc(100% - var(--navbar) - 24px - var(--keyboard-inset));
   border-radius: 22px;
-  border-top: 0.5px solid var(--material-edge);
-  background: var(--material-thick);
-  -webkit-backdrop-filter: blur(30px) saturate(180%);
-  backdrop-filter: blur(30px) saturate(180%);
-  box-shadow: var(--shadow-large);
+  border: 0.5px solid var(--glass-rim);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(18px) saturate(190%);
+  backdrop-filter: blur(18px) saturate(190%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-inset),
+    inset 0 0 0 0.5px var(--glass-inset),
+    var(--shadow-large);
   /* Leaves and returns along the same path, fading while it travels. */
   transition:
     transform 420ms var(--ease-settle),
@@ -835,6 +853,14 @@ math-field::part(menu-toggle) {
 .table {
   grid-column: 1 / -1;
   padding: 2px 2px 6px 8px;
+  animation: table-in 240ms var(--ease-settle);
+}
+
+@keyframes table-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 
 .table-range {
@@ -899,7 +925,7 @@ math-field::part(menu-toggle) {
   overflow-y: auto;
   /* Scrolling past either end carries on into the list of expressions. */
   border-radius: 10px;
-  background: var(--solid);
+  background: color-mix(in srgb, var(--solid) 55%, transparent);
   box-shadow: inset 0 0 0 0.5px var(--hairline);
 }
 
@@ -925,9 +951,11 @@ math-field::part(menu-toggle) {
 .table th {
   position: sticky;
   top: 0;
-  /* Above the typeset values that scroll underneath. */
+  /* Above the typeset values that scroll underneath, frosted so they don't show through. */
   z-index: 1;
-  background: var(--solid);
+  background: color-mix(in srgb, var(--solid) 70%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   box-shadow: 0 0.5px 0 var(--hairline);
   font-style: italic;
   font-weight: 600;
@@ -1234,6 +1262,20 @@ math-field::part(menu-toggle) {
     opacity: 0;
     transform: scale(0.86);
     filter: blur(6px);
+  }
+}
+
+/* The copy a closed popover leaves behind, fading out where it was. */
+.popover.popover-leaving {
+  animation: popover-out 160ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  pointer-events: none;
+}
+
+@keyframes popover-out {
+  to {
+    opacity: 0;
+    transform: scale(0.94);
+    filter: blur(4px);
   }
 }
 
@@ -1544,16 +1586,278 @@ math-field::part(menu-toggle) {
   background: var(--fill-pressed);
 }
 
-/* Zoom controls */
+/* The graph's tools, folded into one faint button with the star on it. Opened on a wide
+   screen, the button grows up and to the left into a panel listing them, the star
+   staying in its corner to fold them away again. */
 
-.controls {
+.dock {
+  --dock-size: 2.75rem;
+  --dock-width: 13rem;
   position: absolute;
   right: max(12px, env(safe-area-inset-right));
   bottom: max(12px, env(safe-area-inset-bottom), calc(var(--keyboard-inset) + 12px));
+  z-index: 20;
+  width: var(--dock-size);
+  height: var(--dock-size);
+  overflow: hidden;
+  border-radius: calc(var(--dock-size) / 2);
+  background: var(--material-thin);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border-top: 0.5px solid var(--material-edge);
+  box-shadow: var(--shadow-small);
+  opacity: 0.5;
+  transition:
+    width 380ms var(--ease-settle),
+    height 380ms var(--ease-settle),
+    border-radius 380ms var(--ease-settle),
+    opacity 160ms ease,
+    box-shadow 380ms ease,
+    bottom 280ms var(--ease-settle);
+}
+
+.dock:hover,
+.dock:focus-within,
+.dock[data-open] {
+  opacity: 1;
+}
+
+.dock[data-open] {
+  width: var(--dock-width);
+  height: calc(var(--dock-height) + var(--dock-size));
+  border-radius: 18px;
+  box-shadow: var(--shadow-large);
+}
+
+.dock-toggle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+  width: var(--dock-size);
+  height: var(--dock-size);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.dock-toggle img {
+  width: 56%;
+  height: 56%;
+  object-fit: contain;
+  /* The star in the colour of the text: black on light, white on dark. */
+  filter: brightness(0);
+  transition: transform 380ms var(--ease-settle);
+}
+
+:root[data-theme='dark'] .dock-toggle img {
+  filter: brightness(0) invert(1);
+}
+
+.dock[data-open] .dock-toggle img {
+  transform: rotate(45deg);
+}
+
+/* The list sits above the star at its full size from the start, so it is uncovered,
+   not squeezed, as the panel grows. */
+.dock-items {
+  position: absolute;
+  right: 0;
+  bottom: var(--dock-size);
   display: flex;
-  transition: bottom 280ms var(--ease-settle);
   flex-direction: column;
+  gap: 2px;
+  width: var(--dock-width);
+  padding: 6px 6px 0;
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 160ms ease,
+    transform 380ms var(--ease-settle);
+}
+
+.dock[data-open] .dock-items {
+  opacity: 1;
+  transform: none;
+  transition-delay: 80ms, 0ms;
+}
+
+.dock-item {
+  transition: background-color 120ms ease-out;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 2.5rem;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9375rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.dock-item svg {
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.dock-item:hover:not(:disabled),
+.dock-item[aria-expanded='true'] {
+  background: var(--fill);
+}
+
+.dock-item:active:not(:disabled) {
+  background: var(--fill-pressed);
+}
+
+.dock-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* On a phone the tools cover the screen as big buttons, and go once one is chosen. */
+.tools-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+  padding: max(24px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  background: color-mix(in srgb, var(--canvas) 15%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: sheet-in 240ms var(--ease-settle);
+}
+
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  width: 100%;
+  max-width: 340px;
+  align-self: center;
+}
+
+.tools-choice {
+  transition:
+    transform 120ms ease-out,
+    background-color 120ms ease-out;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
+  aspect-ratio: 1;
+  padding: 8px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--material-thin);
+  box-shadow: var(--shadow-small);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+}
+
+.tools-choice svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* The choices arrive one after another, and leave together. */
+.tools-choice {
+  animation: choice-in 360ms var(--ease-settle) backwards;
+  animation-delay: calc(var(--i, 0) * 25ms);
+}
+
+.tools-sheet[data-closing] {
+  animation: sheet-out 260ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  pointer-events: none;
+}
+
+.tools-sheet[data-closing] .tools-choice,
+.tools-sheet[data-closing] .tools-close {
+  animation: choice-out 220ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes choice-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+}
+
+@keyframes choice-out {
+  to {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+@keyframes sheet-out {
+  to {
+    opacity: 0;
+    -webkit-backdrop-filter: blur(0);
+    backdrop-filter: blur(0);
+  }
+}
+
+.tools-choice:active:not(:disabled) {
+  transform: scale(0.97);
+  background: var(--fill-pressed);
+}
+
+.tools-choice:disabled {
+  opacity: 0.4;
+}
+
+.tools-close {
+  align-self: center;
+  padding: 12px 32px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: scale(1.03);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .table,
+  .notice[data-leaving] {
+    animation: none;
+  }
+
+  .dock,
+  .dock-items,
+  .dock-toggle img {
+    transition: none;
+  }
+
+  .tools-sheet,
+  .tools-choice {
+    animation: none;
+  }
 }
 
 /* A short message at the foot of the graph: a link copied, a shared graph opened. */
@@ -1579,6 +1883,9 @@ math-field::part(menu-toggle) {
 }
 
 .notice-action {
+  transition:
+    transform 100ms ease-out,
+    filter 100ms ease-out;
   padding: 4px 12px;
   border: 0;
   border-radius: 999px;
@@ -1587,6 +1894,23 @@ math-field::part(menu-toggle) {
   font: inherit;
   font-weight: 600;
   cursor: pointer;
+}
+
+.notice[data-leaving] {
+  animation: notice-out 180ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  pointer-events: none;
+}
+
+@keyframes notice-out {
+  to {
+    opacity: 0;
+    transform: translate(-50%, 6px) scale(0.98);
+  }
+}
+
+.notice-action:active {
+  transform: scale(0.95);
+  filter: brightness(0.92);
 }
 
 @keyframes notice-in {
@@ -1600,15 +1924,6 @@ math-field::part(menu-toggle) {
   .notice {
     animation: none;
   }
-}
-
-.control-group {
-  display: flex;
-  flex-direction: column;
-}
-
-.control-group .icon-button + .icon-button {
-  box-shadow: 0 -0.5px 0 var(--hairline);
 }
 
 /* Small screens: the panel docks to the bottom and leaves along that edge. */
@@ -1669,10 +1984,101 @@ math-field::part(menu-toggle) {
     left: 8px;
   }
 
-  .controls {
+  .dock {
     top: calc(var(--navbar) + 12px);
     bottom: auto;
   }
+}
+
+/* Glass, everywhere something floats over the graph or is pressed. Each surface keeps
+   its own shape; only the material is set here, so it is the same throughout. */
+
+.glass,
+.dock,
+.tools-choice,
+.notice {
+  border: 0.5px solid var(--glass-rim);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(18px) saturate(190%);
+  backdrop-filter: blur(18px) saturate(190%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-inset),
+    var(--shadow-small);
+}
+
+.dock[data-open] {
+  box-shadow:
+    inset 0 1px 0 var(--glass-inset),
+    var(--shadow-large);
+}
+
+.popover {
+  border: 0.5px solid var(--glass-rim);
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  backdrop-filter: blur(28px) saturate(190%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-inset),
+    var(--shadow-large);
+}
+
+/* The bar along the top: plain glass, evenly tinted and clearer than the rest, with a
+   lit lower edge. */
+.navbar {
+  background: color-mix(in srgb, var(--glass) 45%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(190%);
+  backdrop-filter: blur(18px) saturate(190%);
+  box-shadow:
+    inset 0 -0.5px 0 var(--glass-rim),
+    0 0.5px 0 var(--hairline);
+}
+
+/* Small controls: pills of glass with a bright rim. */
+.chip,
+.popover-action,
+.tools-close,
+.segments {
+  background: var(--glass-pill);
+  box-shadow:
+    inset 0 0 0 0.5px var(--glass-rim),
+    inset 0 1px 0 var(--glass-inset);
+}
+
+.segment[aria-pressed='true'] {
+  background: var(--glass-pill-hover);
+  box-shadow:
+    inset 0 0 0 0.5px var(--glass-rim),
+    0 1px 3px rgba(0, 0, 0, 0.14);
+}
+
+.chip:active,
+.popover-action:active,
+.tools-close:active,
+.tools-choice:active:not(:disabled) {
+  background: var(--glass-pill-hover);
+}
+
+@media (hover: hover) {
+  .icon-button:hover:not(:active),
+  .chip:hover:not(:active):not([aria-pressed='true']),
+  .popover-action:hover:not(:active),
+  .tools-close:hover:not(:active) {
+    background-color: var(--glass-pill);
+    box-shadow:
+      inset 0 0 0 0.5px var(--glass-rim),
+      inset 0 1px 0 var(--glass-inset);
+  }
+}
+
+.icon-button:active {
+  background-color: var(--glass-pill-hover);
+}
+
+/* Switching between light and dark: the old page fades into the new one. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 320ms;
+  animation-timing-function: ease;
 }
 
 /* Accessibility preferences */
@@ -1702,7 +2108,11 @@ math-field::part(menu-toggle) {
 @media (prefers-reduced-transparency: reduce) {
   .navbar,
   .panel,
-  .glass {
+  .glass,
+  .dock,
+  .popover,
+  .tools-choice,
+  .notice {
     background: var(--solid);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
@@ -1717,7 +2127,10 @@ math-field::part(menu-toggle) {
 
   .panel,
   .glass,
-  .popover {
+  .dock,
+  .popover,
+  .tools-choice,
+  .notice {
     background: var(--solid);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
