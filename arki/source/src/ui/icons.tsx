@@ -207,3 +207,19 @@ export const ImageIcon = () => (
     <path d="M3.5 14.5l4-4 3 3 2-2 4 4" />
   </Icon>
 );
+
+// d/dx, for a derivative.
+export const DerivativeIcon = () => (
+  <Icon>
+    <text x="10" y="13.5" textAnchor="middle" fontSize="8.5" fontStyle="italic" fill="currentColor" stroke="none">
+      d/dx
+    </text>
+  </Icon>
+);
+
+// An integral sign, for an antiderivative.
+export const IntegralIcon = () => (
+  <Icon>
+    <path d="M13 4.2c-.5-.6-1.2-.8-1.9-.5-.8.4-1 1.3-1.1 2.2l-.6 8.4c-.1.9-.3 1.8-1.1 2.2-.7.3-1.4.1-1.9-.5" />
+  </Icon>
+);

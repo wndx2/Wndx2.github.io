@@ -523,4 +523,27 @@ assert.equal(fitted('logarithmic', [1, Math.E, Math.E ** 2], [2, 5, 8]).latex, '
 assert.equal(fit('exponential', [0, 1], [1, -2]), 'Every y has to be positive');
 assert.equal(fit('quadratic', [1, 1, 1], [1, 2, 3]), 'Needs 3 different x values');
 
+// Derivative and antiderivative rows: the result as a formula, checked before it is shown.
+const derived = (latex: string, ...others: string[]) => analyze([latex, ...others], ['derivative'])[0];
+const antiderived = (latex: string, ...others: string[]) => analyze([latex, ...others], ['antiderivative'])[0];
+assert.equal(derived('x^2\\sin x').calculus?.latex, 'x^{2}\\cos x+2x\\sin x');
+assert.equal(derived('\\frac{x}{x+1}').calculus?.latex, '\\frac{1}{\\left(x+1\\right)^{2}}');
+assert.equal(derived('\\ln\\left(x^2+1\\right)').calculus?.latex, '\\frac{2x}{x^{2}+1}');
+assert.equal(derived('ax^2+bx', 'a=2', 'b=3').calculus?.latex, '2ax+b');
+assert.equal(derived('f\\left(x\\right)^2', 'f(x)=\\sin x').calculus?.latex, '2\\cos x\\sin x');
+near(plot(derived('y=x^3'), 'fx').f(2), 12);
+assert.match(derived('x^2+y').error!, /only use x/);
+assert.equal(antiderived('3x^2+2x+1').calculus?.latex, 'x^{3}+x^{2}+x');
+assert.equal(antiderived('xe^x').calculus?.latex, 'xe^{x}-e^{x}');
+assert.equal(antiderived('x^2\\sin x').calculus?.latex, '2x\\sin x-x^{2}\\cos x+2\\cos x');
+assert.equal(antiderived('2x\\cos\\left(x^2\\right)').calculus?.latex, '\\sin\\left(x^{2}\\right)');
+assert.equal(antiderived('\\frac{1}{x}').calculus?.latex, '\\ln\\left|x\\right|');
+assert.equal(antiderived('\\ln x').calculus?.latex, 'x\\ln x-x');
+assert.equal(antiderived('\\frac{1}{x^2+4}').calculus?.latex, '\\frac{\\arctan\\left(\\frac{x}{2}\\right)}{2}');
+assert.equal(antiderived('\\sin^2x').calculus?.latex, '\\frac{x}{2}-\\frac{\\sin\\left(2x\\right)}{4}');
+// No elementary antiderivative: the area from 0 to x is drawn instead.
+const gaussian = antiderived('e^{x^2}');
+assert.equal(gaussian.calculus?.latex, undefined);
+near(plot(gaussian, 'fx').f(1), 1.4626517459071817, 1e-6);
+
 console.log('math: all checks passed');

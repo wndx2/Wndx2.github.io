@@ -360,7 +360,7 @@ button {
     filter 100ms ease-out;
 }
 
-/* The same link as a disc in the accent colour with the site's star in it, in translucent white. */
+/* The same link as a disc in the accent colour with ℕ in it, in translucent white. */
 .navbar a.navbar-star {
   display: grid;
   place-items: center;
@@ -369,11 +369,11 @@ button {
   padding: 0;
 }
 
-.navbar-star img {
-  width: 62%;
-  height: 62%;
-  object-fit: contain;
-  filter: brightness(0) invert(1);
+.navbar-mark {
+  color: #ffffff;
+  font-size: 1.25rem;
+  line-height: 1;
+  letter-spacing: 0;
   opacity: 0.7;
 }
 
@@ -727,6 +727,35 @@ math-field::part(menu-toggle) {
   font-size: 0.8125rem;
   line-height: 1.35;
   color: var(--text-secondary);
+}
+
+/* A derivative or antiderivative row: what it does, above the function typed. */
+.row-kind {
+  padding-top: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--curve);
+}
+
+.row-calculus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px 10px;
+  padding-bottom: 6px;
+}
+
+.row-calculus .row-value {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  overflow-x: auto;
+}
+
+.row-calculus .chip {
+  font-size: 0.75rem;
 }
 
 .row-value {

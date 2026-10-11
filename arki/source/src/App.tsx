@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
+import { convertLatexToMarkup } from 'mathlive';
 import { Graph, type Bounds, type GraphHandle } from './graph/Graph';
 import { DEFAULT_SETTINGS, type Drawable, type GraphSettings } from './graph/render';
 import { analyze } from './math/analyze';
@@ -10,12 +11,15 @@ import { fit } from './math/regression';
 import { labelExpressions, labelToLatex, plainToLatex } from './ui/label';
 import { Popover } from './ui/Popover';
 import { snap, stepFor } from './ui/Slider';
-import { FolderIcon, FunctionIcon, NoteIcon, TableIcon, WrenchIcon } from './ui/icons';
+import { DerivativeIcon, FolderIcon, FunctionIcon, IntegralIcon, NoteIcon, TableIcon, WrenchIcon } from './ui/icons';
 import { HomeIcon, ImageIcon, KeyboardIcon, LinkIcon, MinusIcon, MoonIcon, PlusIcon, SidebarIcon, SunIcon } from './ui/icons';
 import { DEFAULT_COLOR, colorOf } from './ui/palette';
 import type { TableRange } from './ui/Table';
 import star from './images/star.png';
 import { decodeGraph, encodeGraph, linkTo, sharedInLocation } from './share';
+
+// The mark on the link to Ni Brain Too Sht: ℕ, typeset in blackboard bold.
+const NATURALS = convertLatexToMarkup('\\mathbb{N}', { defaultMode: 'math' });
 
 const STORAGE_KEY = 'arki:expressions:v1';
 const THEME_KEY = 'arki:theme';
@@ -398,7 +402,7 @@ export function App() {
     }
   }, [expressions]);
 
-  const analyses = useMemo(() => analyze(expressions.map((e) => e.latex)), [expressions]);
+  const analyses = useMemo(() => analyze(expressions.map((e) => e.latex), expressions.map((e) => e.calculus)), [expressions]);
   const latest = useRef({ expressions, analyses, settings });
   latest.current = { expressions, analyses, settings };
 
@@ -827,6 +831,14 @@ export function App() {
     focusOn(table.id);
   };
 
+  // A row that differentiates or antidifferentiates the function typed into it.
+  const addCalculus = (calculus: 'derivative' | 'antiderivative') => {
+    setPanelOpen(true);
+    const row: Expression = { ...newExpression(''), calculus };
+    setExpressions((list) => [...list, row]);
+    focusOn(row.id);
+  };
+
   const addFolder = () => {
     const folder: Expression = { ...newExpression(''), folder: '' };
     setExpressions((list) => [...list, folder]);
@@ -926,7 +938,7 @@ export function App() {
             {dark ? <SunIcon /> : <MoonIcon />}
           </button>
           <a className="navbar-star" href="https://sleepywndud.github.io" target="_blank" rel="noopener" aria-label="Ni Brain Too Sht">
-            <img src={star} alt="" />
+            <span className="navbar-mark" aria-hidden="true" dangerouslySetInnerHTML={{ __html: NATURALS }} />
           </a>
         </div>
       </nav>
@@ -975,6 +987,8 @@ export function App() {
                   ['Expression', <FunctionIcon />, addExpression],
                   ['Note', <NoteIcon />, addNote],
                   ['Data', <TableIcon />, addData],
+                  ['Derivative', <DerivativeIcon />, () => addCalculus('derivative')],
+                  ['Antiderivative', <IntegralIcon />, () => addCalculus('antiderivative')],
                   ['Folder', <FolderIcon />, addFolder],
                 ] as const
               ).map(([name, icon, add]) => (
@@ -1022,6 +1036,7 @@ export function App() {
               onDuplicate={() => duplicate(expression.id)}
               onLeave={(direction) => leave(expression.id, direction)}
               onAddSliders={(names) => insert(expression.id, names.map((name) => `${nameToLatex(name)}=1`))}
+              onAddBelow={(latex) => focusOn(insert(expression.id, [latex]).id)}
             />
           ))}
         </div>

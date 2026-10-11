@@ -48,6 +48,9 @@ export interface Expression extends SliderMotion {
   fill?: boolean;
   // Present on a table of data: its columns as typed, and the curve fitted to them.
   data?: DataTable;
+  // On a derivative or antiderivative row: the function in `latex` is differentiated or
+  // antidifferentiated, and the result drawn.
+  calculus?: 'derivative' | 'antiderivative';
 }
 
 export interface DataTable {
@@ -84,6 +87,8 @@ interface RowProps {
   folderHidden: boolean;
   // For a table of data.
   dataResult?: DataResult;
+  // Adds an expression with this LaTeX just below the row.
+  onAddBelow(latex: string): void;
 }
 
 const plainName = (name: string) => nameToLatex(name).replace(/[\\{}]/g, '');
@@ -410,6 +415,14 @@ function MathRow({ expression, analysis, dark, focusToken, evaluate, depth, fold
   const color = colorOf(expression.color, dark);
   const columns = useMemo(() => tableColumns(plot), [plot]);
   const showMessage = error && !softError && missing.length === 0;
+  const kind = expression.calculus;
+  // A derivative or antiderivative row shows its result as a formula.
+  const calculusMarkup = useMemo(() => {
+    const result = analysis.calculus?.latex;
+    if (!kind || !result) return undefined;
+    const shown = kind === 'derivative' ? `\\frac{dy}{dx}=${result}` : `\\int y\\,dx=${result}+C`;
+    return convertLatexToMarkup(shown, { defaultMode: 'math' });
+  }, [kind, analysis.calculus?.latex]);
   // Results are typeset, and shown in exact form (π/2, √2, 1/3) when they have one:
   // worked out exactly where that was possible, otherwise recognised from the decimal.
   const valueMarkup = useMemo(
@@ -456,10 +469,12 @@ function MathRow({ expression, analysis, dark, focusToken, evaluate, depth, fold
       )}
 
       <div className="row-body">
+        {kind && <div className="row-kind">{kind === 'derivative' ? 'Derivative of' : 'Antiderivative of'}</div>}
         <MathField
           value={expression.latex}
           focusToken={focusToken}
-          label="Expression"
+          label={kind === 'derivative' ? 'Function to differentiate' : kind === 'antiderivative' ? 'Function to antidifferentiate' : 'Expression'}
+          placeholder={kind ? '\\text{a function of }x' : undefined}
           onChange={(latex) => on.onChange({ latex })}
           onEnter={on.onEnter}
           onDeleteEmpty={on.onRemove}
@@ -477,7 +492,16 @@ function MathRow({ expression, analysis, dark, focusToken, evaluate, depth, fold
             onMotion={on.onChange}
           />
         )}
-        {valueMarkup && <div className="row-value" dangerouslySetInnerHTML={{ __html: valueMarkup }} />}
+        {valueMarkup && !kind && <div className="row-value" dangerouslySetInnerHTML={{ __html: valueMarkup }} />}
+        {calculusMarkup && (
+          <div className="row-calculus">
+            <div className="row-value" dangerouslySetInnerHTML={{ __html: calculusMarkup }} />
+            <button className="chip" onClick={() => on.onAddBelow(`y=${analysis.calculus!.latex}`)}>
+              Add as expression
+            </button>
+          </div>
+        )}
+        {kind && analysis.calculus?.note && <div className="row-message">{analysis.calculus.note}</div>}
         {showMessage && <div className="row-message">{error}</div>}
         {missing.length > 0 && (
           <div className="row-actions">

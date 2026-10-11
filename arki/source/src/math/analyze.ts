@@ -5,6 +5,8 @@ import { ARITY, BINDERS, builtins } from './builtins';
 import { complex, tidy, type Complex } from './complex';
 import { differentiate } from './differentiate';
 import { exactLatex } from './exactValue';
+import { Unsupported, fromNode, pretty, toNode } from './algebra';
+import { antiderivative, derivative } from './calculus';
 import { MathError, nameToLatex, parse, spanOf, type Node, type Statement } from './parser';
 
 type Fn1 = (u: number) => number;
@@ -44,7 +46,13 @@ export interface Analysis {
   softError?: boolean;
   // Undefined variables that could be created as sliders.
   missing?: string[];
+  // For a derivative or antiderivative row: the result as a formula, when one was found
+  // (an antiderivative's without its + C), or a note on what is drawn instead.
+  calculus?: { latex?: string; note?: string };
 }
+
+// What a row does with the function typed into it, if it isn't an ordinary expression.
+export type RowKind = 'derivative' | 'antiderivative' | undefined;
 
 type Def =
   | { kind: 'var'; name: string; body: Node }
@@ -60,6 +68,7 @@ interface Entry {
   complex?: boolean;
   error?: MathError;
   missing: string[];
+  kind?: RowKind;
 }
 
 const CONSTANTS: Record<string, string> = { pi: 'Math.PI', e: 'Math.E', infty: 'Infinity' };
@@ -452,11 +461,11 @@ const sub = (a: Node, b: Node): Node => ({ t: 'bin', op: '-', a, b });
 const isLiteral = (node: Node) => node.t === 'num' || (node.t === 'neg' && node.a.t === 'num');
 const isVar = (node: Node, name: string) => node.t === 'var' && node.name === name;
 
-export function analyze(sources: string[]): Analysis[] {
+export function analyze(sources: string[], kinds: RowKind[] = []): Analysis[] {
   const defs = new Map<string, Def>();
 
-  const entries: Entry[] = sources.map((latex) => {
-    const entry: Entry = { free: new Set(), locals: new Set(), missing: [] };
+  const entries: Entry[] = sources.map((latex, index) => {
+    const entry: Entry = { free: new Set(), locals: new Set(), missing: [], kind: kinds[index] };
     if (latex.trim() === '') return entry;
     const parsed = parseCached(latex);
     if (parsed instanceof MathError) {
@@ -464,7 +473,8 @@ export function analyze(sources: string[]): Analysis[] {
       return entry;
     }
     entry.statement = parsed;
-    const def = definitionOf(parsed);
+    // A derivative or antiderivative row works on its function; it defines nothing.
+    const def = entry.kind ? undefined : definitionOf(parsed);
     if (def && defs.has(def.name)) {
       entry.error = new MathError(`${quote(def.name)} is already defined above`);
       return entry;
@@ -616,6 +626,7 @@ function describe(entry: Entry, st: Statement, world: World): Analysis {
       dyy: fn(differentiate(dy, 'y', isFunction)),
     };
   };
+  if (entry.kind) return calculusRow(entry.kind, st, world, isComplex, make, curve);
   const { def, free } = entry;
   const usesXY = free.has('x') || free.has('y');
 
@@ -692,4 +703,170 @@ function describe(entry: Entry, st: Statement, world: World): Analysis {
   const body = greater ? sub(rhs, lhs) : sub(lhs, rhs);
   const f = make(['x', 'y'], body);
   return { plot: { kind: 'implicit', f, ...partials(body), region: rel !== '=', strict: rel === '<' || rel === '>' } };
+}
+
+// `node` with each variable in `values` replaced, leaving any bound by a sum, integral
+// or the like inside it alone.
+function bindVariables(node: Node, values: ReadonlyMap<string, Node>): Node {
+  const go = (n: Node): Node => bindVariables(n, values);
+  const without = (name: string) => {
+    if (!values.has(name)) return values;
+    const rest = new Map(values);
+    rest.delete(name);
+    return rest;
+  };
+  switch (node.t) {
+    case 'num':
+      return node;
+    case 'var':
+      return values.get(node.name) ?? node;
+    case 'neg':
+      return { ...node, a: go(node.a) };
+    case 'bin':
+      return { ...node, a: go(node.a), b: go(node.b) };
+    case 'call':
+      return { ...node, args: node.args.map(go) };
+    case 'app': {
+      const args = node.args.map(go);
+      const pow = node.pow && go(node.pow);
+      const value = values.get(node.name);
+      // `name(args)` with the name given a value can only have been a product.
+      if (value) return { t: 'bin', op: '*', a: value, b: pow ? { t: 'bin', op: '^', a: args[0], b: pow } : args[0] };
+      return { ...node, args, pow };
+    }
+    case 'tuple':
+      return { ...node, items: node.items.map(go) };
+    case 'big':
+      return { ...node, lo: go(node.lo), hi: go(node.hi), body: bindVariables(node.body, without(node.index)) };
+    case 'int':
+      return { ...node, lo: go(node.lo), hi: go(node.hi), body: bindVariables(node.body, without(node.wrt)) };
+    case 'bind':
+      return { ...node, args: node.args.map(go), body: bindVariables(node.body, without(node.wrt)) };
+    case 'deriv':
+      return { ...node, body: bindVariables(node.body, without(node.wrt)) };
+    case 'piece':
+      return {
+        ...node,
+        branches: node.branches.map((b) => ({ when: { ...b.when, operands: b.when.operands.map(go) }, value: b.value && go(b.value) })),
+        otherwise: node.otherwise && go(node.otherwise),
+      };
+  }
+}
+
+// Calls to functions defined in the list replaced by what they are, so a formula can be
+// written out in full: with f(x) = x², f(x + 1) becomes (x + 1)².
+function inlineCalls(node: Node, defs: ReadonlyMap<string, Def>, depth = 0): Node {
+  if (depth > 20) throw new MathError('These functions are defined in terms of each other too deeply');
+  const go = (n: Node) => inlineCalls(n, defs, depth);
+  const walk = (n: Node): Node => {
+    if (n.t === 'app') {
+      const def = defs.get(n.name);
+      const args = n.args.map(go);
+      if (def?.kind === 'fn' && def.params.length === args.length) {
+        const body = inlineCalls(bindVariables(def.body, new Map(def.params.map((p, i) => [p, args[i]]))), defs, depth + 1);
+        return n.pow ? { t: 'bin', op: '^', a: body, b: go(n.pow) } : body;
+      }
+      return { ...n, args, pow: n.pow && go(n.pow) };
+    }
+    return mapChildren(n, go);
+  };
+  return walk(node);
+}
+
+function mapChildren(node: Node, f: (n: Node) => Node): Node {
+  switch (node.t) {
+    case 'num':
+    case 'var':
+      return node;
+    case 'neg':
+      return { ...node, a: f(node.a) };
+    case 'bin':
+      return { ...node, a: f(node.a), b: f(node.b) };
+    case 'call':
+      return { ...node, args: node.args.map(f) };
+    case 'app':
+      return { ...node, args: node.args.map(f), pow: node.pow && f(node.pow) };
+    case 'tuple':
+      return { ...node, items: node.items.map(f) };
+    case 'big':
+      return { ...node, lo: f(node.lo), hi: f(node.hi), body: f(node.body) };
+    case 'int':
+      return { ...node, lo: f(node.lo), hi: f(node.hi), body: f(node.body) };
+    case 'bind':
+      return { ...node, args: node.args.map(f), body: f(node.body) };
+    case 'deriv':
+      return { ...node, body: f(node.body) };
+    case 'piece':
+      return {
+        ...node,
+        branches: node.branches.map((b) => ({ when: { ...b.when, operands: b.when.operands.map(f) }, value: b.value && f(b.value) })),
+        otherwise: node.otherwise && f(node.otherwise),
+      };
+  }
+}
+
+// Whether two functions agree wherever both have a value, at a spread of points.
+function agree(f: (x: number) => number, g: (x: number) => number): boolean {
+  let compared = 0;
+  for (const x of [-2.3, -1.1, -0.4, 0.15, 0.7, 1.3, 2.9, 5.2]) {
+    const [a, b] = [f(x), g(x)];
+    if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+    if (Math.abs(a - b) > 1e-6 * Math.max(1, Math.abs(a))) return false;
+    compared++;
+  }
+  return compared > 0;
+}
+
+// A derivative or antiderivative row: the function typed (an expression in x, or
+// y = …) differentiated or antidifferentiated, drawn, and written out as a formula. A
+// formula is only shown once it has been checked against the function at several points.
+function calculusRow(
+  kind: Exclude<RowKind, undefined>,
+  st: Statement,
+  world: World,
+  isComplex: boolean,
+  make: (params: string[], body: Node) => (...args: number[]) => number,
+  curve: (kind: 'fx' | 'fy', body: Node) => Plot,
+): Analysis {
+  const body = !st.rel ? st.lhs : st.rel === '=' && !st.rel2 && isVar(st.lhs, 'y') ? st.rhs : undefined;
+  if (!body) throw new MathError('Type a function of x, like x² sin x');
+  if (freeOf(body).has('y')) throw new MathError('The function can only use x');
+  if (isComplex) throw new MathError('Functions with i in them can’t be done here');
+  const f = inlineCalls(body, world.defs);
+  const isFunction = (name: string) => world.defs.get(name)?.kind === 'fn';
+  const formula = (find: () => string | undefined) => {
+    try {
+      return find();
+    } catch (err) {
+      if (err instanceof Unsupported || err instanceof MathError) return undefined;
+      throw err;
+    }
+  };
+
+  if (kind === 'derivative') {
+    const d = differentiate(f, 'x', isFunction);
+    const check = make(['x'], d);
+    const latex = formula(() => {
+      const result = derivative(fromNode(f), 'x');
+      return agree(check, make(['x'], toNode(result))) ? pretty(result) : undefined;
+    });
+    return { plot: curve('fx', d), calculus: latex ? { latex } : { note: 'Drawn, but it has no formula here' } };
+  }
+
+  const integrand = make(['x'], f);
+  let found: Node | undefined;
+  const latex = formula(() => {
+    const F = antiderivative(fromNode(f), 'x');
+    if (!F) return undefined;
+    const node = toNode(F);
+    // Differentiated back, it has to give the function again.
+    if (!agree(integrand, make(['x'], differentiate(node, 'x', isFunction)))) return undefined;
+    found = node;
+    return pretty(F);
+  });
+  if (found && latex) return { plot: curve('fx', found), calculus: { latex } };
+  // No formula: the area from 0 to x is still an antiderivative, and can be drawn.
+  const t = 'arki_t';
+  const area: Node = { t: 'int', wrt: t, lo: { t: 'num', v: 0 }, hi: { t: 'var', name: 'x' }, body: bindVariables(f, new Map([['x', { t: 'var', name: t }]])) };
+  return { plot: curve('fx', area), calculus: { note: 'No formula found; drawn as the area from 0 to x' } };
 }
