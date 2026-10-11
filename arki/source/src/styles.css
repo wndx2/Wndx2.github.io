@@ -40,6 +40,8 @@
   --material-edge: rgba(255, 255, 255, 0.7);
   /* Glass: clear enough to see the graph through, evenly tinted, with a bright rim. */
   --glass: rgba(255, 255, 255, 0.2);
+  /* The expressions panel: clear, so the graph shows through, with a faint grey tint. */
+  --panel-glass: rgba(218, 218, 226, 0.3);
   --glass-rim: rgba(255, 255, 255, 0.75);
   --glass-inset: rgba(255, 255, 255, 0.5);
   /* Denser glass for menus, whose text has to stay readable over a busy graph. */
@@ -88,6 +90,7 @@
   --material-thin: rgba(58, 58, 64, 0.7);
   --material-edge: rgba(255, 255, 255, 0.1);
   --glass: rgba(28, 28, 32, 0.2);
+  --panel-glass: rgba(10, 10, 13, 0.45);
   --glass-rim: rgba(255, 255, 255, 0.16);
   --glass-inset: rgba(255, 255, 255, 0.08);
   --glass-strong: rgba(30, 30, 34, 0.42);
@@ -160,6 +163,13 @@ button {
   width: 100%;
   height: 100%;
   touch-action: none;
+}
+
+/* The graph's previous picture, fading out over the new one. */
+.graph canvas.graph-ghost {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
 .graph canvas[data-movable] {
@@ -421,9 +431,9 @@ button {
   max-height: calc(100% - var(--navbar) - 24px - var(--keyboard-inset));
   border-radius: 22px;
   border: 0.5px solid var(--glass-rim);
-  background: var(--glass);
-  -webkit-backdrop-filter: blur(18px) saturate(190%);
-  backdrop-filter: blur(18px) saturate(190%);
+  background: var(--panel-glass);
+  -webkit-backdrop-filter: blur(4px) saturate(190%);
+  backdrop-filter: blur(4px) saturate(190%);
   box-shadow:
     inset 0 1px 0 var(--glass-inset),
     inset 0 0 0 0.5px var(--glass-inset),
@@ -2113,11 +2123,21 @@ math-field::part(menu-toggle) {
   background-color: var(--glass-pill-hover);
 }
 
-/* Switching between light and dark: the old page fades into the new one. */
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation-duration: 320ms;
-  animation-timing-function: ease;
+/* Switching between light and dark: every colour eases to the new theme, on the live
+   page so glass stays blurred throughout (the graph fades separately, see Graph.tsx).
+   Only while switching, so it doesn't slow ordinary hover and press feedback. */
+:root.theme-switching,
+:root.theme-switching *:not(.graph-ghost),
+:root.theme-switching *::before,
+:root.theme-switching *::after {
+  transition:
+    background-color 500ms ease,
+    color 500ms ease,
+    border-color 500ms ease,
+    box-shadow 500ms ease,
+    fill 500ms ease,
+    stroke 500ms ease,
+    filter 500ms ease !important;
 }
 
 /* Accessibility preferences */

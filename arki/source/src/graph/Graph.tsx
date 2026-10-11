@@ -26,6 +26,9 @@ export interface GraphHandle {
   fitBounds(bounds: Bounds, aspect: number): boolean;
   // The graph as it is drawn, as a PNG at the screen's full resolution.
   snapshot(): Promise<Blob>;
+  // Lays a copy of the graph as it is now over it, fading away over `ms`: whatever is
+  // drawn next shows through gradually instead of all at once.
+  crossfade(ms: number): void;
 }
 
 interface GraphProps {
@@ -363,7 +366,21 @@ export function Graph({ ref, items, dark, settings, onMovePoint }: GraphProps) {
         canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('No image'))), 'image/png');
       });
 
-    api.current = { zoomBy: (factor) => zoomBy(factor), home, bounds, setBounds, aspect: () => view.aspect, fitBounds, snapshot, redraw, renderNow: render };
+    const crossfade = (ms: number) => {
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || canvas.width === 0) return;
+      const ghost = document.createElement('canvas');
+      ghost.className = 'graph-ghost';
+      ghost.width = canvas.width;
+      ghost.height = canvas.height;
+      ghost.getContext('2d')!.drawImage(canvas, 0, 0);
+      ghost.style.transition = `opacity ${ms}ms ease`;
+      canvas.after(ghost);
+      // Start fading on the next frame, once it has been drawn at full strength.
+      requestAnimationFrame(() => requestAnimationFrame(() => (ghost.style.opacity = '0')));
+      setTimeout(() => ghost.remove(), ms + 100);
+    };
+
+    api.current = { zoomBy: (factor) => zoomBy(factor), home, bounds, setBounds, aspect: () => view.aspect, fitBounds, snapshot, crossfade, redraw, renderNow: render };
 
     // Finds the plot under the pointer, measuring distance perpendicular to the curve
     // so steep curves are as easy to grab as flat ones.
@@ -693,6 +710,7 @@ export function Graph({ ref, items, dark, settings, onMovePoint }: GraphProps) {
     aspect: () => api.current?.aspect() ?? 1,
     fitBounds: (bounds, aspect) => api.current?.fitBounds(bounds, aspect) ?? false,
     snapshot: () => api.current?.snapshot() ?? Promise.reject(new Error('No graph')),
+    crossfade: (ms) => api.current?.crossfade(ms),
   }));
 
   useEffect(() => {

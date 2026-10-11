@@ -23,6 +23,8 @@ const NATURALS = convertLatexToMarkup('\\mathbb{N}', { defaultMode: 'math' });
 
 const STORAGE_KEY = 'arki:expressions:v1';
 const THEME_KEY = 'arki:theme';
+// How long switching between light and dark takes, in ms (as in the stylesheet).
+const THEME_FADE = 500;
 const PANEL_WIDTH = 360;
 const PANEL_MIN_WIDTH = 280;
 const PANEL_MIN_HEIGHT = 120;
@@ -122,7 +124,7 @@ function useTheme(): [boolean, () => void] {
     }
   });
   const dark = chosen ?? system;
-  // Set before the browser paints, so a cross-fade between themes captures the new one.
+  // Set before the browser paints, so the new colours are what the switch fades to.
   useLayoutEffect(() => {
     const root = document.documentElement;
     root.dataset.theme = dark ? 'dark' : 'light';
@@ -130,13 +132,18 @@ function useTheme(): [boolean, () => void] {
     root.setAttribute('theme', dark ? 'dark' : 'light');
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0e0e10' : '#ffffff');
   }, [dark]);
+  const switching = useRef(0);
   const toggle = () => {
-    // Where the browser can, the whole page cross-fades from one theme to the other,
-    // the graph included, instead of every colour snapping at once.
-    const apply = () => flushSync(() => setChosen(!dark));
-    if (document.startViewTransition && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      document.startViewTransition(apply);
-    } else apply();
+    // The colours ease from one theme to the other (see `theme-switching` in the
+    // stylesheet) on the live page, so glass keeps its blur all the way through. A
+    // snapshot cross-fade can't: blur isn't part of the snapshots.
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const root = document.documentElement;
+      root.classList.add('theme-switching');
+      clearTimeout(switching.current);
+      switching.current = window.setTimeout(() => root.classList.remove('theme-switching'), THEME_FADE + 60);
+    }
+    flushSync(() => setChosen(!dark));
     try {
       localStorage.setItem(THEME_KEY, dark ? 'light' : 'dark');
     } catch {
@@ -934,7 +941,15 @@ export function App() {
           </span>
         </h1>
         <div className="navbar-actions">
-          <button className="icon-button" aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} onClick={toggleTheme}>
+          <button
+            className="icon-button"
+            aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+            onClick={() => {
+              // The graph's old picture fades out over the new one as the colours change.
+              graph.current?.crossfade(THEME_FADE);
+              toggleTheme();
+            }}
+          >
             {dark ? <SunIcon /> : <MoonIcon />}
           </button>
           <a className="navbar-star" href="https://sleepywndud.github.io" target="_blank" rel="noopener" aria-label="Ni Brain Too Sht">
