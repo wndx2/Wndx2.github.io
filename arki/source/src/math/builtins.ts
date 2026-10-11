@@ -46,9 +46,17 @@ function sum(lo: number, hi: number, term: (n: number) => number): number {
   lo = Math.ceil(lo);
   hi = Math.floor(hi);
   if (!(hi - lo < MAX_TERMS)) return NaN;
+  // Neumaier's compensated sum: the rounding lost at each addition is kept and added back,
+  // so thousands of terms stay accurate enough for the total to be recognised exactly.
   let total = 0;
-  for (let n = lo; n <= hi; n++) total += term(n);
-  return total;
+  let lost = 0;
+  for (let n = lo; n <= hi; n++) {
+    const t = term(n);
+    const next = total + t;
+    lost += Math.abs(total) >= Math.abs(t) ? total - next + t : t - next + total;
+    total = next;
+  }
+  return total + lost;
 }
 
 function prod(lo: number, hi: number, term: (n: number) => number): number {

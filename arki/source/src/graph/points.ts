@@ -76,7 +76,8 @@ function zeros(h: (u: number) => number, from: number, to: number, steps: number
 
 type Fn2 = (x: number, y: number) => number;
 
-// Grid spacing, in pixels, for finding where an implicit curve turns.
+// Grid spacing, in pixels, for the two-variable solves: where an implicit curve turns,
+// and where two of them cross.
 const TURN_CELL = 8;
 
 // f at every corner of a grid of cols × rows cells, row by row from the bottom left.
@@ -163,6 +164,20 @@ export function findPoints(items: Drawable[], w: number, h: number, view: View):
 
   const curves = items.filter((it) => it.plot.kind === 'fx' || it.plot.kind === 'fy' || it.plot.kind === 'implicit');
 
+  // A grid over the view for the two-variable solves, and each implicit curve sampled on
+  // it once however many solves use it.
+  const cols = Math.ceil(w / TURN_CELL);
+  const rows = Math.ceil(h / TURN_CELL);
+  const sx = (right - left) / cols;
+  const sy = (top - bottom) / rows;
+  const sample = (g: Fn2) => sampleGrid(g, left, bottom, cols, rows, sx, sy);
+  const grids = new Map<string, Float64Array>();
+  const grid = (id: string, g: Fn2) => {
+    let samples = grids.get(id);
+    if (!samples) grids.set(id, (samples = sample(g)));
+    return samples;
+  };
+
   for (const { id, plot } of curves) {
     if (plot.kind === 'fx') {
       for (const x of alongX(plot.f)) add(x, 0, `${id}|x-axis`);
@@ -175,19 +190,26 @@ export function findPoints(items: Drawable[], w: number, h: number, view: View):
       for (const y of alongY(plot.d1)) add(plot.f(y), y, `${id}|stationary`);
       for (const y of alongY(plot.d2, true)) add(plot.f(y), y, `${id}|inflection`);
     } else if (plot.kind === 'implicit') {
-      const f = plot.f;
+      const { f, dx, dy, dxx, dxy, dyy } = plot;
       if (bottom <= 0 && top >= 0) for (const x of alongX((x) => f(x, 0))) add(x, 0, `${id}|x-axis`);
       if (left <= 0 && right >= 0) for (const y of alongY((y) => f(0, y))) add(0, y, `${id}|y-axis`);
+      const fs = grid(id, f);
       // Where the curve turns: a horizontal tangent (∂f/∂x = 0) is a highest or lowest
       // point, a vertical one (∂f/∂y = 0) a leftmost or rightmost.
-      const cols = Math.ceil(w / TURN_CELL);
-      const rows = Math.ceil(h / TURN_CELL);
-      const sx = (right - left) / cols;
-      const sy = (top - bottom) / rows;
-      const fs = sampleGrid(f, left, bottom, cols, rows, sx, sy);
-      for (const g of [plot.dx, plot.dy]) {
-        const gs = sampleGrid(g, left, bottom, cols, rows, sx, sy);
-        for (const [x, y] of solve2(f, g, fs, gs, left, bottom, cols, rows, sx, sy)) add(x, y, `${id}|stationary`);
+      for (const g of [dx, dy]) {
+        for (const [x, y] of solve2(f, g, fs, sample(g), left, bottom, cols, rows, sx, sy)) add(x, y, `${id}|stationary`);
+      }
+      // Where it changes the way it bends: the curvature's numerator changes sign. It is
+      // also zero where the gradient is (a crossing or a cusp), which is no inflection.
+      const bend = (x: number, y: number) => {
+        const fx = dx(x, y);
+        const fy = dy(x, y);
+        return dxx(x, y) * fy * fy - 2 * dxy(x, y) * fx * fy + dyy(x, y) * fx * fx;
+      };
+      for (const [x, y] of solve2(f, bend, fs, sample(bend), left, bottom, cols, rows, sx, sy)) {
+        const steep = Math.hypot(dx(x, y) / view.scale, dy(x, y) / scaleY(view));
+        const near = Math.hypot(dx(x + sx, y + sy) / view.scale, dy(x + sx, y + sy) / scaleY(view));
+        if (steep > 1e-4 * near) add(x, y, `${id}|inflection`);
       }
     }
   }
@@ -210,8 +232,9 @@ export function findPoints(items: Drawable[], w: number, h: number, view: View):
         for (const y of alongY((y) => p.f(y) - q.f(y))) add(p.f(y), y, key);
       } else if (p.kind === 'fy' && q.kind === 'implicit') {
         for (const y of alongY((y) => q.f(p.f(y), y))) add(p.f(y), y, key);
+      } else if (p.kind === 'implicit' && q.kind === 'implicit') {
+        for (const [x, y] of solve2(p.f, q.f, grid(a.id, p.f), grid(b.id, q.f), left, bottom, cols, rows, sx, sy)) add(x, y, key);
       }
-      // Two implicit curves need a two-variable solve, which isn't here yet.
     }
   }
 

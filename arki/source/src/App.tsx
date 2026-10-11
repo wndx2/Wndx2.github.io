@@ -4,15 +4,17 @@ import { DEFAULT_SETTINGS, type Drawable, type GraphSettings } from './graph/ren
 import { analyze } from './math/analyze';
 import { complexToLatex } from './math/exact';
 import { nameToLatex } from './math/parser';
-import { ExpressionRow, type Expression } from './ui/ExpressionRow';
+import { ExpressionRow, type DataResult, type Expression } from './ui/ExpressionRow';
+import { fit } from './math/regression';
 import { labelExpressions, labelToLatex, plainToLatex } from './ui/label';
 import { Popover } from './ui/Popover';
 import { snap, stepFor } from './ui/Slider';
-import { FolderIcon, FunctionIcon, NoteIcon, WrenchIcon } from './ui/icons';
-import { HomeIcon, KeyboardIcon, MinusIcon, MoonIcon, PlusIcon, SidebarIcon, SunIcon } from './ui/icons';
+import { FolderIcon, FunctionIcon, NoteIcon, TableIcon, WrenchIcon } from './ui/icons';
+import { HomeIcon, ImageIcon, KeyboardIcon, LinkIcon, MinusIcon, MoonIcon, PlusIcon, SidebarIcon, SunIcon } from './ui/icons';
 import { DEFAULT_COLOR, colorOf } from './ui/palette';
 import type { TableRange } from './ui/Table';
 import star from './images/star.png';
+import { decodeGraph, encodeGraph, linkTo, sharedInLocation } from './share';
 
 const STORAGE_KEY = 'arki:expressions:v1';
 const THEME_KEY = 'arki:theme';
@@ -301,6 +303,36 @@ function BoundsFields({ graph }: { graph: GraphHandle }) {
   );
 }
 
+// A short message at the foot of the graph, with something to do about it if anything.
+interface Notice {
+  text: string;
+  action?: { label: string; run(): void };
+}
+
+function useNotice(): [Notice | undefined, (notice: Notice) => void, () => void] {
+  const [notice, setNotice] = useState<Notice>();
+  const timer = useRef(0);
+  const show = useCallback((next: Notice) => {
+    clearTimeout(timer.current);
+    setNotice(next);
+    // One that offers an action stays long enough to be acted on.
+    timer.current = window.setTimeout(() => setNotice(undefined), next.action ? 8000 : 2400);
+  }, []);
+  const hide = useCallback(() => {
+    clearTimeout(timer.current);
+    setNotice(undefined);
+  }, []);
+  return [notice, show, hide];
+}
+
+// Saves a file the browser was given, where copying it wasn't allowed.
+function download(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const link = Object.assign(document.createElement('a'), { href: url, download: name });
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 interface SwitchProps {
   label: string;
   on: boolean;
@@ -341,6 +373,7 @@ export function App() {
   const narrow = useMediaQuery(NARROW);
   const panel = usePanelSize(narrow);
   const graph = useRef<GraphHandle>(null);
+  const [notice, showNotice, hideNotice] = useNotice();
 
   useEffect(() => {
     try {
@@ -351,8 +384,89 @@ export function App() {
   }, [expressions]);
 
   const analyses = useMemo(() => analyze(expressions.map((e) => e.latex)), [expressions]);
-  const latest = useRef({ expressions, analyses });
-  latest.current = { expressions, analyses };
+  const latest = useRef({ expressions, analyses, settings });
+  latest.current = { expressions, analyses, settings };
+
+  // A graph opened from a shared link replaces the one here, which can be had back.
+  useEffect(() => {
+    const open = async () => {
+      const encoded = sharedInLocation();
+      if (!encoded) return;
+      // The address goes back to plain straight away, so the link is only opened once
+      // (effects can run twice), and a reload doesn't open it over later work.
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+      // What was here, taken now: by the time the link is read it may already be replaced.
+      const before = latest.current;
+      const view = graph.current && { bounds: graph.current.bounds(), aspect: graph.current.aspect() };
+      const shared = await decodeGraph(encoded);
+      if (!shared) {
+        showNotice({ text: 'That link doesn’t hold a graph' });
+        return;
+      }
+      setExpressions(shared.expressions.map(restore));
+      changeSettings({ ...DEFAULT_SETTINGS, ...shared.settings });
+      const { bounds, aspect = 1 } = shared;
+      // The graph may not have been measured yet; it will have been a frame or two on.
+      if (bounds) {
+        let tries = 0;
+        const fit = () => {
+          if (!graph.current?.fitBounds(bounds, aspect) && ++tries < 30) requestAnimationFrame(fit);
+        };
+        fit();
+      }
+      showNotice({
+        text: 'Opened a shared graph',
+        action: {
+          label: 'Undo',
+          run: () => {
+            setExpressions(before.expressions);
+            changeSettings(before.settings);
+            if (view) graph.current?.fitBounds(view.bounds, view.aspect);
+          },
+        },
+      });
+    };
+    open();
+    window.addEventListener('hashchange', open);
+    return () => window.removeEventListener('hashchange', open);
+    // Runs once; what it needs at the time is read from `latest`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const shareLink = async () => {
+    const encoded = await encodeGraph({
+      expressions,
+      settings,
+      bounds: graph.current?.bounds(),
+      aspect: graph.current?.aspect(),
+    });
+    const url = linkTo(encoded);
+    try {
+      await navigator.clipboard.writeText(url);
+      showNotice({ text: 'Link copied' });
+    } catch {
+      // Without the clipboard, the link is left in the address bar to copy from there.
+      history.replaceState(null, '', url);
+      showNotice({ text: 'Copy the link from the address bar' });
+    }
+  };
+
+  const copyImage = async () => {
+    if (!graph.current) return;
+    // Handed to the clipboard as a promise, so Safari still counts it as part of the click.
+    const image = graph.current.snapshot();
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': image })]);
+      showNotice({ text: 'Image copied' });
+    } catch {
+      try {
+        download(await image, 'arki-graph.png');
+        showNotice({ text: 'Couldn’t copy, so the image was downloaded' });
+      } catch {
+        showNotice({ text: 'Couldn’t make an image of the graph' });
+      }
+    }
+  };
 
   // Playing sliders are all moved by one loop, a frame at a time.
   const playing = expressions.some((e) => e.playing);
@@ -448,6 +562,27 @@ export function App() {
     [expressions],
   );
 
+  // Every table of data worked out at once: each value typed may use the sliders and
+  // functions here, and a fitted curve goes through the rows where both are numbers.
+  const dataResults = useMemo(() => {
+    const out = new Map<string, DataResult>();
+    const tables = expressions.filter((e) => e.data);
+    if (tables.length === 0) return out;
+    const cells = tables.flatMap((e) => e.data!.x.flatMap((x, i) => [plainToLatex(x), plainToLatex(e.data!.y[i] ?? '')]));
+    const sources = expressions.map((e) => e.latex);
+    const found = analyze([...sources, ...cells]).slice(sources.length);
+    const number = (a: (typeof found)[number]) =>
+      a.value !== undefined && !a.imaginary && Number.isFinite(a.value) ? a.value : undefined;
+    let at = 0;
+    for (const e of tables) {
+      const values = e.data!.x.map((): [number | undefined, number | undefined] => [number(found[at++]), number(found[at++])]);
+      const rows = values.filter((v): v is [number, number] => v[0] !== undefined && v[1] !== undefined);
+      const model = e.data!.fit;
+      out.set(e.id, { values, fit: model ? fit(model, rows.map(([x]) => x), rows.map(([, y]) => y)) : undefined });
+    }
+    return out;
+  }, [expressions]);
+
   const folders = useMemo(() => new Map(expressions.filter((e) => e.folder !== undefined).map((e) => [e.id, e])), [expressions]);
   // Folders can sit inside folders, so what holds for a folder holds all the way down.
   const around = (e: Expression) => foldersAround(e, folders);
@@ -462,11 +597,28 @@ export function App() {
     const values = quoted.some((list) => list.length > 0)
       ? analyze([...sources, ...quoted.flat()])
           .slice(sources.length)
-          .map((a) => (a.value === undefined ? '\\text{undefined}' : complexToLatex(a.value, a.imaginary ?? 0)))
+          .map((a) => (a.value === undefined ? '\\text{undefined}' : a.exact ?? complexToLatex(a.value, a.imaginary ?? 0)))
       : [];
     let used = 0;
     expressions.forEach((expression, i) => {
       const own = values.slice(used, (used += quoted[i].length));
+      const data = dataResults.get(expression.id);
+      if (data) {
+        if (expression.hidden || foldersAround(expression, folders).some((folder) => folder.hidden)) return;
+        const color = colorOf(expression.color, dark);
+        const { pointStyle, lineStyle, lineWidth, opacity } = expression;
+        // Each row is a point of its own, so it can be hovered and labelled like one.
+        data.values.forEach(([x, y], row) => {
+          if (x === undefined || y === undefined) return;
+          out.push({ id: `${expression.id}#${row}`, plot: { kind: 'point', x, y }, color, pointStyle, opacity });
+        });
+        const curve = data.fit;
+        if (curve && typeof curve !== 'string') {
+          const { f, d1, d2 } = curve;
+          out.push({ id: `${expression.id}#fit`, plot: { kind: 'fx', f, d1, d2 }, color, lineStyle, lineWidth, opacity });
+        }
+        return;
+      }
       const plot = analyses[i].plot;
       if (!plot || expression.hidden || foldersAround(expression, folders).some((folder) => folder.hidden)) return;
       const label = plot.kind === 'point' && expression.label !== undefined ? labelToLatex(expression.label, own) : undefined;
@@ -475,7 +627,7 @@ export function App() {
       out.push({ id: expression.id, plot: fixed ? { ...plot, drag: undefined } : plot, color: colorOf(expression.color, dark), label, pointStyle: expression.pointStyle, lineStyle: expression.lineStyle, lineWidth: expression.lineWidth, opacity: expression.opacity, fill: expression.fill });
     });
     return out;
-  }, [expressions, analyses, dark, folders]);
+  }, [expressions, analyses, dark, folders, dataResults]);
 
   const focusOn = useCallback((id: string) => setFocus((f) => ({ id, token: f.token + 1 })), []);
 
@@ -654,6 +806,12 @@ export function App() {
     focusOn(note.id);
   };
 
+  const addData = () => {
+    const table: Expression = { ...newExpression(''), data: { x: [], y: [] } };
+    setExpressions((list) => [...list, table]);
+    focusOn(table.id);
+  };
+
   const addFolder = () => {
     const folder: Expression = { ...newExpression(''), folder: '' };
     setExpressions((list) => [...list, folder]);
@@ -662,7 +820,7 @@ export function App() {
 
   const toggleKeyboard = () => {
     // Switching it on with nothing being edited starts editing the last expression.
-    const last = [...visible].reverse().find((e) => e.note === undefined && e.folder === undefined);
+    const last = [...visible].reverse().find((e) => e.note === undefined && e.folder === undefined && !e.data);
     if (!keyboardOn && !focusedField() && last) focusOn(last.id);
     setKeyboardOn(!keyboardOn);
   };
@@ -732,6 +890,7 @@ export function App() {
                 [
                   ['Expression', <FunctionIcon />, addExpression],
                   ['Note', <NoteIcon />, addNote],
+                  ['Data', <TableIcon />, addData],
                   ['Folder', <FolderIcon />, addFolder],
                 ] as const
               ).map(([name, icon, add]) => (
@@ -772,6 +931,7 @@ export function App() {
               dark={dark}
               focusToken={focus.id === expression.id ? focus.token : 0}
               evaluate={evaluate}
+              dataResult={dataResults.get(expression.id)}
               onChange={(patch) => change(expression.id, patch)}
               onEnter={() => focusOn(insert(expression.id, ['']).id)}
               onRemove={() => remove(expression.id)}
@@ -813,6 +973,7 @@ export function App() {
             />
             <Switch label="Projector mode" on={settings.projector} onChange={(projector) => changeSettings({ projector })} />
             <Switch label="Lock view" on={settings.locked} onChange={(locked) => changeSettings({ locked })} />
+            <Switch label="Tangent line on trace" on={settings.tangent} onChange={(tangent) => changeSettings({ tangent })} />
             <Switch label="Axes" on={settings.axes} onChange={(axes) => changeSettings({ axes })} />
             <Switch
               label="Axis numbers"
@@ -863,7 +1024,32 @@ export function App() {
         <button className="icon-button glass" aria-label="Reset view" disabled={settings.locked} onClick={() => graph.current?.home()}>
           <HomeIcon />
         </button>
+        <div className="glass control-group">
+          <button className="icon-button" aria-label="Copy link to this graph" title="Copy link" onClick={shareLink}>
+            <LinkIcon />
+          </button>
+          <button className="icon-button" aria-label="Copy graph as an image" title="Copy image" onClick={copyImage}>
+            <ImageIcon />
+          </button>
+        </div>
       </div>
+
+      {notice && (
+        <div className="notice glass" role="status">
+          <span>{notice.text}</span>
+          {notice.action && (
+            <button
+              className="notice-action"
+              onClick={() => {
+                notice.action!.run();
+                hideNotice();
+              }}
+            >
+              {notice.action.label}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

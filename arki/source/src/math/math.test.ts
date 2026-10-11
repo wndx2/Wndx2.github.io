@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { analyze, type Analysis, type Plot } from './analyze';
 import { decimalToLatex, exactForm, surdPair, valueToLatex, complexToLatex } from './exact';
+import { fit } from './regression';
 import { applyTrigOption, trigTerms } from './trig';
 import { labelExpressions, labelToLatex } from '../ui/label';
 
@@ -474,5 +475,52 @@ assert.match(one('\\operatorname{polygon}\\left(\\left(0,0\\right),\\left(x,0\\r
 const r15 = Math.sqrt(15);
 assert.deepEqual(surdPair((885 + 14 * r15) / 330, (118 + 7 * r15) / 22), ['\\frac{885+14\\sqrt{15}}{330}', '\\frac{118+7\\sqrt{15}}{22}']);
 assert.equal(surdPair(Math.PI, Math.E), undefined);
+
+// A telescoping sum: 2022 − 1/2022, not the √4088482 it happens to be close to.
+assert.equal(valueToLatex(value('\\sum_{n=1}^{2021}\\sqrt{1+\\frac{1}{n^2}+\\frac{1}{\\left(n+1\\right)^2}}')), '\\frac{4088483}{2022}');
+assert.equal(exactForm(Math.sqrt(4088482)), undefined);
+assert.equal(exactForm(Math.PI * 1000 + 0.123456), undefined);
+
+// Exact values: fractions and square roots worked out exactly, not recognised from decimals.
+const exactOf = (...sources: string[]) => analyze(sources)[0].exact;
+assert.equal(exactOf('\\sum_{n=1}^{5000}\\sqrt{1+\\frac{1}{n^2}+\\frac{1}{\\left(n+1\\right)^2}}'), '\\frac{25010000}{5001}');
+assert.equal(exactOf('\\sum_{n=1}^{2021}\\frac{1}{n\\left(n+1\\right)}'), '\\frac{2021}{2022}');
+assert.equal(exactOf('\\prod_{k=2}^{100}\\left(1-\\frac{1}{k^2}\\right)'), '\\frac{101}{200}');
+assert.equal(exactOf('0.1+0.2'), '\\frac{3}{10}');
+assert.equal(exactOf('\\frac{1}{\\sqrt{3}-1}'), '\\frac{1+\\sqrt{3}}{2}');
+assert.equal(exactOf('\\sqrt{\\frac{8}{27}}'), '\\frac{2\\sqrt{6}}{9}');
+assert.equal(exactOf('\\left|1-\\sqrt{2}\\right|'), '\\sqrt{2}-1');
+assert.equal(exactOf('b', 'a=3', 'b=\\frac{a}{7}+\\sqrt{a^2}'), '\\frac{24}{7}');
+assert.equal(exactOf('f\\left(3\\right)', 'f(x)=\\frac{x}{x+1}'), '\\frac{3}{4}');
+// Beyond fractions and one square root, the decimal is used.
+assert.equal(exactOf('\\sqrt{2}+\\sqrt{3}'), undefined);
+assert.equal(exactOf('\\pi+1'), undefined);
+assert.equal(exactOf('\\sum_{n=1}^{100}\\frac{1}{n}'), undefined);
+
+// Regions between two bounds.
+const band2 = plot(one('x^2<y<x+2'), 'implicit');
+assert.ok(band2.region && band2.strict);
+assert.ok(band2.f(0, 1) < 0 && band2.f(0, 3) > 0 && band2.f(1, 0.5) > 0);
+const ring = plot(one('1\\le x^2+y^2\\le4'), 'implicit');
+assert.ok(!ring.strict && ring.f(1, 0.5) < 0 && ring.f(0, 0.5) > 0 && ring.f(3, 0) > 0);
+assert.ok(plot(one('x+2>y>x^2'), 'implicit').f(0, 1) < 0);
+assert.match(one('x<y>2').error!, /same way/);
+assert.match(one('0<y=x').error!, /inequalities/);
+
+// Curves of best fit.
+const fitted = (model: Parameters<typeof fit>[0], xs: number[], ys: number[]) => {
+  const result = fit(model, xs, ys);
+  assert.ok(typeof result !== 'string', result as string);
+  return result;
+};
+const line = fitted('linear', [1, 2, 3, 4, 5, 6], [1.2, 1.9, 3.2, 3.8, 5.1, 6.3]);
+assert.equal(line.latex, 'y=1.02x+0.01333');
+near(line.r2, 0.9901386748844375, 1e-12);
+assert.equal(fitted('quadratic', [-2, -1, 0, 1, 2], [9, 4, 1, 0, 1]).latex, 'y=x^{2}-2x+1');
+assert.equal(fitted('exponential', [0, 1, 2], [2, 2 * Math.exp(0.5), 2 * Math.E]).latex, 'y=2e^{0.5x}');
+assert.equal(fitted('power', [1, 2, 3], [3, 12, 27]).latex, 'y=3x^{2}');
+assert.equal(fitted('logarithmic', [1, Math.E, Math.E ** 2], [2, 5, 8]).latex, 'y=2+3\\ln x');
+assert.equal(fit('exponential', [0, 1], [1, -2]), 'Every y has to be positive');
+assert.equal(fit('quadratic', [1, 1, 1], [1, 2, 3]), 'Needs 3 different x values');
 
 console.log('math: all checks passed');

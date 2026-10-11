@@ -389,6 +389,7 @@ export function trigTerms(latex: string): TrigTerm[] {
 
   walk(statement.lhs, 'top');
   if (statement.rhs) walk(statement.rhs, 'top');
+  if (statement.rhs2) walk(statement.rhs2, 'top');
   // Left to right; where two pieces start together, the larger one first.
   return terms.sort((p, q) => p.start - q.start || q.end - p.end);
 }

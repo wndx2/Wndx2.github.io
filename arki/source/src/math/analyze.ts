@@ -4,6 +4,7 @@
 import { ARITY, BINDERS, builtins } from './builtins';
 import { complex, tidy, type Complex } from './complex';
 import { differentiate } from './differentiate';
+import { exactLatex } from './exactValue';
 import { MathError, nameToLatex, parse, spanOf, type Node, type Statement } from './parser';
 
 type Fn1 = (u: number) => number;
@@ -14,9 +15,9 @@ export type Plot =
   | { kind: 'fx'; f: Fn1; d1: Fn1; d2: Fn1 }
   // x = f(y), likewise.
   | { kind: 'fy'; f: Fn1; d1: Fn1; d2: Fn1 }
-  // The curve f(x, y) = 0, with f's partial derivatives for its turning points. With
-  // `region`, also the area where f < 0.
-  | { kind: 'implicit'; f: Fn2; dx: Fn2; dy: Fn2; region: boolean; strict: boolean }
+  // The curve f(x, y) = 0, with f's first and second partial derivatives for its turning
+  // and inflection points. With `region`, also the area where f < 0.
+  | { kind: 'implicit'; f: Fn2; dx: Fn2; dy: Fn2; dxx: Fn2; dxy: Fn2; dyy: Fn2; region: boolean; strict: boolean }
   | { kind: 'parametric'; x: (t: number) => number; y: (t: number) => number }
   | { kind: 'polar'; f: (theta: number) => number }
   // A closed shape through its vertices, in the order they were given.
@@ -35,6 +36,8 @@ export interface Analysis {
   value?: number;
   // The imaginary part of that result, when it has one.
   imaginary?: number;
+  // That result worked out exactly (fractions and square roots), as LaTeX, when it could be.
+  exact?: string;
   // Set when the expression is `name = number`, which the UI shows as a slider.
   slider?: { name: string; value: number };
   error?: string;
@@ -138,7 +141,7 @@ function collectFree(node: Node, bound: ReadonlySet<string>, out: Set<string>): 
 const freeOf = (node: Node) => collectFree(node, NO_LOCALS, new Set());
 
 function definitionOf(st: Statement): Def | undefined {
-  if (st.rel !== '=' || !st.rhs) return undefined;
+  if (st.rel !== '=' || !st.rhs || st.rel2) return undefined;
   const { lhs, rhs } = st;
   if (lhs.t === 'app' && !lhs.pow && lhs.name !== 'x' && lhs.name !== 'y') {
     const params = lhs.args.map((arg) => (arg.t === 'var' && !(arg.name in CONSTANTS) ? arg.name : ''));
@@ -435,6 +438,13 @@ function evaluate(body: Node, world: World, isComplex: boolean): Complex {
   return isComplex || (isFinite(z) && z.im !== 0) ? z : complex.of(NaN);
 }
 
+// A real result, with its exact form when one can be worked out.
+function withExact(analysis: Analysis, body: Node, world: World): Analysis {
+  if (analysis.value === undefined || analysis.imaginary !== undefined || !Number.isFinite(analysis.value)) return analysis;
+  const exact = exactLatex(body, world.defs, analysis.value);
+  return exact === undefined ? analysis : { ...analysis, exact };
+}
+
 const result = (z: Complex): Analysis => (z.im === 0 ? { value: z.re } : { value: z.re, imaginary: z.im });
 
 const sub = (a: Node, b: Node): Node => ({ t: 'bin', op: '-', a, b });
@@ -478,6 +488,7 @@ export function analyze(sources: string[]): Analysis[] {
     }
     collectFree(st.lhs, NO_LOCALS, entry.free);
     if (st.rhs) collectFree(st.rhs, NO_LOCALS, entry.free);
+    if (st.rhs2) collectFree(st.rhs2, NO_LOCALS, entry.free);
     entry.locals.add('x').add('y');
     if (st.lhs.t === 'tuple' && !st.rel) entry.locals.add('t');
     if (st.rel === '=' && isVar(st.lhs, 'r') && !defs.has('r') && entry.free.has('theta')) {
@@ -583,13 +594,36 @@ function describe(entry: Entry, st: Statement, world: World): Analysis {
     const d2 = differentiate(d1, v, isFunction);
     return { kind, f: make([v], body), d1: make([v], d1), d2: make([v], d2) };
   };
+  // f's partial derivatives, symbolic where the rules reach.
+  const partials = (body: Node) => {
+    // The rules for differentiating assume real numbers, so complex ones are measured.
+    const along = (g: Fn2, wrt: 'x' | 'y'): Fn2 =>
+      wrt === 'x' ? (x, y) => builtins.deriv((u) => g(u, y), x) : (x, y) => builtins.deriv((u) => g(x, u), y);
+    if (isComplex) {
+      const f = make(['x', 'y'], body);
+      const dx = along(f, 'x');
+      const dy = along(f, 'y');
+      return { dx, dy, dxx: along(dx, 'x'), dxy: along(dx, 'y'), dyy: along(dy, 'y') };
+    }
+    const dx = differentiate(body, 'x', isFunction);
+    const dy = differentiate(body, 'y', isFunction);
+    const fn = (node: Node) => make(['x', 'y'], node);
+    return {
+      dx: fn(dx),
+      dy: fn(dy),
+      dxx: fn(differentiate(dx, 'x', isFunction)),
+      dxy: fn(differentiate(dx, 'y', isFunction)),
+      dyy: fn(differentiate(dy, 'y', isFunction)),
+    };
+  };
   const { def, free } = entry;
   const usesXY = free.has('x') || free.has('y');
 
   if (def?.kind === 'var') {
     const literal = isLiteral(def.body);
     if (isComplex) return result(world.Z[def.name]);
-    return literal ? { slider: { name: def.name, value: world.S[def.name] } } : { value: world.S[def.name] };
+    if (literal) return { slider: { name: def.name, value: world.S[def.name] } };
+    return withExact({ value: world.S[def.name] }, def.body, world);
   }
   if (def?.kind === 'fn') {
     if (def.params.length !== 1) return {};
@@ -628,7 +662,21 @@ function describe(entry: Entry, st: Statement, world: World): Analysis {
     }
     if (free.has('y')) throw new MathError('Write this as an equation, like y = …');
     if (free.has('x')) return { plot: curve('fx', lhs) };
-    return result(evaluate(lhs, world, isComplex));
+    const z = evaluate(lhs, world, isComplex);
+    return isComplex ? result(z) : withExact(result(z), lhs, world);
+  }
+
+  if (st.rel2 && st.rhs2) {
+    // Between two bounds: inside both, so the larger of the two `f < 0`s is negative, and
+    // its zero is the region's edge, each bound only where the other holds.
+    const up = (r: string) => r === '<' || r === '<=';
+    if (rel === '=' || st.rel2 === '=') throw new MathError('A chain is for inequalities, like 0 < y < x');
+    if (up(rel) !== up(st.rel2)) throw new MathError('Both comparisons have to point the same way, like 0 < y < x');
+    if (!usesXY) throw new MathError('Nothing to plot — use x or y');
+    const [g1, g2] = up(rel) ? [sub(lhs, rhs), sub(rhs, st.rhs2)] : [sub(rhs, lhs), sub(st.rhs2, rhs)];
+    const body: Node = { t: 'call', fn: 'max', args: [g1, g2] };
+    const strict = rel.length === 1 && st.rel2.length === 1;
+    return { plot: { kind: 'implicit', f: make(['x', 'y'], body), ...partials(body), region: true, strict } };
   }
 
   if (rel === '=') {
@@ -643,13 +691,5 @@ function describe(entry: Entry, st: Statement, world: World): Analysis {
   const greater = rel === '>' || rel === '>=';
   const body = greater ? sub(rhs, lhs) : sub(lhs, rhs);
   const f = make(['x', 'y'], body);
-  let dx: Fn2, dy: Fn2;
-  if (isComplex) {
-    dx = (x, y) => builtins.deriv((u) => f(u, y), x);
-    dy = (x, y) => builtins.deriv((u) => f(x, u), y);
-  } else {
-    dx = make(['x', 'y'], differentiate(body, 'x', isFunction));
-    dy = make(['x', 'y'], differentiate(body, 'y', isFunction));
-  }
-  return { plot: { kind: 'implicit', f, dx, dy, region: rel !== '=', strict: rel === '<' || rel === '>' } };
+  return { plot: { kind: 'implicit', f, ...partials(body), region: rel !== '=', strict: rel === '<' || rel === '>' } };
 }

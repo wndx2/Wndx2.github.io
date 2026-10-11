@@ -41,6 +41,9 @@ export interface Statement {
   lhs: Node;
   rel?: Rel;
   rhs?: Node;
+  // A second comparison, for a region between two bounds: lhs rel rhs rel2 rhs2.
+  rel2?: Rel;
+  rhs2?: Node;
 }
 
 export class MathError extends Error {
@@ -355,9 +358,16 @@ class Parser {
       return { lhs };
     }
     const rhs = this.parseExpr();
-    if (this.parseRel()) throw new MathError('Chained comparisons aren’t supported yet');
+    const rel2 = this.parseRel();
+    if (!rel2) {
+      if (this.peek()) this.fail();
+      return { lhs, rel, rhs };
+    }
+    if (!this.peek()) throw new MathError('Incomplete expression', true);
+    const rhs2 = this.parseExpr();
+    if (this.parseRel()) throw new MathError('Only two comparisons can be chained, like 0 < y < x');
     if (this.peek()) this.fail();
-    return { lhs, rel, rhs };
+    return { lhs, rel, rhs, rel2, rhs2 };
   }
 
   private parseRel(): Rel | undefined {

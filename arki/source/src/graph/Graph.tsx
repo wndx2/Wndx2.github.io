@@ -18,6 +18,14 @@ export interface GraphHandle {
   bounds(): Bounds;
   // Shows exactly this part of the plane, stretching an axis if that is what it takes.
   setBounds(bounds: Bounds): void;
+  // How much longer a unit of y is drawn than a unit of x.
+  aspect(): number;
+  // Shows at least this part of the plane, centred, with the axes in this proportion; a
+  // screen of another shape shows more around it rather than stretching. False if the
+  // graph has no size yet.
+  fitBounds(bounds: Bounds, aspect: number): boolean;
+  // The graph as it is drawn, as a PNG at the screen's full resolution.
+  snapshot(): Promise<Blob>;
 }
 
 interface GraphProps {
@@ -138,10 +146,38 @@ export function Graph({ ref, items, dark, settings, onMovePoint }: GraphProps) {
       });
     };
 
+    // What the points were last found for, how long that took, and a later search that
+    // is waiting for things to settle.
+    let found: { items: Drawable[]; view: string } | undefined;
+    let searchTime = 0;
+    let search = 0;
+    const findNow = () => {
+      const started = performance.now();
+      points = findPoints(live.current.items, width, height, view);
+      searchTime = performance.now() - started;
+      found = { items: live.current.items, view: `${width},${height},${view.cx},${view.cy},${view.scale},${view.aspect}` };
+    };
+    // Finding the points is quick for most graphs and is done on every frame. Where it
+    // isn't (several implicit curves), it waits until the view and the curves have been
+    // still for a moment. Meanwhile the dots already found stay where they are on the
+    // plane while it pans, and are hidden if the curves themselves have changed.
+    const updatePoints = () => {
+      const items = live.current.items;
+      const key = `${width},${height},${view.cx},${view.cy},${view.scale},${view.aspect}`;
+      if (found && found.items === items && found.view === key) return;
+      clearTimeout(search);
+      if (!found || searchTime < 8) return findNow();
+      if (found.items !== items) points = [];
+      search = window.setTimeout(() => {
+        findNow();
+        redraw();
+      }, 120);
+    };
+
     const render = () => {
       const dpr = window.devicePixelRatio || 1;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      points = findPoints(live.current.items, width, height, view);
+      updatePoints();
       // Curves move (sliders), so pins follow the nearest point of the same pair.
       // A pin that is off screen is kept as it was; one whose point is gone is dropped.
       pinned = pinned.flatMap((pin) => {
@@ -310,7 +346,24 @@ export function Graph({ ref, items, dark, settings, onMovePoint }: GraphProps) {
       redraw();
     };
 
-    api.current = { zoomBy: (factor) => zoomBy(factor), home, bounds, setBounds, redraw };
+    const fitBounds = ({ xMin, xMax, yMin, yMax }: Bounds, aspect: number) => {
+      if (!(xMax > xMin && yMax > yMin && aspect > 0) || width === 0 || height === 0) return false;
+      animation = undefined;
+      view.aspect = aspect;
+      view.scale = clampScale(Math.min(width / (xMax - xMin), height / ((yMax - yMin) * aspect)));
+      view.cx = (xMin + xMax) / 2;
+      view.cy = (yMin + yMax) / 2;
+      redraw();
+      return true;
+    };
+    const snapshot = () =>
+      new Promise<Blob>((resolve, reject) => {
+        // Drawn now, so the picture is of what is on screen this moment.
+        render();
+        canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('No image'))), 'image/png');
+      });
+
+    api.current = { zoomBy: (factor) => zoomBy(factor), home, bounds, setBounds, aspect: () => view.aspect, fitBounds, snapshot, redraw };
 
     // Finds the plot under the pointer, measuring distance perpendicular to the curve
     // so steep curves are as easy to grab as flat ones.
@@ -616,6 +669,7 @@ export function Graph({ ref, items, dark, settings, onMovePoint }: GraphProps) {
     window.addEventListener('blur', onWindowBlur);
 
     return () => {
+      clearTimeout(search);
       observer.disconnect();
       cancelAnimationFrame(frame);
       canvas.removeEventListener('pointerdown', onPointerDown);
@@ -636,6 +690,9 @@ export function Graph({ ref, items, dark, settings, onMovePoint }: GraphProps) {
     home: () => api.current?.home(),
     bounds: () => api.current!.bounds(),
     setBounds: (bounds) => api.current?.setBounds(bounds),
+    aspect: () => api.current?.aspect() ?? 1,
+    fitBounds: (bounds, aspect) => api.current?.fitBounds(bounds, aspect) ?? false,
+    snapshot: () => api.current?.snapshot() ?? Promise.reject(new Error('No graph')),
   }));
 
   useEffect(() => {

@@ -133,9 +133,11 @@ export interface GraphSettings {
   yStep: string;
   xStepValue?: number;
   yStepValue?: number;
+  // A traced curve's tangent line at the traced point, with its equation in the label.
+  tangent: boolean;
 }
 
-export const DEFAULT_SETTINGS: GraphSettings = { grid: true, polar: false, projector: false, locked: false, axes: true, numbers: true, xLabel: '', yLabel: '', xStep: '', yStep: '' };
+export const DEFAULT_SETTINGS: GraphSettings = { grid: true, polar: false, projector: false, locked: false, axes: true, numbers: true, xLabel: '', yLabel: '', xStep: '', yStep: '', tangent: false };
 
 function gridSteps(scale: number): { major: number; minor: number } {
   const raw = 84 / scale;
@@ -916,9 +918,66 @@ export function draw(
   if (trace) {
     const item = items.find((it) => it.id === trace.id);
     const point = item && tracePoint(item.plot, trace);
+    const tangent = item && point && settings.tangent ? tangentAt(item.plot, point, trace) : undefined;
+    if (tangent && point) {
+      // Across the whole view, thinner than the curve so the two can be told apart.
+      const [x0, y0] = [fromX(point[0]), fromY(point[1])];
+      const reach = w + h;
+      const [ux, uy] = tangent.vertical ? [0, 1] : unit(1, (-tangent.slope * yScale) / scale);
+      ctx.beginPath();
+      ctx.moveTo(x0 - ux * reach, y0 - uy * reach);
+      ctx.lineTo(x0 + ux * reach, y0 + uy * reach);
+      ctx.strokeStyle = item.color;
+      ctx.lineWidth = 1.5 * k;
+      ctx.globalAlpha = 0.8;
+      ctx.setLineDash([6 * k, 4 * k]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
     const label = item && point && drawLabelledDot(ctx, w, h, view, theme, point, item.color, false, k);
     // A point with a label of its own keeps that one.
-    if (label && item.label === undefined) labels.push(label);
+    if (label && item.label === undefined) {
+      if (tangent && point) label.latex = `\\begin{array}{c}${label.latex}\\\\ ${tangentEquation(tangent, point)}\\end{array}`;
+      labels.push(label);
+    }
   }
   return labels;
+}
+
+const unit = (x: number, y: number): [number, number] => {
+  const length = Math.hypot(x, y);
+  return [x / length, y / length];
+};
+
+// The tangent's slope at a traced point, or that it is vertical.
+type Tangent = { vertical: false; slope: number } | { vertical: true };
+
+export function tangentAt(plot: Plot, point: [number, number], trace: Trace): Tangent | undefined {
+  let rise: number;
+  let run: number;
+  if (plot.kind === 'fx') [rise, run] = [plot.d1(trace.at), 1];
+  else if (plot.kind === 'fy') [rise, run] = [1, plot.d1(trace.at)];
+  // Along the curve f = 0 is across its gradient.
+  else if (plot.kind === 'implicit') [rise, run] = [-plot.dx(...point), plot.dy(...point)];
+  else return undefined;
+  if (!Number.isFinite(rise) || !Number.isFinite(run) || (rise === 0 && run === 0)) return undefined;
+  if (Math.abs(run) <= 1e-12 * Math.abs(rise)) return { vertical: true };
+  return { vertical: false, slope: rise / run };
+}
+
+// A number in a tangent's equation: exact when it is a simple one, otherwise to 4 figures.
+function coefficient(v: number): string {
+  const tidy = Math.abs(v) < 1e-12 ? 0 : v;
+  return exactForm(tidy, 1e-9, 12) ?? decimalToLatex(parseFloat(tidy.toPrecision(4)));
+}
+
+export function tangentEquation(tangent: Tangent, [x, y]: [number, number]): string {
+  if (tangent.vertical) return `x=${coefficient(x)}`;
+  const m = coefficient(tangent.slope);
+  const c = coefficient(y - tangent.slope * x);
+  if (m === '0') return `y=${c}`;
+  const slope = m === '1' ? '' : m === '-1' ? '-' : m;
+  const intercept = c === '0' ? '' : c.startsWith('-') ? c : `+${c}`;
+  return `y=${slope}x${intercept}`;
 }

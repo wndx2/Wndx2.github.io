@@ -50,6 +50,31 @@ function rational(x: number, maxQ: number, tolerance: number): [number, number] 
   return undefined;
 }
 
+// |x − p/q| without rounding: x is split into halves whose products with q are exact.
+// Worked out the obvious way, p/q of a large x can round to x itself and look perfect.
+function gap(x: number, p: number, q: number): number {
+  const c = 134217729 * x;
+  const hi = c - (c - x);
+  return Math.abs(hi * q - p + (x - hi) * q) / q;
+}
+
+// A fraction with a large denominator, found as a continued-fraction convergent. Only
+// one that fits far better than its size explains is kept (|x − p/q|·q² tiny): a random
+// decimal has such a convergent about once in 200 000, but 2022 − 1/2022 has one.
+function closeFraction(x: number, tolerance: number): [number, number] | undefined {
+  let [p0, q0, p1, q1] = [1, 0, Math.floor(x), 1];
+  let rest = x - Math.floor(x);
+  while (q1 <= 1e6 && Math.abs(p1) <= 1e15) {
+    const error = gap(x, p1, q1);
+    if (error <= tolerance * Math.max(1, Math.abs(x)) && error * q1 * q1 <= 1e-6) return [p1, q1];
+    if (rest === 0) return undefined;
+    const a = Math.floor(1 / rest);
+    rest = 1 / rest - a;
+    [p0, q0, p1, q1] = [p1, q1, a * p1 + p0, a * q1 + q0];
+  }
+  return undefined;
+}
+
 // Writes (p/q) · top / bottom as a single fraction: \frac{3\pi}{2}, -\sqrt{2}, \frac{2}{e}.
 function term(p: number, q: number, top = '', bottom = ''): string {
   const sign = p < 0 ? '-' : '';
@@ -73,6 +98,9 @@ export function exactForm(v: number, tolerance = 1e-11, maxDenominator = 1000): 
 
   const plain = rational(v, maxDenominator, tolerance);
   if (plain) return term(plain[0], plain[1]);
+  // Larger denominators only where the bound is meant for exact values, not arbitrary ones.
+  const large = maxDenominator >= 1000 ? closeFraction(v, tolerance) : undefined;
+  if (large) return term(large[0], large[1]);
 
   for (const [value, top, bottom] of FACTORS) {
     const r = rational(v / value, 12, tolerance);
@@ -81,8 +109,10 @@ export function exactForm(v: number, tolerance = 1e-11, maxDenominator = 1000): 
 
   // A square root of a fraction: √(p/q) = k√m / q once the square part k² is pulled out.
   // Matching v² is looser than matching v for small values, so confirm against v itself.
+  // The number under the root is kept small: any large number is near the square of
+  // something, so √4088482 would pass for 2022 − 1/2022.
   const square = rational(v * v, 50, tolerance);
-  if (square && close(Math.abs(v), Math.sqrt(square[0] / square[1]))) {
+  if (square && square[0] * square[1] <= 10000 && close(Math.abs(v), Math.sqrt(square[0] / square[1]))) {
     const [p, q] = square;
     let inside = p * q;
     let outside = 1;
@@ -98,7 +128,7 @@ export function exactForm(v: number, tolerance = 1e-11, maxDenominator = 1000): 
 
   // A cube root of a fraction, written with a whole number under the root: ∛(p/q) = ∛(p·q²) / q.
   const cube = rational(v * v * v, 12, tolerance);
-  if (cube && close(v, Math.cbrt(cube[0] / cube[1]))) {
+  if (cube && Math.abs(cube[0]) * cube[1] * cube[1] <= 10000 && close(v, Math.cbrt(cube[0] / cube[1]))) {
     const [p, q] = cube;
     return term(Math.sign(p), q, `\\sqrt[3]{${Math.abs(p) * q * q}}`);
   }

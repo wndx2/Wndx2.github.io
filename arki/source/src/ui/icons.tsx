@@ -190,3 +190,20 @@ export const WarningIcon = () => (
     <circle cx="10" cy="14" r="0.4" fill="currentColor" />
   </Icon>
 );
+
+// Two links of a chain: a link to share.
+export const LinkIcon = () => (
+  <Icon>
+    <path d="M8.5 11.5a3.25 3.25 0 0 0 4.6 0l2.65-2.65a3.25 3.25 0 0 0-4.6-4.6L10.1 5.3" />
+    <path d="M11.5 8.5a3.25 3.25 0 0 0-4.6 0L4.25 11.15a3.25 3.25 0 0 0 4.6 4.6L9.9 14.7" />
+  </Icon>
+);
+
+// A framed picture: a copy of the graph as an image.
+export const ImageIcon = () => (
+  <Icon>
+    <rect x="3" y="4" width="14" height="12" rx="2.25" />
+    <circle cx="7.5" cy="8.25" r="1.25" />
+    <path d="M3.5 14.5l4-4 3 3 2-2 4 4" />
+  </Icon>
+);
