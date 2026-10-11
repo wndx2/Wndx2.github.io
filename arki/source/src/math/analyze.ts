@@ -7,14 +7,16 @@ import { differentiate } from './differentiate';
 import { MathError, nameToLatex, parse, spanOf, type Node, type Statement } from './parser';
 
 type Fn1 = (u: number) => number;
+type Fn2 = (x: number, y: number) => number;
 
 export type Plot =
   // y = f(x), with its first and second derivatives for stationary and inflection points.
   | { kind: 'fx'; f: Fn1; d1: Fn1; d2: Fn1 }
   // x = f(y), likewise.
   | { kind: 'fy'; f: Fn1; d1: Fn1; d2: Fn1 }
-  // The curve f(x, y) = 0. With `region`, also the area where f < 0.
-  | { kind: 'implicit'; f: (x: number, y: number) => number; region: boolean; strict: boolean }
+  // The curve f(x, y) = 0, with f's partial derivatives for its turning points. With
+  // `region`, also the area where f < 0.
+  | { kind: 'implicit'; f: Fn2; dx: Fn2; dy: Fn2; region: boolean; strict: boolean }
   | { kind: 'parametric'; x: (t: number) => number; y: (t: number) => number }
   | { kind: 'polar'; f: (theta: number) => number }
   // A closed shape through its vertices, in the order they were given.
@@ -639,6 +641,15 @@ function describe(entry: Entry, st: Statement, world: World): Analysis {
   if (!usesXY) throw new MathError('Nothing to plot — use x or y');
 
   const greater = rel === '>' || rel === '>=';
-  const f = make(['x', 'y'], greater ? sub(rhs, lhs) : sub(lhs, rhs));
-  return { plot: { kind: 'implicit', f, region: rel !== '=', strict: rel === '<' || rel === '>' } };
+  const body = greater ? sub(rhs, lhs) : sub(lhs, rhs);
+  const f = make(['x', 'y'], body);
+  let dx: Fn2, dy: Fn2;
+  if (isComplex) {
+    dx = (x, y) => builtins.deriv((u) => f(u, y), x);
+    dy = (x, y) => builtins.deriv((u) => f(x, u), y);
+  } else {
+    dx = make(['x', 'y'], differentiate(body, 'x', isFunction));
+    dy = make(['x', 'y'], differentiate(body, 'y', isFunction));
+  }
+  return { plot: { kind: 'implicit', f, dx, dy, region: rel !== '=', strict: rel === '<' || rel === '>' } };
 }

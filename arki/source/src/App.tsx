@@ -12,6 +12,7 @@ import { FolderIcon, FunctionIcon, NoteIcon, WrenchIcon } from './ui/icons';
 import { HomeIcon, KeyboardIcon, MinusIcon, MoonIcon, PlusIcon, SidebarIcon, SunIcon } from './ui/icons';
 import { DEFAULT_COLOR, colorOf } from './ui/palette';
 import type { TableRange } from './ui/Table';
+import star from './images/star.png';
 
 const STORAGE_KEY = 'arki:expressions:v1';
 const THEME_KEY = 'arki:theme';
@@ -682,8 +683,8 @@ export function App() {
           <button className="icon-button" aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} onClick={toggleTheme}>
             {dark ? <SunIcon /> : <MoonIcon />}
           </button>
-          <a href="https://sleepywndud.github.io" target="_blank" rel="noopener">
-            NI BRAIN TOO SHT
+          <a className="navbar-star" href="https://sleepywndud.github.io" target="_blank" rel="noopener" aria-label="Ni Brain Too Sht">
+            <img src={star} alt="" />
           </a>
         </div>
       </nav>

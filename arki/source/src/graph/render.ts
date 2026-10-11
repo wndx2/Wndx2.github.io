@@ -2,7 +2,7 @@
 // the caller has already scaled the context for the device pixel ratio.
 
 import type { Plot } from '../math/analyze';
-import { decimalToLatex, exactForm } from '../math/exact';
+import { decimalToLatex, exactForm, surdPair } from '../math/exact';
 import type { PointOfInterest } from './points';
 
 // `cx, cy` is the point of the plane at the centre of the canvas; `scale` is pixels per
@@ -76,9 +76,11 @@ const DASHES: Record<LineStyle, number[]> = { dashed: [7, 6], dotted: [0, 6] };
 const dashes = (style: LineStyle, width: number) => DASHES[style].map((length) => (length * width) / CURVE_WIDTH);
 
 // A highlighted point on one plot; `at` is the value of that plot's independent variable.
+// An implicit curve has none, so `on` is the point itself, kept on the curve as it moves.
 export interface Trace {
   id: string;
   at: number;
+  on?: [number, number];
 }
 
 const FONT = 'ChosunSm, -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
@@ -651,13 +653,45 @@ function drawImplicit(
   ctx.setLineDash(dash);
 }
 
+// The point of an implicit curve nearest (x, y), by Newton steps along the gradient.
+// Distances are measured in pixels, `ux` and `uy` being the size of one along each
+// axis, so a stretched view still picks the point that looks nearest.
+export function projectImplicit(
+  plot: Extract<Plot, { kind: 'implicit' }>,
+  x: number,
+  y: number,
+  ux = 1,
+  uy = 1,
+): [number, number] | undefined {
+  for (let step = 0; step < 12; step++) {
+    const value = plot.f(x, y);
+    if (!Number.isFinite(value)) return undefined;
+    // The gradient per pixel.
+    const gx = plot.dx(x, y) * ux;
+    const gy = plot.dy(x, y) * uy;
+    const norm = gx * gx + gy * gy;
+    if (!norm || !Number.isFinite(norm)) return undefined;
+    const px = (value * gx) / norm;
+    const py = (value * gy) / norm;
+    x -= px * ux;
+    y -= py * uy;
+    if (Math.hypot(px, py) < 1e-6) break;
+  }
+  return Math.abs(plot.f(x, y)) < 1e-6 * (Math.hypot(plot.dx(x, y) * ux, plot.dy(x, y) * uy) || 1) ? [x, y] : undefined;
+}
+
 // Where a trace sits on a plot, in plane coordinates.
-export function tracePoint(plot: Plot, at: number): [number, number] | undefined {
+export function tracePoint(plot: Plot, trace: Trace): [number, number] | undefined {
   let p: [number, number];
-  if (plot.kind === 'fx') p = [at, plot.f(at)];
-  else if (plot.kind === 'fy') p = [plot.f(at), at];
+  if (plot.kind === 'fx') p = [trace.at, plot.f(trace.at)];
+  else if (plot.kind === 'fy') p = [plot.f(trace.at), trace.at];
   else if (plot.kind === 'point') p = [plot.x, plot.y];
-  else return undefined;
+  else if (plot.kind === 'implicit' && trace.on) {
+    // The curve may have moved (a slider) since the point was put on it.
+    const on = projectImplicit(plot, trace.on[0], trace.on[1]);
+    if (!on) return undefined;
+    p = on;
+  } else return undefined;
   return Number.isFinite(p[0]) && Number.isFinite(p[1]) ? p : undefined;
 }
 
@@ -673,14 +707,21 @@ export interface Label {
 
 // A point's coordinates as they are written in a label.
 function coordinates(view: View, point: [number, number], fixed: boolean): string {
-  const text = (v: number, scale: number) => {
+  // Deep zooms need a tighter match, or a genuinely tiny value would be called 0.
+  const exact = (v: number, scale: number) => exactForm(v, Math.min(1e-11, 1e-6 / scale), fixed ? 1000 : 12);
+  const decimal = (v: number, scale: number) => {
     // Show one more digit than a pixel can resolve at this zoom.
     const digits = Math.max(0, Math.min(12, Math.ceil(Math.log10(scale)) + 1));
-    // Deep zooms need a tighter match, or a genuinely tiny value would be called 0.
-    const tolerance = Math.min(1e-11, 1e-6 / scale);
-    return exactForm(v, tolerance, fixed ? 1000 : 12) ?? decimalToLatex(parseFloat(v.toFixed(digits)));
+    return decimalToLatex(parseFloat(v.toFixed(digits)));
   };
-  return `\\left(${text(point[0], view.scale)},\\ ${text(point[1], scaleY(view))}\\right)`;
+  let x = exact(point[0], view.scale);
+  let y = exact(point[1], scaleY(view));
+  // Coordinates too intricate to recognise one at a time may still be recognised together.
+  if (fixed && (!x || !y)) {
+    const pair = surdPair(point[0], point[1]);
+    if (pair) [x, y] = [x ?? pair[0], y ?? pair[1]];
+  }
+  return `\\left(${x ?? decimal(point[0], view.scale)},\\ ${y ?? decimal(point[1], scaleY(view))}\\right)`;
 }
 
 // Draws the dot and returns its coordinate label.
@@ -874,7 +915,7 @@ export function draw(
 
   if (trace) {
     const item = items.find((it) => it.id === trace.id);
-    const point = item && tracePoint(item.plot, trace.at);
+    const point = item && tracePoint(item.plot, trace);
     const label = item && point && drawLabelledDot(ctx, w, h, view, theme, point, item.color, false, k);
     // A point with a label of its own keeps that one.
     if (label && item.label === undefined) labels.push(label);

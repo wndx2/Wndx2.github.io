@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { analyze, type Analysis, type Plot } from './analyze';
-import { decimalToLatex, exactForm, valueToLatex, complexToLatex } from './exact';
+import { decimalToLatex, exactForm, surdPair, valueToLatex, complexToLatex } from './exact';
 import { applyTrigOption, trigTerms } from './trig';
 import { labelExpressions, labelToLatex } from '../ui/label';
 
@@ -151,7 +151,10 @@ near(plot(one('r=1+\\cos\\theta'), 'polar').f(0), 2);
 
 const circle = plot(one('x^2+y^2=25'), 'implicit');
 near(circle.f(3, 4), 0);
+near(circle.dx(3, 4), 6);
+near(circle.dy(3, 4), 8);
 assert.equal(circle.region, false);
+near(plot(one('xy+\\sin y=1'), 'implicit').dy(2, 0), 3);
 
 const below = plot(one('y>x'), 'implicit');
 assert.ok(below.region && below.strict);
@@ -466,5 +469,10 @@ assert.match(one('\\operatorname{polygon}\\left(\\left(0,0\\right),\\left(2,0\\r
 assert.equal(one('\\operatorname{polygon}\\left(\\left(0,0\\right)\\right)').softError, true);
 assert.match(one('1+\\operatorname{polygon}\\left(\\left(0,0\\right),\\left(2,0\\right),\\left(1,1\\right)\\right)').error ?? '', /can’t be used as a number/);
 assert.match(one('\\operatorname{polygon}\\left(\\left(0,0\\right),\\left(x,0\\right),\\left(1,1\\right)\\right)').error ?? '', /x or y/);
+
+// A point whose coordinates share one square root: the top of a tilted ellipse.
+const r15 = Math.sqrt(15);
+assert.deepEqual(surdPair((885 + 14 * r15) / 330, (118 + 7 * r15) / 22), ['\\frac{885+14\\sqrt{15}}{330}', '\\frac{118+7\\sqrt{15}}{22}']);
+assert.equal(surdPair(Math.PI, Math.E), undefined);
 
 console.log('math: all checks passed');

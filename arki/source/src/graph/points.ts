@@ -74,6 +74,81 @@ function zeros(h: (u: number) => number, from: number, to: number, steps: number
   return out;
 }
 
+type Fn2 = (x: number, y: number) => number;
+
+// Grid spacing, in pixels, for finding where an implicit curve turns.
+const TURN_CELL = 8;
+
+// f at every corner of a grid of cols × rows cells, row by row from the bottom left.
+function sampleGrid(f: Fn2, left: number, bottom: number, cols: number, rows: number, sx: number, sy: number) {
+  const out = new Float64Array((cols + 1) * (rows + 1));
+  for (let j = 0; j <= rows; j++) {
+    for (let i = 0; i <= cols; i++) out[j * (cols + 1) + i] = f(left + i * sx, bottom + j * sy);
+  }
+  return out;
+}
+
+// Common solutions of f = 0 and g = 0, given both sampled on a grid. Every cell where
+// both change sign seeds Newton's method, which keeps a solution only if it converges
+// close to that cell. A g that is zero throughout (a line has no turn) never seeds.
+function solve2(
+  f: Fn2,
+  g: Fn2,
+  fs: Float64Array,
+  gs: Float64Array,
+  left: number,
+  bottom: number,
+  cols: number,
+  rows: number,
+  sx: number,
+  sy: number,
+): [number, number][] {
+  const straddles = (a: number, b: number, c: number, d: number) => {
+    const lo = Math.min(a, b, c, d);
+    const hi = Math.max(a, b, c, d);
+    return lo <= 0 && hi >= 0 && hi > lo;
+  };
+  // Step size for the numeric Jacobian: a small fraction of a cell.
+  const ex = sx * 1e-4;
+  const ey = sy * 1e-4;
+  const out: [number, number][] = [];
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      const k = j * (cols + 1) + i;
+      const corners = [k, k + 1, k + cols + 1, k + cols + 2];
+      const fc = corners.map((c) => fs[c]);
+      const gc = corners.map((c) => gs[c]);
+      if (!fc.every(Number.isFinite) || !gc.every(Number.isFinite)) continue;
+      if (!straddles(fc[0], fc[1], fc[2], fc[3]) || !straddles(gc[0], gc[1], gc[2], gc[3])) continue;
+      const x0 = left + (i + 0.5) * sx;
+      const y0 = bottom + (j + 0.5) * sy;
+      let x = x0;
+      let y = y0;
+      for (let step = 0; step < 40; step++) {
+        const F = f(x, y);
+        const G = g(x, y);
+        const fx = (f(x + ex, y) - f(x - ex, y)) / (2 * ex);
+        const fy = (f(x, y + ey) - f(x, y - ey)) / (2 * ey);
+        const gx = (g(x + ex, y) - g(x - ex, y)) / (2 * ex);
+        const gy = (g(x, y + ey) - g(x, y - ey)) / (2 * ey);
+        const det = fx * gy - fy * gx;
+        if (!det || !Number.isFinite(det)) break;
+        const dx = (F * gy - G * fy) / det;
+        const dy = (G * fx - F * gx) / det;
+        x -= dx;
+        y -= dy;
+        if (Math.abs(dx) < sx * 1e-12 && Math.abs(dy) < sy * 1e-12) break;
+      }
+      if (Math.abs(x - x0) > 1.5 * sx || Math.abs(y - y0) > 1.5 * sy) continue;
+      const fScale = Math.max(...fc.map(Math.abs));
+      const gScale = Math.max(...gc.map(Math.abs));
+      if (Math.abs(f(x, y)) <= 1e-7 * fScale && Math.abs(g(x, y)) <= 1e-7 * gScale) out.push([x, y]);
+      if (out.length > MAX_PER_PAIR) return [];
+    }
+  }
+  return out;
+}
+
 export function findPoints(items: Drawable[], w: number, h: number, view: View): PointOfInterest[] {
   const left = view.cx - w / 2 / view.scale;
   const right = view.cx + w / 2 / view.scale;
@@ -103,6 +178,17 @@ export function findPoints(items: Drawable[], w: number, h: number, view: View):
       const f = plot.f;
       if (bottom <= 0 && top >= 0) for (const x of alongX((x) => f(x, 0))) add(x, 0, `${id}|x-axis`);
       if (left <= 0 && right >= 0) for (const y of alongY((y) => f(0, y))) add(0, y, `${id}|y-axis`);
+      // Where the curve turns: a horizontal tangent (∂f/∂x = 0) is a highest or lowest
+      // point, a vertical one (∂f/∂y = 0) a leftmost or rightmost.
+      const cols = Math.ceil(w / TURN_CELL);
+      const rows = Math.ceil(h / TURN_CELL);
+      const sx = (right - left) / cols;
+      const sy = (top - bottom) / rows;
+      const fs = sampleGrid(f, left, bottom, cols, rows, sx, sy);
+      for (const g of [plot.dx, plot.dy]) {
+        const gs = sampleGrid(g, left, bottom, cols, rows, sx, sy);
+        for (const [x, y] of solve2(f, g, fs, gs, left, bottom, cols, rows, sx, sy)) add(x, y, `${id}|stationary`);
+      }
     }
   }
 

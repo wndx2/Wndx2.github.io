@@ -1,7 +1,7 @@
 import { useEffect, useImperativeHandle, useRef, type Ref } from 'react';
 import { convertLatexToMarkup } from 'mathlive';
 import { findPoints, type PointOfInterest } from './points';
-import { DARK, LIGHT, draw, scaleY, sizeOf, type Drawable, type GraphSettings, type Label, type Trace, type View } from './render';
+import { DARK, LIGHT, draw, projectImplicit, scaleY, sizeOf, type Drawable, type GraphSettings, type Label, type Trace, type View } from './render';
 import { Spring, decay } from './spring';
 
 // The part of the plane on show: the values at the edges of the graph.
@@ -337,6 +337,16 @@ export function Graph({ ref, items, dark, settings, onMovePoint }: GraphProps) {
           // The slope as it appears on screen.
           const slope = ((plot.f(at + px) - plot.f(at - px)) / (2 * px)) * (across / along);
           distance = (Math.abs(value - other) * across) / Math.sqrt(1 + (Number.isFinite(slope) ? slope * slope : 0));
+        } else if (plot.kind === 'implicit') {
+          const on = projectImplicit(plot, x, y, 1 / view.scale, 1 / yScale);
+          if (on) {
+            distance = Math.hypot((on[0] - x) * view.scale, (on[1] - y) * yScale);
+            if (distance < bestDistance) {
+              bestDistance = distance;
+              best = { id, at: 0, on };
+            }
+          }
+          continue;
         }
         if (distance < bestDistance) {
           bestDistance = distance;
@@ -429,7 +439,7 @@ export function Graph({ ref, items, dark, settings, onMovePoint }: GraphProps) {
           else delete canvas.dataset.movable;
           const point = movable ? undefined : nearestPoint(p.x, p.y, POINT_RADIUS);
           const hit = point ? undefined : hitTest(p.x, p.y);
-          if (point !== hovered || hit?.id !== trace?.id || hit?.at !== trace?.at) {
+          if (point !== hovered || hit?.id !== trace?.id || hit?.at !== trace?.at || hit?.on !== trace?.on) {
             hovered = point;
             trace = hit;
             redraw();
@@ -461,6 +471,11 @@ export function Graph({ ref, items, dark, settings, onMovePoint }: GraphProps) {
         const [x, y] = toPlane(p.x, p.y);
         if (item?.plot.kind === 'fx') trace = { id: trace.id, at: x };
         else if (item?.plot.kind === 'fy') trace = { id: trace.id, at: y };
+        else if (item?.plot.kind === 'implicit') {
+          // Follows the pointer along the curve; a point the curve doesn't reach keeps the last one.
+          const on = projectImplicit(item.plot, x, y, 1 / view.scale, 1 / scaleY(view));
+          if (on) trace = { id: trace.id, at: 0, on };
+        }
       } else if (mode === 'pinch' && pointers.size === 2 && !locked) {
         const other = [...pointers.entries()].find(([id]) => id !== e.pointerId)![1];
         const before = { x: (previous.x + other.x) / 2, y: (previous.y + other.y) / 2 };

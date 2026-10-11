@@ -174,3 +174,94 @@ export function complexToLatex(re: number, im: number, significant = 6): string 
   if (re === 0) return (im < 0 ? '-' : '') + imaginary;
   return `${valueToLatex(re, significant)}${im < 0 ? '-' : '+'}${imaginary}`;
 }
+
+// Small whole numbers c with c·xs ≈ 0, by LLL reduction of the lattice spanned by the
+// rows (identity | weight·xs): a row whose last entry is near zero is a relation, and
+// the reduction makes rows short. Every reduced row is returned for the caller to check.
+function integerRelations(xs: number[], weight: number): number[][] {
+  const n = xs.length;
+  const b = xs.map((x, i) => [...xs.map((_, j) => +(i === j)), weight * x]);
+  const dot = (u: number[], v: number[]) => u.reduce((s, ui, i) => s + ui * v[i], 0);
+  const orthogonalise = () => {
+    const star: number[][] = [];
+    const mu: number[][] = [];
+    for (let i = 0; i < n; i++) {
+      star[i] = b[i].slice();
+      mu[i] = [];
+      for (let j = 0; j < i; j++) {
+        mu[i][j] = dot(b[i], star[j]) / dot(star[j], star[j]);
+        star[i] = star[i].map((v, t) => v - mu[i][j] * star[j][t]);
+      }
+    }
+    return { star, mu };
+  };
+  let k = 1;
+  for (let guard = 0; k < n && guard < 500; guard++) {
+    for (let j = k - 1; j >= 0; j--) {
+      const q = Math.round(orthogonalise().mu[k][j]);
+      if (q) b[k] = b[k].map((v, t) => v - q * b[j][t]);
+    }
+    const { star, mu } = orthogonalise();
+    if (dot(star[k], star[k]) >= (0.75 - mu[k][k - 1] ** 2) * dot(star[k - 1], star[k - 1])) k++;
+    else {
+      [b[k], b[k - 1]] = [b[k - 1], b[k]];
+      k = Math.max(k - 1, 1);
+    }
+  }
+  return b.map((row) => row.slice(0, n));
+}
+
+const SURD_HEIGHT = 1000;
+const SURD_TOLERANCE = 1e-13;
+const ROOTS = Array.from({ length: 49 }, (_, i) => i + 2).filter((n) => {
+  for (let k = 2; k * k <= n; k++) if (n % (k * k) === 0) return false;
+  return true;
+});
+
+// v as (a + b√n) / c with b ≠ 0 and every number at most SURD_HEIGHT, if it is one.
+function inField(v: number, n: number): [number, number, number] | undefined {
+  const root = Math.sqrt(n);
+  for (const [p, q, r] of integerRelations([1, root, v], 1e13)) {
+    // p + q√n + r·v = 0, so v = (−p − q√n) / r.
+    if (r === 0 || q === 0) continue;
+    const s = r < 0 ? 1 : -1;
+    let [a, bb, c] = [s * p, s * q, Math.abs(r)];
+    const g = gcd(gcd(a, bb), c);
+    [a, bb, c] = [a / g, bb / g, c / g];
+    if (Math.max(Math.abs(a), Math.abs(bb), c) > SURD_HEIGHT) continue;
+    if (Math.abs((a + bb * root) / c - v) <= SURD_TOLERANCE * Math.max(1, Math.abs(v))) return [a, bb, c];
+  }
+  return undefined;
+}
+
+function surd(a: number, b: number, c: number, n: number): string {
+  if (a === 0) return term(b, c, `\\sqrt{${n}}`);
+  const top = sum(String(a), term(b, 1, `\\sqrt{${n}}`));
+  return c === 1 ? top : `\\frac{${top}}{${c}}`;
+}
+
+const pairCache = new Map<string, [string, string] | null>();
+
+// Both coordinates of a point as (a + b√n) / c with the same n: where a quadratic's
+// roots meet, as at a conic's turning points. Either alone would match too many
+// decimals by coincidence at this size; both sharing one root almost never does.
+// Needs coordinates accurate to near full precision.
+export function surdPair(x: number, y: number): [string, string] | undefined {
+  // Rounded, so the same point found again a hair away (as it is on every redraw) is a hit.
+  const key = `${x.toPrecision(13)},${y.toPrecision(13)}`;
+  let found = pairCache.get(key);
+  if (found === undefined) {
+    found = null;
+    for (const n of ROOTS) {
+      const fx = inField(x, n);
+      const fy = fx && inField(y, n);
+      if (fx && fy) {
+        found = [surd(...fx, n), surd(...fy, n)];
+        break;
+      }
+    }
+    if (pairCache.size > 500) pairCache.clear();
+    pairCache.set(key, found);
+  }
+  return found ?? undefined;
+}
