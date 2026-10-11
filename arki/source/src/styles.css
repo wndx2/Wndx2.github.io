@@ -299,7 +299,8 @@ button {
 }
 
 /* The A is the blackboard-bold one of \mathbb{A}, from the maths fonts. */
-.navbar h1 span[aria-hidden] {
+.navbar h1 span[aria-hidden],
+.blackboard {
   font-family: KaTeX_AMS;
   font-weight: 400;
 }
@@ -2036,6 +2037,191 @@ math-field::part(menu-toggle) {
   .dock {
     top: calc(var(--navbar) + 12px);
     bottom: auto;
+  }
+}
+
+/* Help: everything arki can do, in a glass sheet over the page. */
+.help-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--canvas) 30%, transparent);
+  animation: help-backdrop-in 240ms ease;
+}
+
+.help {
+  display: flex;
+  flex-direction: column;
+  width: min(44rem, 100%);
+  max-height: min(48rem, 100%);
+  overflow: hidden;
+  border: 0.5px solid var(--glass-rim);
+  border-radius: 22px;
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  backdrop-filter: blur(28px) saturate(190%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-inset),
+    var(--shadow-large);
+  color: var(--text);
+  animation: help-in 280ms var(--ease-settle);
+}
+
+.help-backdrop[data-leaving] {
+  animation: help-backdrop-out 220ms ease forwards;
+}
+
+.help-backdrop[data-leaving] .help {
+  animation: help-out 220ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.help-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 10px 4px 22px;
+}
+
+.help-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 650;
+}
+
+.help-search {
+  margin: 6px 16px 10px;
+  padding: 0.6rem 0.9rem;
+  border: 0;
+  border-radius: 12px;
+  outline: none;
+  background: var(--glass-pill);
+  box-shadow:
+    inset 0 0 0 0.5px var(--glass-rim),
+    inset 0 1px 0 var(--glass-inset);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9375rem;
+}
+
+.help-search:focus {
+  box-shadow: 0 0 0 2px var(--accent-ink);
+}
+
+.help-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 22px 22px;
+}
+
+.help-body section + section {
+  margin-top: 18px;
+}
+
+.help-body h3 {
+  margin: 0 0 6px;
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.help-body dl {
+  margin: 0;
+}
+
+.help-feature {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  gap: 4px 16px;
+  padding: 8px 0;
+  border-top: 0.5px solid var(--hairline);
+}
+
+.help-feature dt {
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.help-feature dd {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+/* An example to type, typeset, on a line of its own under the description. */
+.help-example {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 6px;
+  padding: 4px 10px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: var(--glass-pill);
+  box-shadow: inset 0 0 0 0.5px var(--glass-rim);
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.help-empty {
+  color: var(--text-secondary);
+}
+
+@keyframes help-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+
+@keyframes help-out {
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+@keyframes help-backdrop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes help-backdrop-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* On a phone the help covers the screen, and each feature's name sits above its text. */
+@media (max-width: 640px) {
+  .help-backdrop {
+    padding: 0;
+  }
+
+  .help {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
+    border: 0;
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .help-feature {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .help,
+  .help-backdrop {
+    animation: none !important;
   }
 }
 

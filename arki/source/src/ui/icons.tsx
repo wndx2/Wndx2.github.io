@@ -223,3 +223,27 @@ export const IntegralIcon = () => (
     <path d="M13 4.2c-.5-.6-1.2-.8-1.9-.5-.8.4-1 1.3-1.1 2.2l-.6 8.4c-.1.9-.3 1.8-1.1 2.2-.7.3-1.4.1-1.9-.5" />
   </Icon>
 );
+
+// A curved arrow back, and forward.
+export const UndoIcon = () => (
+  <Icon>
+    <path d="M7.5 6.5 4.5 9.5l3 3" />
+    <path d="M4.75 9.5h7.25a3.75 3.75 0 0 1 0 7.5H10" />
+  </Icon>
+);
+
+export const RedoIcon = () => (
+  <Icon>
+    <path d="m12.5 6.5 3 3-3 3" />
+    <path d="M15.25 9.5H8a3.75 3.75 0 0 0 0 7.5h2" />
+  </Icon>
+);
+
+// A question mark in a circle: help.
+export const HelpIcon = () => (
+  <Icon>
+    <circle cx="10" cy="10" r="7.25" />
+    <path d="M8.1 8.1a2 2 0 0 1 3.85.65c0 1.35-1.95 1.75-1.95 3" />
+    <path d="M10 14.25h.01" />
+  </Icon>
+);

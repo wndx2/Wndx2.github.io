@@ -12,7 +12,8 @@ import { labelExpressions, labelToLatex, plainToLatex } from './ui/label';
 import { Popover } from './ui/Popover';
 import { snap, stepFor } from './ui/Slider';
 import { DerivativeIcon, FolderIcon, FunctionIcon, IntegralIcon, NoteIcon, TableIcon, WrenchIcon } from './ui/icons';
-import { HomeIcon, ImageIcon, KeyboardIcon, LinkIcon, MinusIcon, MoonIcon, PlusIcon, SidebarIcon, SunIcon } from './ui/icons';
+import { HelpIcon, HomeIcon, ImageIcon, KeyboardIcon, LinkIcon, MinusIcon, MoonIcon, PlusIcon, RedoIcon, SidebarIcon, SunIcon, UndoIcon } from './ui/icons';
+import { Help } from './ui/Help';
 import { DEFAULT_COLOR, colorOf } from './ui/palette';
 import type { TableRange } from './ui/Table';
 import star from './images/star.png';
@@ -359,6 +360,76 @@ function download(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// How a change to the list counts for undo: the rows whose LaTeX alone changed (typing,
+// dragging a point or a slider), or nothing, for any other change. Changes of the same
+// kind close together in time are one step.
+function changeKey(before: Expression[], after: Expression[]): string {
+  if (before.length !== after.length || before.some((e, i) => e.id !== after[i].id)) return '';
+  const changed: string[] = [];
+  for (let i = 0; i < after.length; i++) {
+    if (before[i] === after[i]) continue;
+    const { latex: _a, ...restBefore } = before[i];
+    const { latex: _b, ...restAfter } = after[i];
+    if (JSON.stringify(restBefore) !== JSON.stringify(restAfter)) return '';
+    changed.push(after[i].id);
+  }
+  return changed.join(',');
+}
+
+// Steps kept to go back through, and how long a pause starts a new one.
+const UNDO_LIMIT = 200;
+const UNDO_PAUSE = 1000;
+
+// Undo and redo for the list of expressions. Every change is a step, except a playing
+// slider moving by itself; typing in one row or dragging is gathered into one step until
+// it pauses.
+function useUndo(expressions: Expression[], setExpressions: (list: Expression[]) => void) {
+  const history = useRef({ past: [] as Expression[][], future: [] as Expression[][], last: expressions, key: '', time: 0, restoring: false });
+  const [, setVersion] = useState(0);
+  useEffect(() => {
+    const h = history.current;
+    if (expressions === h.last) return;
+    if (h.restoring) {
+      h.restoring = false;
+      h.last = expressions;
+      return;
+    }
+    const key = changeKey(h.last, expressions);
+    const playing = expressions.some((e) => e.playing) && key !== '';
+    const now = performance.now();
+    if (!playing) {
+      if (!(key && key === h.key && now - h.time < UNDO_PAUSE)) {
+        h.past.push(h.last);
+        if (h.past.length > UNDO_LIMIT) h.past.shift();
+      }
+      h.future = [];
+      h.key = key;
+      h.time = now;
+      setVersion((v) => v + 1);
+    }
+    h.last = expressions;
+  }, [expressions]);
+
+  const go = (from: 'past' | 'future') => {
+    const h = history.current;
+    const target = h[from].pop();
+    if (!target) return;
+    (from === 'past' ? h.future : h.past).push(h.last);
+    h.key = '';
+    if (target !== h.last) {
+      h.restoring = true;
+      setExpressions(target);
+    }
+    setVersion((v) => v + 1);
+  };
+  return {
+    undo: () => go('past'),
+    redo: () => go('future'),
+    canUndo: history.current.past.length > 0,
+    canRedo: history.current.future.length > 0,
+  };
+}
+
 interface SwitchProps {
   label: string;
   on: boolean;
@@ -408,6 +479,27 @@ export function App() {
       // Storage can be unavailable (private windows); the session still works.
     }
   }, [expressions]);
+
+  const undo = useUndo(expressions, setExpressions);
+  const [helpOpen, setHelpOpen] = useState(false);
+  // ⌘Z and ⇧⌘Z (Ctrl+Z and Ctrl+Y elsewhere) undo and redo whole steps, except while
+  // typing in a field, where they belong to the field's own text.
+  const latestUndo = useRef(undo);
+  latestUndo.current = undo;
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const target = e.target as HTMLElement;
+      if (target.closest('math-field, input, textarea, [contenteditable="true"]')) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z' && !e.shiftKey) latestUndo.current.undo();
+      else if ((key === 'z' && e.shiftKey) || key === 'y') latestUndo.current.redo();
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const analyses = useMemo(() => analyze(expressions.map((e) => e.latex), expressions.map((e) => e.calculus)), [expressions]);
   const latest = useRef({ expressions, analyses, settings });
@@ -941,6 +1033,15 @@ export function App() {
           </span>
         </h1>
         <div className="navbar-actions">
+          <button className="icon-button" aria-label="Undo" title="Undo (⌘Z)" disabled={!undo.canUndo} onClick={undo.undo}>
+            <UndoIcon />
+          </button>
+          <button className="icon-button" aria-label="Redo" title="Redo (⇧⌘Z)" disabled={!undo.canRedo} onClick={undo.redo}>
+            <RedoIcon />
+          </button>
+          <button className="icon-button" aria-label="Help" aria-expanded={helpOpen} onClick={() => setHelpOpen(true)}>
+            <HelpIcon />
+          </button>
           <button
             className="icon-button"
             aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -1172,6 +1273,8 @@ export function App() {
           </button>
         </div>
       )}
+
+      {helpOpen && <Help onClose={() => setHelpOpen(false)} />}
 
       {notice && (
         <div className="notice glass" role="status" data-leaving={notice.leaving || undefined}>
