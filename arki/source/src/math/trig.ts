@@ -30,7 +30,16 @@ const atom = (latex: string): Option => ({ latex, shape: 'atom' });
 const product = (latex: string): Option => ({ latex, shape: 'product' });
 const sum = (latex: string): Option => ({ latex, shape: 'sum' });
 const frac = (top: string, bottom: string) => `\\frac{${top}}{${bottom}}`;
-const fn = (name: string, arg: string, power?: string) => `\\${name}${power ? `^{${power}}` : ''}\\left(${arg}\\right)`;
+// Inverse functions are written with ⁻¹, as at school: sin⁻¹, not arcsin.
+const INVERSE: Record<string, string> = { arcsin: 'sin', arccos: 'cos', arctan: 'tan' };
+const fn = (name: string, arg: string, power?: string) => {
+  const inverse = INVERSE[name];
+  if (inverse) {
+    const call = `\\${inverse}^{-1}\\left(${arg}\\right)`;
+    return power ? `\\left(${call}\\right)^{${power}}` : call;
+  }
+  return `\\${name}${power ? `^{${power}}` : ''}\\left(${arg}\\right)`;
+};
 const sq = (name: string, arg: string) => fn(name, arg, '2');
 
 const isNum = (node: Node, v: number) => node.t === 'num' && node.v === v;

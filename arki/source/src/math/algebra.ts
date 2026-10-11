@@ -311,7 +311,10 @@ export function expand(e: E): E {
 
 const FUNCTION_LATEX: Record<string, string> = {
   sin: '\\sin', cos: '\\cos', tan: '\\tan', sec: '\\sec', csc: '\\csc', cot: '\\cot',
-  arcsin: '\\arcsin', arccos: '\\arccos', arctan: '\\arctan',
+  // Inverse functions are written with ⁻¹, as at school: sin⁻¹ x, not arcsin x.
+  arcsin: '\\sin^{-1}', arccos: '\\cos^{-1}', arctan: '\\tan^{-1}',
+  arcsec: '\\sec^{-1}', arccsc: '\\csc^{-1}', arccot: '\\cot^{-1}',
+  arsinh: '\\sinh^{-1}', arcosh: '\\cosh^{-1}', artanh: '\\tanh^{-1}',
   sinh: '\\sinh', cosh: '\\cosh', tanh: '\\tanh', ln: '\\ln', log: '\\log',
 };
 
@@ -386,8 +389,10 @@ function powerLatex(base: E, exp: E, x: string): string {
   if (exp.k === 'num' && exp.q.n === 1 && exp.q.d === 3) return `\\sqrt[3]{${latex(base, x)}}`;
   const power = latex(exp, x);
   if (base.k === 'sym') return `${base.name === 'e' ? 'e' : nameToLatex(base.name)}^{${power}}`;
-  // sin²x, as it is usually written.
-  if (base.k === 'fn' && !base.user && base.fn !== 'abs' && isInteger(exp) && exp.q.n > 0) return functionLatex(base, x, power);
+  // sin²x, as it is usually written; an inverse such as tan⁻¹x is bracketed instead,
+  // since its ⁻¹ is already where the power would go.
+  const inverse = base.k === 'fn' && FUNCTION_LATEX[base.fn]?.endsWith('^{-1}');
+  if (base.k === 'fn' && !base.user && base.fn !== 'abs' && !inverse && isInteger(exp) && exp.q.n > 0) return functionLatex(base, x, power);
   if (base.k === 'num' && base.q.d === 1 && base.q.n > 0) return `${base.q.n}^{${power}}`;
   return `\\left(${latex(base, x)}\\right)^{${power}}`;
 }
@@ -512,4 +517,25 @@ export function pretty(e: E, x = 'x'): string {
   if (combined === e) return plain;
   const joined = latex(combined, x);
   return joined.length < plain.length ? joined : plain;
+}
+
+// Products multiplied out over any sums in them, but not powers of sums: the product
+// rule's answer as a list of simple terms, x³ sin x (…) becoming x³ sin x · … + …, while
+// 6x(x² + 1)² stays as it is.
+export function distribute(e: E): E {
+  switch (e.k) {
+    case 'sum':
+      return add(...e.terms.map(distribute));
+    case 'prod': {
+      let terms: E[] = [ONE];
+      for (const f of e.factors.map(distribute)) {
+        const parts = f.k === 'sum' ? f.terms : [f];
+        terms = terms.flatMap((t) => parts.map((p) => mul(t, p)));
+        if (terms.length > 64) return e;
+      }
+      return add(...terms);
+    }
+    default:
+      return e;
+  }
 }

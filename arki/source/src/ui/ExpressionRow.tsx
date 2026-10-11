@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { convertLatexToMarkup } from 'mathlive';
 import { CURVE_WIDTH, type LineStyle, type PointStyle } from '../graph/render';
 import type { Analysis } from '../math/analyze';
@@ -7,6 +7,7 @@ import { complexToLatex } from '../math/exact';
 import { applyTrigOption, trigTerms, type TrigTerm } from '../math/trig';
 import { ChevronIcon, CloseIcon, CopyIcon, EyeIcon, EyeOffIcon, MoreIcon, MoveIcon, NoteIcon, PlusIcon, TableIcon, TagIcon, WarningIcon } from './icons';
 import { MathField } from './MathField';
+import { messageHtml, splitTerms, useFitWidth } from './fit';
 import { PALETTE, colorOf, parseHex, type CurveColor } from './palette';
 import { Popover } from './Popover';
 import { Slider, type SliderMotion } from './Slider';
@@ -381,7 +382,7 @@ function DataRow({ data, dataResult, expression, dark, focusToken, depth, folder
           ))}
         </div>
         {fitMarkup && <div className="row-value data-fit" dangerouslySetInnerHTML={{ __html: fitMarkup }} />}
-        {typeof fit === 'string' && <p className="table-note">{fit}</p>}
+        {typeof fit === 'string' && <p className="table-note" dangerouslySetInnerHTML={{ __html: messageHtml(fit) }} />}
       </div>
 
       {styling && swatch.current && (
@@ -416,13 +417,28 @@ function MathRow({ expression, analysis, dark, focusToken, evaluate, depth, fold
   const columns = useMemo(() => tableColumns(plot), [plot]);
   const showMessage = error && !softError && missing.length === 0;
   const kind = expression.calculus;
+  // A long result is shrunk to fit the row rather than cut off, and one too long even
+  // then is written a term to a line.
+  const calculusResult = useRef<HTMLDivElement>(null);
+  const [resultTooWide, setResultTooWide] = useState(false);
   // A derivative or antiderivative row shows its result as a formula.
-  const calculusMarkup = useMemo(() => {
+  const calculusLines = useMemo(() => {
     const result = analysis.calculus?.latex;
     if (!kind || !result) return undefined;
-    const shown = kind === 'derivative' ? `\\frac{dy}{dx}=${result}` : `\\int y\\,dx=${result}+C`;
-    return convertLatexToMarkup(shown, { defaultMode: 'math' });
-  }, [kind, analysis.calculus?.latex]);
+    const lead = kind === 'derivative' ? '\\frac{dy}{dx}=' : '\\int y\\,dx=';
+    const tail = kind === 'antiderivative' ? '+C' : '';
+    const typeset = (latex: string) => convertLatexToMarkup(latex, { defaultMode: 'math' });
+    // Over several lines it is written as a sum of simple terms, which break up well.
+    const terms = splitTerms(analysis.calculus?.lines ?? result);
+    return {
+      whole: typeset(lead + result + tail),
+      // The first line keeps the dy/dx =; the rest line up after it.
+      lines: terms.map((term, i) => typeset((i === 0 ? lead : '\\phantom{=}') + term + (i === terms.length - 1 ? tail : ''))),
+    };
+  }, [kind, analysis.calculus?.latex, analysis.calculus?.lines]);
+  const calculusMarkup = calculusLines?.whole;
+  useLayoutEffect(() => setResultTooWide(false), [calculusMarkup]);
+  useFitWidth(calculusResult, calculusMarkup, (tooWide) => tooWide && setResultTooWide(true));
   // Results are typeset, and shown in exact form (π/2, √2, 1/3) when they have one:
   // worked out exactly where that was possible, otherwise recognised from the decimal.
   const valueMarkup = useMemo(
@@ -495,14 +511,22 @@ function MathRow({ expression, analysis, dark, focusToken, evaluate, depth, fold
         {valueMarkup && !kind && <div className="row-value" dangerouslySetInnerHTML={{ __html: valueMarkup }} />}
         {calculusMarkup && (
           <div className="row-calculus">
-            <div className="row-value" dangerouslySetInnerHTML={{ __html: calculusMarkup }} />
+            {resultTooWide && calculusLines && calculusLines.lines.length > 1 ? (
+              <div key="lines" className="row-value row-lines">
+                {calculusLines.lines.map((line, i) => (
+                  <div key={i} dangerouslySetInnerHTML={{ __html: line }} />
+                ))}
+              </div>
+            ) : (
+              <div key="line" ref={calculusResult} className="row-value" dangerouslySetInnerHTML={{ __html: calculusMarkup }} />
+            )}
             <button className="chip" onClick={() => on.onAddBelow(`y=${analysis.calculus!.latex}`)}>
               Add as expression
             </button>
           </div>
         )}
-        {kind && analysis.calculus?.note && <div className="row-message">{analysis.calculus.note}</div>}
-        {showMessage && <div className="row-message">{error}</div>}
+        {kind && analysis.calculus?.note && <div className="row-message" dangerouslySetInnerHTML={{ __html: messageHtml(analysis.calculus.note) }} />}
+        {showMessage && <div className="row-message" dangerouslySetInnerHTML={{ __html: messageHtml(error) }} />}
         {missing.length > 0 && (
           <div className="row-actions">
             <span>Add slider</span>

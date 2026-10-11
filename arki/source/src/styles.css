@@ -210,14 +210,11 @@ button {
   font-family: var(--ui-font);
 }
 
-/* Maths the app writes out (results, table values, graph labels, menus) follows the
-   rest of the interface. Maths being typed keeps the standard maths typeface. */
+/* Maths the app writes out (results, table values, graph labels, menus) has its digits
+   and upright names in the interface's typeface. Variables stay in italic Computer
+   Modern, as in the maths being typed, so x looks the same everywhere. */
 :is(.row-value, .graph-label, .table td, .trig-popover) :is(.ML__cmr, .ML__mathbf, .ML__small-delim) {
   font-family: 'ChosunSm Maths', KaTeX_Main;
-}
-
-:is(.row-value, .graph-label, .table td, .trig-popover) :is(.ML__mathit, .ML__mathbfit) {
-  font-family: 'ChosunSm Maths', KaTeX_Math;
 }
 
 /* Shared pieces */
@@ -747,11 +744,24 @@ math-field::part(menu-toggle) {
   padding-bottom: 6px;
 }
 
-.row-calculus .row-value {
-  min-width: 0;
-  max-width: 100%;
-  padding: 0;
+/* A result too long for one line even when shrunk: a term to a line, at the smallest size. */
+.row-calculus .row-lines {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  font-size: 0.75rem;
+  white-space: nowrap;
   overflow-x: auto;
+}
+
+/* The result has the full width to itself, and shrinks to fit it (see fit.ts). */
+.row-calculus .row-value {
+  flex: 1 1 100%;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .row-calculus .chip {

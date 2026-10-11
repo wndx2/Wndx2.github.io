@@ -539,7 +539,9 @@ assert.equal(antiderived('x^2\\sin x').calculus?.latex, '2x\\sin x-x^{2}\\cos x+
 assert.equal(antiderived('2x\\cos\\left(x^2\\right)').calculus?.latex, '\\sin\\left(x^{2}\\right)');
 assert.equal(antiderived('\\frac{1}{x}').calculus?.latex, '\\ln\\left|x\\right|');
 assert.equal(antiderived('\\ln x').calculus?.latex, 'x\\ln x-x');
-assert.equal(antiderived('\\frac{1}{x^2+4}').calculus?.latex, '\\frac{\\arctan\\left(\\frac{x}{2}\\right)}{2}');
+assert.equal(antiderived('\\frac{1}{x^2+4}').calculus?.latex, '\\frac{\\tan^{-1}\\left(\\frac{x}{2}\\right)}{2}');
+assert.equal(antiderived('\\frac{1}{\\sqrt{1-x^2}}').calculus?.latex, '\\sin^{-1} x');
+assert.equal(derived('\\tan^{-1}\\left(x\\right)^{2}').calculus?.latex?.includes('arctan'), false);
 assert.equal(antiderived('\\sin^2x').calculus?.latex, '\\frac{x}{2}-\\frac{\\sin\\left(2x\\right)}{4}');
 // No elementary antiderivative: the area from 0 to x is drawn instead.
 const gaussian = antiderived('e^{x^2}');

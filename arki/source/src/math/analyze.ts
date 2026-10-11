@@ -5,7 +5,7 @@ import { ARITY, BINDERS, builtins } from './builtins';
 import { complex, tidy, type Complex } from './complex';
 import { differentiate } from './differentiate';
 import { exactLatex } from './exactValue';
-import { Unsupported, fromNode, pretty, toNode } from './algebra';
+import { Unsupported, distribute, fromNode, latex as latexOf, pretty, toNode } from './algebra';
 import { antiderivative, derivative } from './calculus';
 import { MathError, nameToLatex, parse, spanOf, type Node, type Statement } from './parser';
 
@@ -48,7 +48,9 @@ export interface Analysis {
   missing?: string[];
   // For a derivative or antiderivative row: the result as a formula, when one was found
   // (an antiderivative's without its + C), or a note on what is drawn instead.
-  calculus?: { latex?: string; note?: string };
+  // `lines` is the same result as a sum of simple terms, for writing it over several lines
+  // when it is too long for one.
+  calculus?: { latex?: string; lines?: string; note?: string };
 }
 
 // What a row does with the function typed into it, if it isn't an ordinary expression.
@@ -846,15 +848,19 @@ function calculusRow(
   if (kind === 'derivative') {
     const d = differentiate(f, 'x', isFunction);
     const check = make(['x'], d);
+    let lines: string | undefined;
     const latex = formula(() => {
       const result = derivative(fromNode(f), 'x');
-      return agree(check, make(['x'], toNode(result))) ? pretty(result) : undefined;
+      if (!agree(check, make(['x'], toNode(result)))) return undefined;
+      lines = latexOf(distribute(result));
+      return pretty(result);
     });
-    return { plot: curve('fx', d), calculus: latex ? { latex } : { note: 'Drawn, but it has no formula here' } };
+    return { plot: curve('fx', d), calculus: latex ? { latex, lines } : { note: 'Drawn, but it has no formula here' } };
   }
 
   const integrand = make(['x'], f);
   let found: Node | undefined;
+  let lines: string | undefined;
   const latex = formula(() => {
     const F = antiderivative(fromNode(f), 'x');
     if (!F) return undefined;
@@ -862,9 +868,10 @@ function calculusRow(
     // Differentiated back, it has to give the function again.
     if (!agree(integrand, make(['x'], differentiate(node, 'x', isFunction)))) return undefined;
     found = node;
+    lines = latexOf(distribute(F));
     return pretty(F);
   });
-  if (found && latex) return { plot: curve('fx', found), calculus: { latex } };
+  if (found && latex) return { plot: curve('fx', found), calculus: { latex, lines } };
   // No formula: the area from 0 to x is still an antiderivative, and can be drawn.
   const t = 'arki_t';
   const area: Node = { t: 'int', wrt: t, lo: { t: 'num', v: 0 }, hi: { t: 'var', name: 'x' }, body: bindVariables(f, new Map([['x', { t: 'var', name: t }]])) };
