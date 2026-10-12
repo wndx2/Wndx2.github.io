@@ -133,6 +133,9 @@ export function Graph({ ref, items, dark, settings, onMovePoint }: GraphProps) {
       }
       // Labels are a different size in projector mode, so they are measured again for it.
       const k = sizeOf(live.current.settings);
+      const gap = 14 * k;
+      // What a label must keep clear of: every labelled dot, and the labels placed so far.
+      const taken = labels.map(({ x, y }) => ({ l: x - 7 * k, t: y - 7 * k, r: x + 7 * k, b: y + 7 * k }));
       labels.forEach((label, i) => {
         const el = layer.children[i] as HTMLElement;
         let size = sizes.get(el);
@@ -141,11 +144,44 @@ export function Graph({ ref, items, dark, settings, onMovePoint }: GraphProps) {
           size = { latex: label.latex, k, w: el.offsetWidth, h: el.offsetHeight };
           sizes.set(el, size);
         }
-        // Centred above the dot; below it near the top edge, and kept inside the canvas.
-        const left = Math.max(8, Math.min(width - size.w - 8, label.x - size.w / 2));
-        const gap = 14 * k;
-        const top = label.y - gap - size.h < 8 ? label.y + gap : label.y - gap - size.h;
-        el.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+        const { w, h } = size;
+        const { x, y } = label;
+        // Centred above the dot where there is room; otherwise below it, beside it, at a
+        // corner, or further out above and below. Earlier labels keep their place, so the
+        // traced point's label (the last) is the one that steps aside.
+        const near = gap * 0.7;
+        const spots: [number, number][] = [
+          [x - w / 2, y - gap - h],
+          [x - w / 2, y + gap],
+          [x + gap, y - h / 2],
+          [x - gap - w, y - h / 2],
+          [x + near, y - near - h],
+          [x - near - w, y - near - h],
+          [x + near, y + near],
+          [x - near - w, y + near],
+        ];
+        for (let n = 1; n <= 3; n++) {
+          spots.push([x - w / 2, y - gap - h - n * (h + 4)], [x - w / 2, y + gap + n * (h + 4)]);
+        }
+        let best = { l: 0, t: 0, r: 0, b: 0 };
+        let bestCost = Infinity;
+        for (const spot of spots) {
+          // Kept inside the canvas sideways; a spot that runs off the top or bottom counts against it.
+          const l = Math.max(8, Math.min(width - w - 8, spot[0]));
+          const t = spot[1];
+          let cost = w * (Math.max(0, 8 - t) + Math.max(0, t + h - (height - 8)));
+          for (const o of taken) {
+            cost += Math.max(0, Math.min(l + w, o.r) - Math.max(l, o.l)) * Math.max(0, Math.min(t + h, o.b) - Math.max(t, o.t));
+          }
+          if (cost < bestCost) {
+            bestCost = cost;
+            best = { l, t, r: l + w, b: t + h };
+          }
+          if (cost === 0) break;
+        }
+        // A little air between neighbouring labels.
+        taken.push({ l: best.l - 4, t: best.t - 4, r: best.r + 4, b: best.b + 4 });
+        el.style.transform = `translate(${Math.round(best.l)}px, ${Math.round(best.t)}px)`;
       });
     };
 
