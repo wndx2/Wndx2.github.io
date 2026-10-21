@@ -1,6 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
     // ── KEYBOARD SHORTCUTS ───────────────────────────────────────
     document.addEventListener("keydown", (event) => {
+        // leave browser shortcuts (cmd+c, ctrl+l, ...) alone
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+
         const shortcuts = {
             'c': "https://classroom.google.com/u/1/?pli=1",
             'k': "https://otc.school.kiwi/",
@@ -8,9 +11,8 @@ document.addEventListener('DOMContentLoaded', () => {
             'm': "https://mail.google.com/mail/u/1/#inbox",
             'n': "https://sleepywndud.github.io",
             'l': "https://lucasis.pro",
-            'a': "https://claude.ai/new",
             'g': "https://github.com/wndx2",
-            'r': "https://wndx2.github.io/arki"
+            'a': "https://wndx2.github.io/arki"
         };
 
         const url = shortcuts[event.key.toLowerCase()];

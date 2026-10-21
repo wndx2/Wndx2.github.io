@@ -8,7 +8,7 @@
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link
-			href="https://fonts.googleapis.com/css2?family=Nunito:wght@900&display=swap"
+			href="https://fonts.googleapis.com/css2?family=SN+Pro:wght@900&display=swap"
 			rel="stylesheet"
 		/>
 		<style>
@@ -47,18 +47,34 @@
 				position: absolute;
 				inset: 0;
 				display: flex;
+				flex-direction: column;
 				align-items: center;
 				justify-content: center;
 				/* slow drift to avoid burn-in */
 				transition: transform 30s ease-in-out;
 			}
 
+			.face {
+				display: flex;
+				flex-direction: column;
+			}
+
+			.date {
+				align-self: flex-end;
+				font-family: "SF Pro Rounded", ui-rounded, "SN Pro", system-ui, sans-serif;
+				font-weight: 900;
+				font-size: min(1.1vw, 2.2vh);
+				letter-spacing: 0.04em;
+				color: rgba(255, 255, 255, 0.4);
+				margin-top: 0.4em;
+			}
+
 			.time {
 				display: flex;
 				align-items: center;
-				font-family: "SF Pro Rounded", "Nunito", ui-rounded, system-ui, sans-serif;
+				font-family: "SF Pro Rounded", ui-rounded, "SN Pro", system-ui, sans-serif;
 				font-weight: 900;
-				font-size: min(26vw, 52vh);
+				font-size: min(15vw, 30vh);
 				line-height: 1;
 				font-variant-numeric: tabular-nums;
 			}
@@ -70,7 +86,7 @@
 				margin: 0 -0.06em;
 				mix-blend-mode: screen;
 				animation: float var(--d, 7s) ease-in-out var(--delay, 0s) infinite;
-				transition: color 4s ease;
+				transition: color 1.5s ease;
 				will-change: transform;
 			}
 
@@ -89,7 +105,8 @@
 				margin: 0 -0.02em;
 				padding-bottom: 0.08em;
 				color: var(--colon);
-				transition: color 4s ease;
+				mix-blend-mode: screen;
+				transition: color 1.5s ease;
 				animation: float 7.5s ease-in-out -4s infinite;
 			}
 
@@ -108,6 +125,12 @@
 			.digit:nth-child(5) {
 				--d: 7.8s;
 				--delay: -5.2s;
+			}
+
+			/* auto mode: slow crossfade between palettes */
+			body.auto .digit,
+			body.auto .colon {
+				transition: color 7s ease-in-out;
 			}
 
 			@keyframes float {
@@ -141,14 +164,54 @@
 			#hint {
 				position: fixed;
 				bottom: 18px;
-				left: 0;
-				right: 0;
-				text-align: center;
+				left: 24px;
+				right: 24px;
+				display: flex;
+				justify-content: space-between;
+				white-space: nowrap;
 				font-family: "ChosunGu", serif;
 				font-size: 14px;
 				letter-spacing: 0.08em;
 				color: rgba(255, 255, 255, 0.35);
 				transition: opacity 1.5s ease;
+			}
+
+			#timetable {
+				position: fixed;
+				top: 18px;
+				left: 24px;
+				right: 24px;
+				display: flex;
+				justify-content: space-evenly;
+				white-space: nowrap;
+				font-family: "ChosunGu", serif;
+				font-size: 14px;
+				letter-spacing: 0.08em;
+				color: rgba(255, 255, 255, 0.35);
+			}
+
+			#timetable span {
+				transition: color 1.5s ease;
+			}
+
+			#timetable .now {
+				color: #fff;
+			}
+
+			/* in class: thin bar under the class that fills as the period runs */
+			#timetable .in {
+				position: relative;
+			}
+
+			#timetable .in::after {
+				content: "";
+				position: absolute;
+				left: 0;
+				bottom: -6px;
+				height: 1px;
+				width: calc(var(--progress, 0) * 100%);
+				background: rgba(255, 255, 255, 0.6);
+				transition: width 1s linear;
 			}
 
 			#swatches {
@@ -170,7 +233,9 @@
 				background-clip: padding-box;
 				cursor: pointer;
 				outline: none;
-				transition: transform 0.2s ease, border-color 0.2s ease;
+				transition:
+					transform 0.2s ease,
+					border-color 0.2s ease;
 			}
 
 			.swatch:hover {
@@ -185,8 +250,10 @@
 				background: conic-gradient(
 					#ff9a8b,
 					#ffb86b,
+					#ffe46b,
 					#9ee6a8,
 					#7cc7ff,
+					#9ea9e6,
 					#b79bff,
 					#ff8fc7,
 					#ff9a8b
@@ -207,17 +274,35 @@
 	</head>
 	<body>
 		<div id="clock">
-			<div class="time">
-				<span class="digit hour" id="h1">0</span>
-				<span class="digit hour" id="h2">0</span>
-				<span class="colon">:</span>
-				<span class="digit minute" id="m1">0</span>
-				<span class="digit minute" id="m2">0</span>
+			<div class="face">
+				<div class="time">
+					<span class="digit hour" id="h1">0</span>
+					<span class="digit hour" id="h2">0</span>
+					<span class="colon">:</span>
+					<span class="digit minute" id="m1">0</span>
+					<span class="digit minute" id="m2">0</span>
+				</div>
+				<div class="date" id="date"></div>
 			</div>
 		</div>
 
+		<div id="timetable"></div>
 		<div id="swatches"></div>
-		<div id="hint">[ a ] [ c ] [ d ] [ g ] [ r ] [ k ] [ l ] [ m ] [ n ] · [ f ] 전체화면 · [ ← → ] 색상</div>
+		<div id="hint">
+			<span></span>
+			<span>[ a ]</span>
+			<span>[ c ]</span>
+			<span>[ d ]</span>
+			<span>[ g ]</span>
+			<span>[ k ]</span>
+			<span>[ l ]</span>
+			<span>[ m ]</span>
+			<span>[ n ]</span>
+			<span>[ f ]</span>
+			<span>[ ← ]</span>
+			<span>[ → ]</span>
+			<span></span>
+		</div>
 
 		<script>
 			// ── CLOCK ────────────────────────────────────────────────────
@@ -228,10 +313,17 @@
 				["#7cc7ff", "#bfe3ff", "#3d8fd6"], // sky
 				["#b79bff", "#ddd0ff", "#7f5ce0"], // lavender
 				["#ff8fc7", "#ffc9e4", "#d9509a"], // pink
+				["#ffd800", "#ffeb80", "#c9a800"], // yellow
 				["#f2f2f2", "#9a9a9a", "#5a5a5a"], // mono
 			];
 
-			// -1 = auto (shift palette once per hour)
+			// palettes auto mode skips (yellow, mono)
+			const autoSkip = ["#ffd800", "#f2f2f2"];
+			const autoPalettes = [...palettes.keys()].filter(
+				(i) => !autoSkip.includes(palettes[i][0]),
+			);
+
+			// -1 = auto (shift palette every 10 seconds)
 			let choice = -1;
 			try {
 				const saved = parseInt(localStorage.getItem("standby-color"), 10);
@@ -240,6 +332,7 @@
 
 			const els = ["h1", "h2", "m1", "m2"].map((id) => document.getElementById(id));
 			const root = document.documentElement;
+			const dateEl = document.getElementById("date");
 
 			function setDigit(el, value) {
 				if (el.textContent === value) return;
@@ -260,12 +353,134 @@
 				setDigit(els[2], digits[2]);
 				setDigit(els[3], digits[3]);
 
+				const dd = String(now.getDate()).padStart(2, "0");
+				const mm = String(now.getMonth() + 1).padStart(2, "0");
+				const wd = days[now.getDay()].toUpperCase();
+				dateEl.textContent = `${wd} ${dd}.${mm}.${now.getFullYear()}`;
+
+				updateTimetable(now);
 				applyColor(now);
 			}
 
+			// ── TIMETABLE ────────────────────────────────────────────────
+			// start times in minutes since midnight; null subject = break
+			const slots = [
+				[8 * 60 + 45, 0], // form
+				[9 * 60 + 5, 1], // period 1
+				[10 * 60 + 5, 2], // period 2
+				[11 * 60, null], // interval
+				[11 * 60 + 25, 3], // period 3
+				[12 * 60 + 30, 4], // period 4
+				[13 * 60 + 30, null], // lunch
+				[14 * 60 + 20, 5], // period 5
+				[15 * 60 + 20, null], // end of day
+			];
+			// [subject, room, teacher] for form, P1–P5; index 0 = Monday
+			const timetable = [
+				[
+					["Form", "G06", "HAN"],
+					["Accounting", "G04", "SCH"],
+					["English", "D12", "ROM"],
+					["Chemistry", "E13", "HWK"],
+					["Calculus", "F19", "CHG"],
+					["Software", "G08", "STR"],
+				],
+				[
+					["Assembly", "K09"],
+					["Physics", "F17", "SMB"],
+					["Calculus", "F19", "CHG"],
+					["Chemistry", "E13", "HWK"],
+					["Accounting", "G04", "SCH"],
+					["English", "D12", "ROM"],
+				],
+				[
+					["Form", "G06", "HAN"],
+					["Software", "G08", "STR"],
+					["Accounting", "G04", "SCH"],
+					["Calculus", "F14", "SDN"],
+					["Physics", "F17", "SMB"],
+					["Calculus", "F19", "CHG"],
+				],
+				[
+					["Form", "G06", "HAN"],
+					["English", "D12", "ROM"],
+					["Physics", "F17", "SMB"],
+					["Chemistry", "E13", "HWK"],
+					["Software", "G08", "STR"],
+					["Accounting", "G04", "SCH"],
+				],
+				[
+					["Form", "G06", "HAN"],
+					["Calculus", "F19", "CHG"],
+					["Software", "G08", "STR"],
+					["Chemistry", "E13", "HWK"],
+					["English", "D12", "ROM"],
+					["Physics", "F17", "SMB"],
+				],
+			];
+
+			const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+			const classSlots = slots.filter(([, p]) => p !== null);
+			const endOfDay = slots[slots.length - 1][0];
+			const ttEl = document.getElementById("timetable");
+			const hhmm = (mins) =>
+				`${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
+
+			let ttKey = "";
+			function updateTimetable(now) {
+				const mins = now.getHours() * 60 + now.getMinutes();
+				const secs = mins * 60 + now.getSeconds();
+				// today until the last bell, otherwise the next school day
+				let dow = now.getDay();
+				const today = dow >= 1 && dow <= 5 && mins < endOfDay;
+				if (!today)
+					do dow = (dow + 1) % 7;
+					while (dow < 1 || dow > 5);
+				const day = timetable[dow - 1];
+
+				// highlight the class we're in, or the next one outside class time
+				const curIdx = today ? slots.findLastIndex(([start]) => start <= mins) : -1;
+				const cur = slots[curIdx];
+				const inClass = cur && cur[1] !== null;
+				const lit = inClass
+					? cur
+					: today
+						? classSlots.find(([start]) => start > mins)
+						: classSlots[0];
+				const litClass = inClass ? "now in" : "now";
+				const states = classSlots.map((slot) => (slot === lit ? litClass : ""));
+
+				// period progress for the bar, 0 → 1
+				const progress = inClass
+					? (secs - cur[0] * 60) / ((slots[curIdx + 1][0] - cur[0]) * 60)
+					: 0;
+
+				const key = dow + states.join();
+				if (key !== ttKey) {
+					ttKey = key;
+					render(day, states, today ? "" : days[dow]);
+				}
+				ttEl.querySelector(".in")?.style.setProperty("--progress", progress);
+			}
+
+			function render(day, states, label) {
+				const spans = classSlots.map(([start, p], i) =>
+					Object.assign(document.createElement("span"), {
+						className: states[i],
+						textContent: `${hhmm(start)} ${day[p].join(" ")}`,
+					}),
+				);
+				if (label)
+					spans.unshift(
+						Object.assign(document.createElement("span"), { textContent: label }),
+					);
+				ttEl.replaceChildren(...spans);
+			}
+
 			function applyColor(now = new Date()) {
-				// auto skips mono
-				const i = choice === -1 ? now.getHours() % (palettes.length - 1) : choice;
+				const secs = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+				const step = Math.floor(secs / 10);
+				const i = choice === -1 ? autoPalettes[step % autoPalettes.length] : choice;
 				const [hc, mc, cc] = palettes[i];
 				root.style.setProperty("--hour", hc);
 				root.style.setProperty("--colon", cc);
@@ -291,6 +506,7 @@
 					localStorage.setItem("standby-color", String(i));
 				} catch {}
 				swatches.forEach((b, j) => b.classList.toggle("active", j - 1 === i));
+				document.body.classList.toggle("auto", i === -1);
 				applyColor();
 			}
 			setChoice(choice);
@@ -332,6 +548,7 @@
 			}
 			document.addEventListener("dblclick", toggleFullscreen);
 			document.addEventListener("keydown", (e) => {
+				if (e.metaKey || e.ctrlKey || e.altKey) return;
 				if (e.key.toLowerCase() === "f") toggleFullscreen();
 			});
 		</script>
