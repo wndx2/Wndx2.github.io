@@ -1,86 +1,340 @@
 <!-- wndx2.github.io -->
-<html>
+<!doctype html>
+<html lang="ko">
 	<head>
 		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>¡wndud!</title>
-		<link rel="stylesheet" href="style.css" />
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			href="https://fonts.googleapis.com/css2?family=Nunito:wght@900&display=swap"
+			rel="stylesheet"
+		/>
+		<style>
+			@font-face {
+				font-family: "ChosunGu";
+				src: url("assets/fonts/ChosunGu.TTF") format("truetype");
+			}
+
+			:root {
+				--hour: #ff9a8b;
+				--minute: #ffc4b8;
+				--colon: #e0604f;
+			}
+
+			* {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+			}
+
+			html,
+			body {
+				width: 100%;
+				height: 100%;
+				background: #000;
+				overflow: hidden;
+				user-select: none;
+				-webkit-user-select: none;
+			}
+
+			body.idle {
+				cursor: none;
+			}
+
+			#clock {
+				position: absolute;
+				inset: 0;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				/* slow drift to avoid burn-in */
+				transition: transform 30s ease-in-out;
+			}
+
+			.time {
+				display: flex;
+				align-items: center;
+				font-family: "SF Pro Rounded", "Nunito", ui-rounded, system-ui, sans-serif;
+				font-weight: 900;
+				font-size: min(26vw, 52vh);
+				line-height: 1;
+				font-variant-numeric: tabular-nums;
+			}
+
+			.digit {
+				display: inline-flex;
+				justify-content: center;
+				width: 0.56em;
+				margin: 0 -0.06em;
+				mix-blend-mode: screen;
+				animation: float var(--d, 7s) ease-in-out var(--delay, 0s) infinite;
+				transition: color 4s ease;
+				will-change: transform;
+			}
+
+			.hour {
+				color: var(--hour);
+			}
+
+			.minute {
+				color: var(--minute);
+			}
+
+			.colon {
+				display: inline-flex;
+				justify-content: center;
+				width: 0.28em;
+				margin: 0 -0.02em;
+				padding-bottom: 0.08em;
+				color: var(--colon);
+				transition: color 4s ease;
+				animation: float 7.5s ease-in-out -4s infinite;
+			}
+
+			.digit:nth-child(1) {
+				--d: 7.2s;
+				--delay: -1.1s;
+			}
+			.digit:nth-child(2) {
+				--d: 8.4s;
+				--delay: -3.7s;
+			}
+			.digit:nth-child(4) {
+				--d: 6.6s;
+				--delay: -2.3s;
+			}
+			.digit:nth-child(5) {
+				--d: 7.8s;
+				--delay: -5.2s;
+			}
+
+			@keyframes float {
+				0%,
+				100% {
+					transform: translateY(-1%) rotate(-0.4deg);
+				}
+				50% {
+					transform: translateY(1%) rotate(0.4deg);
+				}
+			}
+
+			/* digit change: soft pop */
+			.digit.tick {
+				animation:
+					float var(--d, 7s) ease-in-out var(--delay, 0s) infinite,
+					pop 0.6s ease-out;
+			}
+
+			@keyframes pop {
+				0% {
+					opacity: 0;
+					filter: blur(12px);
+				}
+				100% {
+					opacity: 1;
+					filter: blur(0);
+				}
+			}
+
+			#hint {
+				position: fixed;
+				bottom: 18px;
+				left: 0;
+				right: 0;
+				text-align: center;
+				font-family: "ChosunGu", serif;
+				font-size: 14px;
+				letter-spacing: 0.08em;
+				color: rgba(255, 255, 255, 0.35);
+				transition: opacity 1.5s ease;
+			}
+
+			#swatches {
+				position: fixed;
+				bottom: 44px;
+				left: 0;
+				right: 0;
+				display: flex;
+				justify-content: center;
+				gap: 12px;
+				transition: opacity 1.5s ease;
+			}
+
+			.swatch {
+				width: 22px;
+				height: 22px;
+				border-radius: 50%;
+				border: 2px solid transparent;
+				background-clip: padding-box;
+				cursor: pointer;
+				outline: none;
+				transition: transform 0.2s ease, border-color 0.2s ease;
+			}
+
+			.swatch:hover {
+				transform: scale(1.15);
+			}
+
+			.swatch.active {
+				border-color: rgba(255, 255, 255, 0.85);
+			}
+
+			.swatch.auto {
+				background: conic-gradient(
+					#ff9a8b,
+					#ffb86b,
+					#9ee6a8,
+					#7cc7ff,
+					#b79bff,
+					#ff8fc7,
+					#ff9a8b
+				);
+			}
+
+			body.idle #swatches {
+				opacity: 0;
+				pointer-events: none;
+			}
+
+			@media (prefers-reduced-motion: reduce) {
+				.digit {
+					animation: none !important;
+				}
+			}
+		</style>
 	</head>
 	<body>
-		<div class="c-center">
-			<div class="p-center">
-				<img
-					src="assets/images/star.png"
-					alt="star"
-					width="128"
-					style="filter: saturate(0%)"
-				/>
+		<div id="clock">
+			<div class="time">
+				<span class="digit hour" id="h1">0</span>
+				<span class="digit hour" id="h2">0</span>
+				<span class="colon">:</span>
+				<span class="digit minute" id="m1">0</span>
+				<span class="digit minute" id="m2">0</span>
 			</div>
 		</div>
 
-		<main>
-			<div id="divider"></div>
+		<div id="swatches"></div>
+		<div id="hint">[ a ] [ c ] [ d ] [ g ] [ r ] [ k ] [ l ] [ m ] [ n ] · [ f ] 전체화면 · [ ← → ] 색상</div>
 
-			<p>작업물:</p>
-			<div class="content">
-				<p>
-					<a href="https://sleepywndud.github.io" target="_blank">
-						[ Ni Brain Too Sht ]
-					</a>
-					- 니뇌투쉿 <br /><br />
-					<span>
-						수학 기출문제(SCHL,EOT,DGE,NZQA), 공부 자료, 내신 팁, 등등을 보관하는
-						사이트입니다.
-					</span>
-				</p>
-			</div>
-			<br />
-			<div class="content">
-				<p>
-					<a href="https://wndx2.github.io/arki" target="_blank"> [ Arki ] </a>
-					- 아키 <br /><br />
-					<span>
-						Desmos를 쓰면서 불편했던 점과 있었으면 했던 기능들을 추가한 그래핑
-						계산기입니다.
-					</span>
-				</p>
-			</div>
+		<script>
+			// ── CLOCK ────────────────────────────────────────────────────
+			const palettes = [
+				["#ff9a8b", "#ffc4b8", "#e0604f"], // coral
+				["#ffb86b", "#ffe0a8", "#e08a2e"], // amber
+				["#9ee6a8", "#d4f7c9", "#4fb862"], // mint
+				["#7cc7ff", "#bfe3ff", "#3d8fd6"], // sky
+				["#b79bff", "#ddd0ff", "#7f5ce0"], // lavender
+				["#ff8fc7", "#ffc9e4", "#d9509a"], // pink
+				["#f2f2f2", "#9a9a9a", "#5a5a5a"], // mono
+			];
 
-			<div id="divider"></div>
+			// -1 = auto (shift palette once per hour)
+			let choice = -1;
+			try {
+				const saved = parseInt(localStorage.getItem("standby-color"), 10);
+				if (saved >= -1 && saved < palettes.length) choice = saved;
+			} catch {}
 
-			<p>연락처:</p>
-			<p>Instagram: @sleepywndud</p>
-			<p>Email: juyoung.parkk8@gmail.com</p>
+			const els = ["h1", "h2", "m1", "m2"].map((id) => document.getElementById(id));
+			const root = document.documentElement;
 
-			<div class="grid-2col">
-				<div>
-					<a href="https://github.com/wndx2" target="_blank">
-						<img src="assets/images/github.png" alt="Github Icon" width="48" />
-					</a>
-					<br />
-					(Personal)
-				</div>
-				<div>
-					<a href="https://github.com/sleepywndud" target="_blank">
-						<img src="assets/images/github.png" alt="Github Icon" width="48" />
-					</a>
-					<br />
-					(School)
-				</div>
-			</div>
+			function setDigit(el, value) {
+				if (el.textContent === value) return;
+				el.textContent = value;
+				el.classList.remove("tick");
+				void el.offsetWidth;
+				el.classList.add("tick");
+			}
 
-			<div id="divider"></div>
+			function update() {
+				const now = new Date();
+				const h = String(now.getHours()).padStart(2, "0");
+				const m = String(now.getMinutes()).padStart(2, "0");
+				const digits = (h + m).split("");
 
-			<p>그거 아시나요?</p>
-			<p>이 페이지에서 [ c ] 키를 누를 시 Google <b>C</b>lassroom이 열린다는 사실을..?</p>
-			<p>사실 이 페이지는 제 자기소개 페이지가 아니라</p>
-			<p>그저 단축키로 다른 웹사이트를 빨리 열기 위해서 만들어진것...</p>
+				setDigit(els[0], digits[0]);
+				setDigit(els[1], digits[1]);
+				setDigit(els[2], digits[2]);
+				setDigit(els[3], digits[3]);
 
-			<br />
+				applyColor(now);
+			}
 
-			<p>단축키:</p>
-			<p>[ a ] [ c ] [ d ] [ g ] [ r ]</p>
-			<p>[ k ] [ l ] [ m ] [ n ]</p>
-		</main>
+			function applyColor(now = new Date()) {
+				// auto skips mono
+				const i = choice === -1 ? now.getHours() % (palettes.length - 1) : choice;
+				const [hc, mc, cc] = palettes[i];
+				root.style.setProperty("--hour", hc);
+				root.style.setProperty("--colon", cc);
+				root.style.setProperty("--minute", mc);
+			}
+
+			// ── COLOR SWITCHER ───────────────────────────────────────────
+			const swatchBox = document.getElementById("swatches");
+			const swatches = [-1, ...palettes.keys()].map((i) => {
+				const b = document.createElement("button");
+				b.className = "swatch" + (i === -1 ? " auto" : "");
+				if (i !== -1) b.style.background = palettes[i][0];
+				b.title = i === -1 ? "auto" : "";
+				b.addEventListener("click", () => setChoice(i));
+				b.addEventListener("dblclick", (e) => e.stopPropagation());
+				swatchBox.appendChild(b);
+				return b;
+			});
+
+			function setChoice(i) {
+				choice = i;
+				try {
+					localStorage.setItem("standby-color", String(i));
+				} catch {}
+				swatches.forEach((b, j) => b.classList.toggle("active", j - 1 === i));
+				applyColor();
+			}
+			setChoice(choice);
+
+			document.addEventListener("keydown", (e) => {
+				const n = palettes.length + 1;
+				if (e.key === "ArrowRight") setChoice(((choice + 2) % n) - 1);
+				if (e.key === "ArrowLeft") setChoice(((choice + n) % n) - 1);
+			});
+
+			update();
+			setInterval(update, 1000);
+
+			// burn-in protection: drift the whole clock a little every 30s
+			const clock = document.getElementById("clock");
+			function drift() {
+				const x = (Math.random() - 0.5) * 4;
+				const y = (Math.random() - 0.5) * 4;
+				clock.style.transform = `translate(${x}vw, ${y}vh)`;
+			}
+			setInterval(drift, 30000);
+
+			// hide cursor + hint when idle
+			let idleTimer;
+			function wake() {
+				document.body.classList.remove("idle");
+				clearTimeout(idleTimer);
+				idleTimer = setTimeout(() => document.body.classList.add("idle"), 3000);
+			}
+			["mousemove", "mousedown", "touchstart"].forEach((e) =>
+				document.addEventListener(e, wake),
+			);
+			wake();
+
+			// fullscreen on double-click or [ f ]
+			function toggleFullscreen() {
+				if (document.fullscreenElement) document.exitFullscreen();
+				else document.documentElement.requestFullscreen?.();
+			}
+			document.addEventListener("dblclick", toggleFullscreen);
+			document.addEventListener("keydown", (e) => {
+				if (e.key.toLowerCase() === "f") toggleFullscreen();
+			});
+		</script>
 		<script src="script.js"></script>
 	</body>
 </html>
