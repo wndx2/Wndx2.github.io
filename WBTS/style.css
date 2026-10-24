@@ -1,0 +1,228 @@
+/* Light mode: off-white page, dark ink. */
+:root {
+	--paper: #fbfaf7;
+	--bar: #ffffff;
+	--bar-line: rgba(0, 0, 0, 0.08);
+	--icon: #2a2a2e;
+	--icon-off: #b9b9bf;
+	--active: rgba(0, 0, 0, 0.07);
+	--ink: #1d1d1f;
+	--blue: #2160d8;
+	--red: #d23a32;
+	--dot: rgba(0, 0, 0, 0.13);
+	color-scheme: light;
+}
+
+/* Dark mode: a black page with light ink. The theme is set on <html> before the page draws. */
+:root[data-theme="dark"] {
+	--paper: #000000;
+	--bar: #1c1c1e;
+	--bar-line: rgba(255, 255, 255, 0.1);
+	--icon: #ececf0;
+	--icon-off: #5c5c63;
+	--active: rgba(255, 255, 255, 0.12);
+	--ink: #f2f2f4;
+	--blue: #5b93ff;
+	--red: #ff6a5f;
+	--dot: rgba(255, 255, 255, 0.14);
+	color-scheme: dark;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	height: 100%;
+	overflow: hidden;
+	background: var(--paper);
+	/* Stop rubber-band scrolling, text selection and the long-press menu. */
+	overscroll-behavior: none;
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+	-webkit-tap-highlight-color: transparent;
+}
+
+body {
+	position: fixed;
+	inset: 0;
+	font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+}
+
+#board {
+	position: absolute;
+	inset: 0;
+	touch-action: none;
+	/* Dot grid that moves with the page, so panning and zooming can be seen. app.js sets its size and position. */
+	background-image: radial-gradient(circle, var(--dot) 1px, transparent 1.3px);
+	background-size: 24px 24px;
+}
+
+#board canvas {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	touch-action: none;
+}
+
+/* Floating toolbar */
+#toolbar {
+	position: fixed;
+	top: max(12px, env(safe-area-inset-top));
+	left: 50%;
+	transform: translateX(-50%);
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 8px;
+	background: var(--bar);
+	border: 1px solid var(--bar-line);
+	border-radius: 16px;
+	box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
+	/* No backdrop blur: it would be recomputed every frame as ink changes underneath. */
+	touch-action: manipulation;
+	z-index: 2;
+}
+
+.group {
+	display: flex;
+	gap: 2px;
+}
+
+.divider {
+	width: 1px;
+	height: 22px;
+	background: var(--bar-line);
+}
+
+#toolbar button {
+	display: grid;
+	place-items: center;
+	width: 40px;
+	height: 40px;
+	padding: 0;
+	border: 0;
+	border-radius: 11px;
+	background: transparent;
+	color: var(--icon);
+	cursor: pointer;
+}
+
+#toolbar #zoom {
+	width: auto;
+	min-width: 56px;
+	padding: 0 8px;
+	font: 500 13px/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+	font-variant-numeric: tabular-nums;
+}
+
+#theme .sun,
+:root[data-theme="dark"] #theme .moon {
+	display: none;
+}
+:root[data-theme="dark"] #theme .sun {
+	display: block;
+}
+
+#toolbar button[aria-pressed="true"] {
+	background: var(--active);
+}
+
+#toolbar button:disabled {
+	color: var(--icon-off);
+	cursor: default;
+}
+
+#toolbar svg {
+	width: 20px;
+	height: 20px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.6;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+.swatch span {
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+}
+
+.swatch[data-color="ink"] span {
+	background: var(--ink);
+}
+.swatch[data-color="blue"] span {
+	background: var(--blue);
+}
+.swatch[data-color="red"] span {
+	background: var(--red);
+}
+
+/* Pen type menu */
+#pen-menu {
+	position: fixed;
+	z-index: 3;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 6px;
+	background: var(--bar);
+	border: 1px solid var(--bar-line);
+	border-radius: 14px;
+	box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
+}
+
+#pen-menu[hidden] {
+	display: none;
+}
+
+#pen-menu button {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	width: 200px;
+	padding: 8px 12px;
+	border: 0;
+	border-radius: 10px;
+	background: transparent;
+	color: var(--icon);
+	font: inherit;
+	text-align: left;
+	cursor: pointer;
+}
+
+#pen-menu button[aria-checked="true"] {
+	background: var(--active);
+}
+
+#pen-menu canvas {
+	width: 64px;
+	height: 24px;
+	flex: none;
+}
+
+.size span {
+	border-radius: 50%;
+	background: currentColor;
+}
+.size[data-size="0"] span {
+	width: 4px;
+	height: 4px;
+}
+.size[data-size="1"] span {
+	width: 8px;
+	height: 8px;
+}
+.size[data-size="2"] span {
+	width: 14px;
+	height: 14px;
+}
+
+.swatch[aria-pressed="true"] span {
+	box-shadow: 0 0 0 2px var(--bar), 0 0 0 3.5px currentColor;
+}

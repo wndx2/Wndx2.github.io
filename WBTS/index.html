@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<!-- No zooming: pinches and double taps belong to the page, not the browser. -->
+		<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+		<meta name="theme-color" content="#fbfaf7" />
+		<!-- Sets the theme before the first paint: the saved choice, or else the iPad's. -->
+		<script>
+			(function () {
+				var saved = null;
+				try {
+					saved = localStorage.getItem("wbts:theme");
+				} catch (e) {}
+				var dark = saved === "dark" || (saved !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+				document.documentElement.dataset.theme = dark ? "dark" : "light";
+				document.querySelector('meta[name="theme-color"]').content = dark ? "#000000" : "#fbfaf7";
+			})();
+		</script>
+		<meta name="description" content="WBTS is a scribble pad for iPad and Apple Pencil." />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+		<meta name="apple-mobile-web-app-title" content="WBTS" />
+		<link
+			rel="icon"
+			href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23222'/%3E%3Cpath d='M8 21c3-7 5-9 6-6s2 5 4 1 4-6 6-4' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
+		/>
+		<title>WBTS</title>
+		<link rel="stylesheet" href="style.css" />
+	</head>
+	<body>
+		<main id="board">
+			<canvas id="ink" aria-label="Drawing surface"></canvas>
+			<canvas id="live" aria-hidden="true"></canvas>
+		</main>
+
+		<nav id="toolbar" aria-label="Tools">
+			<div class="group" role="radiogroup" aria-label="Tool">
+				<button class="tool" data-tool="pen" aria-label="Pen" aria-pressed="true">
+					<svg viewBox="0 0 20 20"><path d="M13.5 3.5l3 3L7 16H4v-3z" /><path d="M11.5 5.5l3 3" /></svg>
+				</button>
+				<button class="tool" data-tool="eraser" aria-label="Eraser" aria-pressed="false">
+					<svg viewBox="0 0 20 20"><path d="M8 16.5h8.5" /><path d="M3.8 12.2l7.7-7.7a1.5 1.5 0 012.1 0l2.9 2.9a1.5 1.5 0 010 2.1L10 16H7.6z" /><path d="M7.5 8.5l4 4" /></svg>
+				</button>
+			</div>
+
+			<span class="divider"></span>
+
+			<div class="group" role="radiogroup" aria-label="Colour">
+				<button class="swatch" data-color="ink" aria-label="Black or white" aria-pressed="true"><span></span></button>
+				<button class="swatch" data-color="blue" aria-label="Blue" aria-pressed="false"><span></span></button>
+				<button class="swatch" data-color="red" aria-label="Red" aria-pressed="false"><span></span></button>
+			</div>
+
+			<span class="divider"></span>
+
+			<div class="group" role="radiogroup" aria-label="Thickness">
+				<button class="size" data-size="0" aria-label="Fine" aria-pressed="false"><span></span></button>
+				<button class="size" data-size="1" aria-label="Medium" aria-pressed="true"><span></span></button>
+				<button class="size" data-size="2" aria-label="Bold" aria-pressed="false"><span></span></button>
+			</div>
+
+			<span class="divider"></span>
+
+			<div class="group">
+				<button id="undo" aria-label="Undo" disabled>
+					<svg viewBox="0 0 20 20"><path d="M7 4L3.5 7.5 7 11" /><path d="M4 7.5h7.5a4.5 4.5 0 010 9H8" /></svg>
+				</button>
+				<button id="redo" aria-label="Redo" disabled>
+					<svg viewBox="0 0 20 20"><path d="M13 4l3.5 3.5L13 11" /><path d="M16 7.5H8.5a4.5 4.5 0 000 9H12" /></svg>
+				</button>
+				<button id="clear" aria-label="Clear page" disabled>
+					<svg viewBox="0 0 20 20"><path d="M4 6h12" /><path d="M8 6V4h4v2" /><path d="M5.5 6l.8 10h7.4l.8-10" /></svg>
+				</button>
+			</div>
+
+			<span class="divider"></span>
+
+			<button id="zoom" aria-label="Reset zoom to 100%">100%</button>
+			<button id="theme" aria-label="Switch light or dark">
+				<!-- Moon shows in light mode, sun in dark mode. -->
+				<svg class="moon" viewBox="0 0 20 20"><path d="M16 12.5A6.5 6.5 0 017.5 4a6.5 6.5 0 108.5 8.5z" /></svg>
+				<svg class="sun" viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.5" /><path d="M10 2.5v1.5M10 16v1.5M2.5 10H4M16 10h1.5M4.7 4.7l1 1M14.3 14.3l1 1M4.7 15.3l1-1M14.3 5.7l1-1" /></svg>
+			</button>
+		</nav>
+
+		<!-- Opens when you tap the pen button while the pen is already selected. -->
+		<div id="pen-menu" role="menu" aria-label="Pen type" hidden>
+			<button data-pen="fountain" role="menuitemradio" aria-checked="true"><canvas></canvas><span>Fountain pen</span></button>
+			<button data-pen="ball" role="menuitemradio" aria-checked="false"><canvas></canvas><span>Ball pen</span></button>
+			<button data-pen="brush" role="menuitemradio" aria-checked="false"><canvas></canvas><span>Brush pen</span></button>
+		</div>
+
+		<script src="app.js"></script>
+	</body>
+</html>
