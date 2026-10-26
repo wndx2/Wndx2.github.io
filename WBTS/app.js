@@ -170,10 +170,82 @@
 		path.arc(x, y, r, 0, Math.PI * 2);
 	}
 
+	// Cleans up the Pencil's samples before the outline is built. The Pencil wobbles by
+	// about a screen pixel, which can't be seen at the zoom you wrote at but turns into
+	// lumps and notches once you zoom in. So: drop samples that are too close together,
+	// find the real sharp corners, and gently smooth everything else. Sizes are in
+	// screen pixels at the zoom the line was written at (s.scale).
+	function cleanPoints(s) {
+		var raw = s.points;
+		var px = 1 / (s.scale || 1);
+		var gap = 1.5 * px;
+		var pts = [];
+		for (var i = 0; i < raw.length; i++) {
+			var r = raw[i];
+			var last = pts[pts.length - 1];
+			var copy = { x: r.x, y: r.y, p: r.p, v: r.v, d: r.d, corner: false };
+			if (last && Math.hypot(r.x - last.x, r.y - last.y) < gap) {
+				// Always end exactly where the Pencil lifted.
+				if (i === raw.length - 1 && pts.length > 1) pts[pts.length - 1] = copy;
+				continue;
+			}
+			pts.push(copy);
+		}
+
+		var n = pts.length;
+		if (n < 3) return pts;
+
+		// How sharply the line turns at each point, judged from points a few pixels
+		// away on each side so a wobble doesn't count as a corner. 1 is straight, -1 doubles back.
+		var reach = 4 * px;
+		var turn = new Array(n);
+		turn[0] = turn[n - 1] = 1;
+		for (i = 1; i < n - 1; i++) {
+			var a = i;
+			var b = i;
+			while (a > 0 && pts[i].d - pts[a].d < reach) a--;
+			while (b < n - 1 && pts[b].d - pts[i].d < reach) b++;
+			var ux = pts[i].x - pts[a].x;
+			var uy = pts[i].y - pts[a].y;
+			var vx = pts[b].x - pts[i].x;
+			var vy = pts[b].y - pts[i].y;
+			var lu = Math.hypot(ux, uy);
+			var lv = Math.hypot(vx, vy);
+			turn[i] = lu && lv ? (ux * vx + uy * vy) / (lu * lv) : 1;
+		}
+		// A corner is the sharpest point of a sharp turn. It stays exactly where it was drawn.
+		for (i = 1; i < n - 1; i++) {
+			pts[i].corner = turn[i] < -0.2 && turn[i] <= turn[i - 1] && turn[i] <= turn[i + 1];
+		}
+
+		// Smooth everything but the ends and the corners.
+		for (var pass = 0; pass < 3; pass++) {
+			var px0 = pts[0].x;
+			var py0 = pts[0].y;
+			var pp0 = pts[0].p;
+			for (i = 1; i < n - 1; i++) {
+				var c = pts[i];
+				var next = pts[i + 1];
+				var cx = c.x;
+				var cy = c.y;
+				var cp = c.p;
+				if (!c.corner) {
+					c.x = (px0 + 2 * cx + next.x) / 4;
+					c.y = (py0 + 2 * cy + next.y) / 4;
+					c.p = (pp0 + 2 * cp + next.p) / 4;
+				}
+				px0 = cx;
+				py0 = cy;
+				pp0 = cp;
+			}
+		}
+		return pts;
+	}
+
 	// Builds the outline of a pen stroke. extra: predicted points to add on the end.
 	// finished: the line is done, so its end tapers too.
 	function penShape(s, extra, finished) {
-		var pts = s.points;
+		var pts = cleanPoints(s);
 		var n = pts.length;
 		var total = finished ? pts[n - 1].d : null;
 		var W = new Array(n);
@@ -203,9 +275,8 @@
 			right.push(x + ty * h, y - tx * h);
 		}
 
-		// The line passes through every sample exactly; nothing is smoothed away.
 		// Each point gets a direction: the line through its neighbours, so curves flow.
-		// At a sharp turn the line comes in one way and leaves another, so corners stay sharp.
+		// At a corner the line comes in one way and leaves another, so corners stay sharp.
 		var inX = new Array(n);
 		var inY = new Array(n);
 		var outX = new Array(n);
@@ -220,7 +291,7 @@
 			var vy = b.y - c.y;
 			var lu = Math.hypot(ux, uy);
 			var lv = Math.hypot(vx, vy);
-			if (lu && lv && (ux * vx + uy * vy) / (lu * lv) < -0.2) {
+			if (c.corner && lu && lv) {
 				inX[i] = ux / lu;
 				inY[i] = uy / lu;
 				outX[i] = vx / lv;
@@ -312,8 +383,17 @@
 	}
 
 	function drawAction(ctx, a) {
-		if (a.tool === "eraser") eraseShape(ctx, a, a.shape);
-		else fillShape(ctx, a, a.shape);
+		if (a.tool === "eraser") {
+			eraseShape(ctx, a, a.shape);
+			return;
+		}
+		// The outline was built for the zoom it was last drawn at. Zoomed in well past
+		// that, rebuild it with more pieces so its curves don't show straight edges.
+		if (view.s > a.detail * 1.5) {
+			a.shape = penShape(a, null, true);
+			a.detail = Math.max(view.s, 1);
+		}
+		fillShape(ctx, a, a.shape);
 	}
 
 	function bounds(points, pad) {
@@ -476,6 +556,8 @@
 			pen: penType,
 			color: color,
 			size: SIZES[tool][sizeChoice[tool]],
+			// The zoom it was written at, so the clean-up knows how big a wobble is.
+			scale: view.s,
 			points: [],
 			predicted: null,
 			erasedTo: 0,
@@ -512,8 +594,10 @@
 			pen: s.pen,
 			color: s.color,
 			size: s.size,
+			scale: s.scale,
 			points: s.points,
 			box: bounds(s.points, s.size * 1.5),
+			detail: Math.max(view.s, 1),
 		};
 		if (s.tool === "eraser") {
 			a.shape = eraserShape(s);
