@@ -164,7 +164,7 @@ body {
 }
 
 /* Pen type menu */
-#pen-menu {
+.menu {
 	position: fixed;
 	z-index: 3;
 	display: flex;
@@ -177,11 +177,11 @@ body {
 	box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
 }
 
-#pen-menu[hidden] {
+.menu[hidden] {
 	display: none;
 }
 
-#pen-menu button {
+.menu button {
 	display: flex;
 	align-items: center;
 	gap: 12px;
@@ -196,11 +196,11 @@ body {
 	cursor: pointer;
 }
 
-#pen-menu button[aria-checked="true"] {
+.menu button[aria-checked="true"] {
 	background: var(--active);
 }
 
-#pen-menu canvas {
+.menu canvas {
 	width: 64px;
 	height: 24px;
 	flex: none;
@@ -225,4 +225,54 @@ body {
 
 .swatch[aria-pressed="true"] span {
 	box-shadow: 0 0 0 2px var(--bar), 0 0 0 3.5px currentColor;
+}
+
+/* Copy menu: a small page sample in each theme's colours. */
+.chip {
+	display: grid;
+	place-items: center;
+	width: 36px;
+	height: 24px;
+	flex: none;
+	border: 1px solid var(--bar-line);
+	border-radius: 6px;
+}
+.chip i {
+	width: 18px;
+	height: 3px;
+	border-radius: 2px;
+}
+.chip.light {
+	background: #fbfaf7;
+}
+.chip.light i {
+	background: #1d1d1f;
+}
+.chip.dark {
+	background: #000000;
+}
+.chip.dark i {
+	background: #f2f2f4;
+}
+
+/* A short message at the bottom, such as "Copied". */
+#toast {
+	position: fixed;
+	left: 50%;
+	bottom: max(24px, env(safe-area-inset-bottom));
+	z-index: 4;
+	padding: 8px 14px;
+	background: var(--bar);
+	color: var(--icon);
+	border: 1px solid var(--bar-line);
+	border-radius: 12px;
+	box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+	opacity: 0;
+	transform: translate(-50%, 8px);
+	transition: opacity 0.2s, transform 0.2s;
+	pointer-events: none;
+}
+#toast.show {
+	opacity: 1;
+	transform: translate(-50%, 0);
 }

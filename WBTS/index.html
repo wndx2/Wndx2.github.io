@@ -73,6 +73,9 @@
 				<button id="clear" aria-label="Clear page" disabled>
 					<svg viewBox="0 0 20 20"><path d="M4 6h12" /><path d="M8 6V4h4v2" /><path d="M5.5 6l.8 10h7.4l.8-10" /></svg>
 				</button>
+				<button id="copy" aria-label="Copy as image" aria-haspopup="menu" disabled>
+					<svg viewBox="0 0 20 20"><rect x="7" y="7" width="9.5" height="9.5" rx="2" /><path d="M13 4.5A1.5 1.5 0 0011.5 3.5h-6a2 2 0 00-2 2v6A1.5 1.5 0 004.5 13" /></svg>
+				</button>
 			</div>
 
 			<span class="divider"></span>
@@ -86,11 +89,19 @@
 		</nav>
 
 		<!-- Opens when you tap the pen button while the pen is already selected. -->
-		<div id="pen-menu" role="menu" aria-label="Pen type" hidden>
+		<div id="pen-menu" class="menu" role="menu" aria-label="Pen type" hidden>
 			<button data-pen="fountain" role="menuitemradio" aria-checked="true"><canvas></canvas><span>Fountain pen</span></button>
 			<button data-pen="ball" role="menuitemradio" aria-checked="false"><canvas></canvas><span>Ball pen</span></button>
 			<button data-pen="brush" role="menuitemradio" aria-checked="false"><canvas></canvas><span>Brush pen</span></button>
 		</div>
+
+		<!-- Copies the page as a picture, on a light or dark background, whatever the current theme. -->
+		<div id="copy-menu" class="menu" role="menu" aria-label="Copy as image" hidden>
+			<button data-copy="light" role="menuitem"><span class="chip light"><i></i></span><span>Copy as light</span></button>
+			<button data-copy="dark" role="menuitem"><span class="chip dark"><i></i></span><span>Copy as dark</span></button>
+		</div>
+
+		<div id="toast" role="status" aria-live="polite"></div>
 
 		<script src="app.js"></script>
 	</body>

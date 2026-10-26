@@ -244,7 +244,8 @@
 
 	// Builds the outline of a pen stroke. extra: predicted points to add on the end.
 	// finished: the line is done, so its end tapers too.
-	function penShape(s, extra, finished) {
+	// detail: how finely to cut curves; defaults to suit the current zoom.
+	function penShape(s, extra, finished, detail) {
 		var pts = cleanPoints(s);
 		var n = pts.length;
 		var total = finished ? pts[n - 1].d : null;
@@ -263,7 +264,7 @@
 		addCircle(round, first.x, first.y, W[0]);
 
 		// More pieces per curve when zoomed in, so curves stay smooth.
-		var detail = Math.max(view.s, 1);
+		detail = detail || Math.max(view.s, 1);
 		var left = [];
 		var right = [];
 
@@ -662,9 +663,10 @@
 	board.addEventListener("pointerdown", function (e) {
 		if (e.pointerType === "mouse" && e.button !== 0) return;
 		e.preventDefault();
-		// A tap on the page while the pen menu is open only closes the menu.
-		if (!penMenu.hidden) {
+		// A tap on the page while a menu is open only closes the menu.
+		if (!penMenu.hidden || !copyMenu.hidden) {
 			closePenMenu();
+			copyMenu.hidden = true;
 			return;
 		}
 		try {
@@ -769,6 +771,7 @@
 	var undoBtn = document.getElementById("undo");
 	var redoBtn = document.getElementById("redo");
 	var clearBtn = document.getElementById("clear");
+	var copyBtn = document.getElementById("copy");
 
 	function pageIsEmpty() {
 		return !actions.length || actions[actions.length - 1].type === "clear";
@@ -778,6 +781,7 @@
 		undoBtn.disabled = !actions.length;
 		redoBtn.disabled = !redoStack.length;
 		clearBtn.disabled = pageIsEmpty();
+		copyBtn.disabled = pageIsEmpty();
 	}
 
 	function undo() {
@@ -864,11 +868,18 @@
 		fillShape(ctx, s, penShape(s, null, true));
 	}
 
-	function openPenMenu(button) {
+	// Opens a menu under its button, kept inside the window.
+	function placeMenu(menu, button) {
 		var r = button.getBoundingClientRect();
-		penMenu.style.left = r.left + "px";
-		penMenu.style.top = r.bottom + 10 + "px";
-		penMenu.hidden = false;
+		menu.hidden = false;
+		var left = Math.min(r.left, window.innerWidth - menu.offsetWidth - 8);
+		menu.style.left = Math.max(8, left) + "px";
+		menu.style.top = r.bottom + 10 + "px";
+	}
+
+	function openPenMenu(button) {
+		copyMenu.hidden = true;
+		placeMenu(penMenu, button);
 		penMenu.querySelectorAll("button").forEach(function (b) {
 			drawPreview(b.querySelector("canvas"), b.dataset.pen);
 		});
@@ -878,11 +889,17 @@
 		penMenu.hidden = true;
 	}
 
-	// Any tap outside the menu (and not on the pen button, which toggles it) closes it.
+	// Any tap outside a menu (and not on the button that toggles it) closes it.
 	document.addEventListener("pointerdown", function (e) {
-		if (penMenu.hidden || penMenu.contains(e.target)) return;
-		if (e.target.closest && e.target.closest('[data-tool="pen"]')) return;
-		closePenMenu();
+		var t = e.target;
+		[
+			[penMenu, '[data-tool="pen"]'],
+			[copyMenu, "#copy"],
+		].forEach(function (m) {
+			if (m[0].hidden || m[0].contains(t)) return;
+			if (t.closest && t.closest(m[1])) return;
+			m[0].hidden = true;
+		});
 	});
 
 	penMenu.querySelectorAll("button").forEach(function (b) {
@@ -911,6 +928,164 @@
 		});
 	});
 
+	// ---------- Copy as image ----------
+	//
+	// The strokes are vector shapes, so the picture is drawn fresh from them at a high
+	// resolution rather than copied off the screen: it's sharp, cropped to the writing,
+	// and can use either theme's colours. It goes on the clipboard as a PNG because
+	// that's what other iPad apps accept when you paste.
+
+	var copyMenu = document.getElementById("copy-menu");
+	var toastEl = document.getElementById("toast");
+	var toastTimer = 0;
+
+	// The same colours as style.css, for both themes at once.
+	var THEMES = {
+		light: { paper: "#fbfaf7", ink: "#1d1d1f", blue: "#2160d8", red: "#d23a32" },
+		dark: { paper: "#000000", ink: "#f2f2f4", blue: "#5b93ff", red: "#ff6a5f" },
+	};
+
+	function toast(text) {
+		toastEl.textContent = text;
+		toastEl.classList.add("show");
+		clearTimeout(toastTimer);
+		toastTimer = setTimeout(function () {
+			toastEl.classList.remove("show");
+		}, 1800);
+	}
+
+	// Everything drawn since the last "clear".
+	function pageActions() {
+		var start = 0;
+		for (var i = actions.length - 1; i >= 0; i--) {
+			if (actions[i].type === "clear") {
+				start = i + 1;
+				break;
+			}
+		}
+		return actions.slice(start);
+	}
+
+	// Draws the page onto a new canvas in the given theme, or returns null if there's no ink.
+	function renderImage(themeName) {
+		var colors = THEMES[themeName];
+		var list = pageActions();
+		// Crop to the pen strokes; the eraser can only remove ink, never add it.
+		var box = null;
+		list.forEach(function (a) {
+			if (a.tool !== "pen") return;
+			var b = a.box;
+			if (!box) box = { x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 };
+			else {
+				box.x0 = Math.min(box.x0, b.x0);
+				box.y0 = Math.min(box.y0, b.y0);
+				box.x1 = Math.max(box.x1, b.x1);
+				box.y1 = Math.max(box.y1, b.y1);
+			}
+		});
+		if (!box) return null;
+
+		var pad = 24;
+		var w = box.x1 - box.x0 + pad * 2;
+		var h = box.y1 - box.y0 + pad * 2;
+		// 4 pixels per page unit, kept under Safari's canvas size limits.
+		var scale = Math.min(4, 8192 / Math.max(w, h), Math.sqrt(16e6 / (w * h)));
+		var pw = Math.max(1, Math.round(w * scale));
+		var ph = Math.max(1, Math.round(h * scale));
+
+		// Ink goes on its own transparent layer so the eraser can't cut through the background.
+		var layer = document.createElement("canvas");
+		layer.width = pw;
+		layer.height = ph;
+		var ctx = layer.getContext("2d");
+		ctx.setTransform(scale, 0, 0, scale, (pad - box.x0) * scale, (pad - box.y0) * scale);
+		ctx.lineCap = "round";
+		ctx.lineJoin = "round";
+		list.forEach(function (a) {
+			if (a.tool === "eraser") {
+				eraseShape(ctx, a, a.shape);
+				return;
+			}
+			var shape = penShape(a, null, true, scale);
+			ctx.globalCompositeOperation = "source-over";
+			ctx.fillStyle = colors[a.color];
+			ctx.fill(shape.body);
+			ctx.fill(shape.round);
+		});
+
+		var out = document.createElement("canvas");
+		out.width = pw;
+		out.height = ph;
+		var octx = out.getContext("2d");
+		octx.fillStyle = colors.paper;
+		octx.fillRect(0, 0, pw, ph);
+		octx.drawImage(layer, 0, 0);
+		layer.width = layer.height = 0;
+		return out;
+	}
+
+	// If the clipboard says no, save the picture as a file instead.
+	function saveImage(blob, themeName) {
+		blob.then(function (b) {
+			var url = URL.createObjectURL(b);
+			var link = document.createElement("a");
+			link.href = url;
+			link.download = "wbts-" + themeName + ".png";
+			document.body.appendChild(link);
+			link.click();
+			link.remove();
+			setTimeout(function () {
+				URL.revokeObjectURL(url);
+			}, 10000);
+			toast("Couldn't copy, so it was saved as an image");
+		});
+	}
+
+	function copyImage(themeName) {
+		if (current) return;
+		var canvas = renderImage(themeName);
+		if (!canvas) {
+			toast("Nothing to copy");
+			return;
+		}
+		var blob = new Promise(function (resolve, reject) {
+			canvas.toBlob(function (b) {
+				if (b) resolve(b);
+				else reject(new Error("Couldn't make the image"));
+			}, "image/png");
+		});
+		// Safari only allows a clipboard write straight from a tap, so it's started now
+		// and given the image as a promise to fill in when ready.
+		if (navigator.clipboard && navigator.clipboard.write && window.ClipboardItem) {
+			navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]).then(
+				function () {
+					toast(themeName === "dark" ? "Copied on dark" : "Copied on light");
+				},
+				function () {
+					saveImage(blob, themeName);
+				}
+			);
+		} else {
+			saveImage(blob, themeName);
+		}
+	}
+
+	copyBtn.addEventListener("click", function () {
+		if (!copyMenu.hidden) {
+			copyMenu.hidden = true;
+			return;
+		}
+		closePenMenu();
+		placeMenu(copyMenu, copyBtn);
+	});
+
+	copyMenu.querySelectorAll("button").forEach(function (b) {
+		b.addEventListener("click", function () {
+			copyMenu.hidden = true;
+			copyImage(b.dataset.copy);
+		});
+	});
+
 	undoBtn.addEventListener("click", undo);
 	redoBtn.addEventListener("click", redo);
 	clearBtn.addEventListener("click", clearPage);
@@ -923,6 +1098,7 @@
 		if (k === "z" && e.shiftKey) redo();
 		else if (k === "z") undo();
 		else if (k === "y") redo();
+		else if (k === "c") copyImage(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
 		else if (k === "0") resetZoom();
 		else if (k === "=" || k === "+") zoomAt(width / 2, height / 2, 1.25);
 		else if (k === "-") zoomAt(width / 2, height / 2, 0.8);
