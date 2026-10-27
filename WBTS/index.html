@@ -40,6 +40,9 @@
 				<button class="tool" data-tool="pen" aria-label="Pen" aria-pressed="true">
 					<svg viewBox="0 0 20 20"><path d="M13.5 3.5l3 3L7 16H4v-3z" /><path d="M11.5 5.5l3 3" /></svg>
 				</button>
+				<button class="tool" data-tool="highlighter" aria-label="Highlighter" aria-pressed="false">
+					<svg viewBox="0 0 20 20"><path d="M12 3.5l4.5 4.5-6 6L6 9.5z" /><path d="M6 9.5L4.5 14l1.5 1.5L10.5 14" /><path d="M3 17.5h5" /></svg>
+				</button>
 				<button class="tool" data-tool="eraser" aria-label="Eraser" aria-pressed="false">
 					<svg viewBox="0 0 20 20"><path d="M8 16.5h8.5" /><path d="M3.8 12.2l7.7-7.7a1.5 1.5 0 012.1 0l2.9 2.9a1.5 1.5 0 010 2.1L10 16H7.6z" /><path d="M7.5 8.5l4 4" /></svg>
 				</button>
@@ -47,10 +50,21 @@
 
 			<span class="divider"></span>
 
-			<div class="group" role="radiogroup" aria-label="Colour">
+			<div class="group swatches" data-for="pen" role="radiogroup" aria-label="Pen colour">
 				<button class="swatch" data-color="ink" aria-label="Black or white" aria-pressed="true"><span></span></button>
 				<button class="swatch" data-color="blue" aria-label="Blue" aria-pressed="false"><span></span></button>
 				<button class="swatch" data-color="red" aria-label="Red" aria-pressed="false"><span></span></button>
+				<button class="swatch" data-color="green" aria-label="Green" aria-pressed="false"><span></span></button>
+				<button class="swatch" data-color="purple" aria-label="Purple" aria-pressed="false"><span></span></button>
+				<button class="swatch" data-color="orange" aria-label="Orange" aria-pressed="false"><span></span></button>
+			</div>
+			<div class="group swatches" data-for="highlighter" role="radiogroup" aria-label="Highlighter colour" hidden>
+				<button class="swatch" data-color="hl-yellow" aria-label="Yellow" aria-pressed="true"><span></span></button>
+				<button class="swatch" data-color="hl-orange" aria-label="Orange" aria-pressed="false"><span></span></button>
+				<button class="swatch" data-color="hl-pink" aria-label="Pink" aria-pressed="false"><span></span></button>
+				<button class="swatch" data-color="hl-purple" aria-label="Purple" aria-pressed="false"><span></span></button>
+				<button class="swatch" data-color="hl-blue" aria-label="Blue" aria-pressed="false"><span></span></button>
+				<button class="swatch" data-color="hl-green" aria-label="Green" aria-pressed="false"><span></span></button>
 			</div>
 
 			<span class="divider"></span>
@@ -76,6 +90,9 @@
 				<button id="copy" aria-label="Copy as image" aria-haspopup="menu" disabled>
 					<svg viewBox="0 0 20 20"><rect x="7" y="7" width="9.5" height="9.5" rx="2" /><path d="M13 4.5A1.5 1.5 0 0011.5 3.5h-6a2 2 0 00-2 2v6A1.5 1.5 0 004.5 13" /></svg>
 				</button>
+				<button id="notes" aria-label="Save or open notes with a code" aria-haspopup="menu">
+					<svg viewBox="0 0 20 20"><circle cx="7" cy="10" r="3.5" /><path d="M10.5 10H17" /><path d="M14.5 10v2.5" /><path d="M17 10v2" /></svg>
+				</button>
 			</div>
 
 			<span class="divider"></span>
@@ -100,6 +117,25 @@
 			<button data-copy="light" role="menuitem"><span class="chip light"><i></i></span><span>Copy as light</span></button>
 			<button data-copy="dark" role="menuitem"><span class="chip dark"><i></i></span><span>Copy as dark</span></button>
 		</div>
+
+		<!-- Save notes as a code, or open notes from one. -->
+		<div id="notes-menu" class="menu" role="menu" aria-label="Notes code" hidden>
+			<button data-notes="save" role="menuitem"><span>Save notes as code</span></button>
+			<button data-notes="open" role="menuitem"><span>Open notes from code</span></button>
+		</div>
+
+		<dialog id="code-dialog" aria-labelledby="code-title">
+			<h2 id="code-title">Notes code</h2>
+			<p id="code-note"></p>
+			<textarea id="code-text" rows="6" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off"></textarea>
+			<p id="code-error" aria-live="polite"></p>
+			<div class="actions">
+				<button id="code-cancel" type="button">Close</button>
+				<button id="code-link" class="save-only" type="button">Copy link</button>
+				<button id="code-copy" class="save-only primary" type="button">Copy code</button>
+				<button id="code-open" class="open-only primary" type="button">Open</button>
+			</div>
+		</dialog>
 
 		<div id="toast" role="status" aria-live="polite"></div>
 

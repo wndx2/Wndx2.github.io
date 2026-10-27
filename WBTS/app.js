@@ -13,10 +13,11 @@
 	// Fine, medium and bold, for each tool.
 	var SIZES = {
 		pen: [1.6, 3.2, 6.5],
+		highlighter: [10, 18, 30],
 		eraser: [12, 28, 60],
 	};
 	// The size picked for each tool, as an index into SIZES.
-	var sizeChoice = { pen: 1, eraser: 1 };
+	var sizeChoice = { pen: 1, highlighter: 1, eraser: 1 };
 	var MIN_ZOOM = 0.1;
 	var MAX_ZOOM = 8;
 	var GRID = 24;
@@ -28,8 +29,47 @@
 	var tool = "pen";
 	// fountain, ball or brush, like GoodNotes.
 	var penType = "fountain";
-	var color = "ink";
+	// The colour picked for each inking tool. Highlighter colours start with "hl-".
+	var colorChoice = { pen: "ink", highlighter: "hl-yellow" };
+	// The pen or highlighter, whichever was used last. The eraser shows its colours.
+	var inkTool = "pen";
 	var palette = {};
+
+	// Every ink colour in both themes. The toolbar swatches and copied images use these too.
+	var THEMES = {
+		light: {
+			paper: "#fbfaf7",
+			ink: "#1d1d1f",
+			blue: "#2160d8",
+			red: "#d23a32",
+			green: "#1f8a4c",
+			purple: "#7b3fd1",
+			orange: "#e07000",
+			"hl-yellow": "#ffd400",
+			"hl-orange": "#ffa04d",
+			"hl-pink": "#ff7ab8",
+			"hl-purple": "#b892ff",
+			"hl-blue": "#5ac8fa",
+			"hl-green": "#7ee081",
+		},
+		dark: {
+			paper: "#000000",
+			ink: "#f2f2f4",
+			blue: "#5b93ff",
+			red: "#ff6a5f",
+			green: "#4cd07d",
+			purple: "#b48cff",
+			orange: "#ff9f43",
+			"hl-yellow": "#ffd60a",
+			"hl-orange": "#ff9f43",
+			"hl-pink": "#ff6fb5",
+			"hl-purple": "#a77bff",
+			"hl-blue": "#4fb8ff",
+			"hl-green": "#5fd77f",
+		},
+	};
+	// Highlighter ink is see-through, so writing underneath still shows.
+	var HIGHLIGHT_ALPHA = { light: 0.45, dark: 0.42 };
 
 	// Where the page sits on screen: screen = page * s + (x, y).
 	// The board fills the window, so screen and client coordinates are the same.
@@ -108,13 +148,15 @@
 
 	// ---------- Setup ----------
 
+	function themeName() {
+		return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+	}
+
 	function readPalette() {
-		var css = getComputedStyle(document.documentElement);
-		palette = {
-			ink: css.getPropertyValue("--ink").trim(),
-			blue: css.getPropertyValue("--blue").trim(),
-			red: css.getPropertyValue("--red").trim(),
-		};
+		palette = THEMES[themeName()];
+		document.querySelectorAll(".swatch span").forEach(function (span) {
+			span.style.background = palette[span.parentNode.dataset.color];
+		});
 	}
 
 	function resize() {
@@ -409,6 +451,42 @@
 		return path;
 	}
 
+	// The highlighter is one even, round-ended swipe along the cleaned-up line, stroked in
+	// one go so it doesn't get darker where the line crosses itself.
+	function highlighterShape(s) {
+		var pts = cleanPoints(s);
+		var path = new Path2D();
+		var first = pts[0];
+		path.moveTo(first.x, first.y);
+		if (pts.length === 1) {
+			path.lineTo(first.x + 0.01, first.y);
+			return path;
+		}
+		// Curves through the midpoints between samples, so it stays smooth when zoomed in.
+		for (var i = 1; i < pts.length - 1; i++) {
+			var c = pts[i];
+			var b = pts[i + 1];
+			path.quadraticCurveTo(c.x, c.y, (c.x + b.x) / 2, (c.y + b.y) / 2);
+		}
+		var last = pts[pts.length - 1];
+		path.lineTo(last.x, last.y);
+		return path;
+	}
+
+	// On a light page the highlight darkens like a marker on paper; on a dark page it lightens.
+	// So writing under it stays readable in both.
+	function drawHighlight(ctx, s, path, colors, theme) {
+		ctx.save();
+		ctx.globalCompositeOperation = theme === "dark" ? "screen" : "multiply";
+		ctx.globalAlpha = HIGHLIGHT_ALPHA[theme];
+		ctx.strokeStyle = colors[s.color];
+		ctx.lineWidth = s.size;
+		ctx.lineCap = "round";
+		ctx.lineJoin = "round";
+		ctx.stroke(path);
+		ctx.restore();
+	}
+
 	function fillShape(ctx, s, shape) {
 		ctx.globalCompositeOperation = "source-over";
 		ctx.fillStyle = palette[s.color];
@@ -426,6 +504,10 @@
 	function drawAction(ctx, a) {
 		if (a.tool === "eraser") {
 			eraseShape(ctx, a, a.shape);
+			return;
+		}
+		if (a.tool === "highlighter") {
+			drawHighlight(ctx, a, a.shape, palette, themeName());
 			return;
 		}
 		// The outline was built for the zoom it was last drawn at. Zoomed in well past
@@ -517,6 +599,10 @@
 			return;
 		}
 
+		if (s.tool === "highlighter") {
+			drawHighlight(live, s, highlighterShape(s), palette, themeName());
+			return;
+		}
 		fillShape(live, s, penShape(s, s.predicted));
 	}
 
@@ -595,7 +681,7 @@
 		current = {
 			tool: tool,
 			pen: penType,
-			color: color,
+			color: colorChoice[tool] || colorChoice.pen,
 			size: SIZES[tool][sizeChoice[tool]],
 			// The zoom it was written at, so the clean-up knows how big a wobble is.
 			scale: view.s,
@@ -642,6 +728,9 @@
 		};
 		if (s.tool === "eraser") {
 			a.shape = eraserShape(s);
+		} else if (s.tool === "highlighter") {
+			a.shape = highlighterShape(s);
+			drawHighlight(ink, a, a.shape, palette, themeName());
 		} else {
 			a.shape = penShape(s, null, true);
 			fillShape(ink, a, a.shape);
@@ -704,9 +793,10 @@
 		if (e.pointerType === "mouse" && e.button !== 0) return;
 		e.preventDefault();
 		// A tap on the page while a menu is open only closes the menu.
-		if (!penMenu.hidden || !copyMenu.hidden) {
+		if (!penMenu.hidden || !copyMenu.hidden || !notesMenu.hidden) {
 			closePenMenu();
 			copyMenu.hidden = true;
+			notesMenu.hidden = true;
 			return;
 		}
 		try {
@@ -803,6 +893,8 @@
 		e.preventDefault();
 	});
 	document.addEventListener("contextmenu", function (e) {
+		// The code box needs its menu for Paste.
+		if (e.target.closest && e.target.closest("#code-dialog")) return;
 		e.preventDefault();
 	});
 
@@ -859,7 +951,13 @@
 
 	function selectTool(name) {
 		tool = name;
+		if (name !== "eraser") inkTool = name;
 		press(".tool", "tool", tool);
+		// Show the colours of the pen or the highlighter, whichever is in hand or was last.
+		document.querySelectorAll(".swatches").forEach(function (g) {
+			g.hidden = g.dataset.for !== inkTool;
+		});
+		press(".swatch", "color", colorChoice[inkTool]);
 		// Each tool remembers its own thickness.
 		press(".size", "size", String(sizeChoice[tool]));
 	}
@@ -890,7 +988,7 @@
 		canvas.height = Math.round(h * ratio);
 		var ctx = canvas.getContext("2d");
 		ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-		var s = { tool: "pen", pen: pen, color: color, size: SIZES.pen[sizeChoice.pen], points: [] };
+		var s = { tool: "pen", pen: pen, color: colorChoice.pen, size: SIZES.pen[sizeChoice.pen], points: [] };
 		var d = 0;
 		for (var i = 0; i <= 40; i++) {
 			var t = i / 40;
@@ -919,6 +1017,7 @@
 
 	function openPenMenu(button) {
 		copyMenu.hidden = true;
+		notesMenu.hidden = true;
 		placeMenu(penMenu, button);
 		penMenu.querySelectorAll("button").forEach(function (b) {
 			drawPreview(b.querySelector("canvas"), b.dataset.pen);
@@ -935,6 +1034,7 @@
 		[
 			[penMenu, '[data-tool="pen"]'],
 			[copyMenu, "#copy"],
+			[notesMenu, "#notes"],
 		].forEach(function (m) {
 			if (m[0].hidden || m[0].contains(t)) return;
 			if (t.closest && t.closest(m[1])) return;
@@ -961,10 +1061,10 @@
 
 	document.querySelectorAll(".swatch").forEach(function (b) {
 		b.addEventListener("click", function () {
-			color = b.dataset.color;
-			press(".swatch", "color", color);
-			// Picking a colour means you want to write.
-			selectTool("pen");
+			var forTool = b.closest(".swatches").dataset.for;
+			colorChoice[forTool] = b.dataset.color;
+			// Picking a colour means you want to write (or highlight) with it.
+			selectTool(forTool);
 		});
 	});
 
@@ -978,12 +1078,6 @@
 	var copyMenu = document.getElementById("copy-menu");
 	var toastEl = document.getElementById("toast");
 	var toastTimer = 0;
-
-	// The same colours as style.css, for both themes at once.
-	var THEMES = {
-		light: { paper: "#fbfaf7", ink: "#1d1d1f", blue: "#2160d8", red: "#d23a32" },
-		dark: { paper: "#000000", ink: "#f2f2f4", blue: "#5b93ff", red: "#ff6a5f" },
-	};
 
 	function toast(text) {
 		toastEl.textContent = text;
@@ -1010,10 +1104,10 @@
 	function renderImage(themeName) {
 		var colors = THEMES[themeName];
 		var list = pageActions();
-		// Crop to the pen strokes; the eraser can only remove ink, never add it.
+		// Crop to the pen and highlighter strokes; the eraser can only remove ink, never add it.
 		var box = null;
 		list.forEach(function (a) {
-			if (a.tool !== "pen") return;
+			if (a.tool === "eraser") return;
 			var b = a.box;
 			if (!box) box = { x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 };
 			else {
@@ -1044,6 +1138,10 @@
 		list.forEach(function (a) {
 			if (a.tool === "eraser") {
 				eraseShape(ctx, a, a.shape);
+				return;
+			}
+			if (a.tool === "highlighter") {
+				drawHighlight(ctx, a, a.shape, colors, themeName);
 				return;
 			}
 			var shape = penShape(a, null, true, scale);
@@ -1116,6 +1214,7 @@
 			return;
 		}
 		closePenMenu();
+		notesMenu.hidden = true;
 		placeMenu(copyMenu, copyBtn);
 	});
 
@@ -1134,6 +1233,8 @@
 	// Hardware keyboard shortcuts.
 	document.addEventListener("keydown", function (e) {
 		if (!(e.metaKey || e.ctrlKey)) return;
+		// Inside the code box, copy, paste and undo work on the text as usual.
+		if (codeDialog.open) return;
 		var k = e.key.toLowerCase();
 		if (k === "z" && e.shiftKey) redo();
 		else if (k === "z") undo();
@@ -1146,10 +1247,386 @@
 		e.preventDefault();
 	});
 
+	// ---------- Notes codes ----------
+	//
+	// A notes code is the page itself, written out as text: every line's points, pen,
+	// colour and size, packed into bytes, compressed, and turned into letters and digits.
+	// Paste it back (or open it as a link) and the same notes come back, sharp at any zoom.
+	// Nothing is stored anywhere else, so the code is the only copy.
+
+	var notesMenu = document.getElementById("notes-menu");
+	var notesBtn = document.getElementById("notes");
+	var codeDialog = document.getElementById("code-dialog");
+	var codeText = document.getElementById("code-text");
+	var CODE_PREFIX = "wb1";
+	var TOOLS = ["pen", "highlighter", "eraser"];
+	var PEN_TYPES = ["fountain", "ball", "brush"];
+	var COLOR_KEYS = Object.keys(THEMES.light).filter(function (k) {
+		return k !== "paper";
+	});
+
+	// Small numbers take one byte, bigger ones more. Negative numbers are folded in
+	// (0, -1, 1, -2, ...) so small steps either way stay small.
+	function writeNum(out, n) {
+		n = n < 0 ? -2 * n - 1 : 2 * n;
+		while (n >= 128) {
+			out.push((n % 128) + 128);
+			n = Math.floor(n / 128);
+		}
+		out.push(n);
+	}
+
+	function Reader(bytes) {
+		this.b = bytes;
+		this.i = 0;
+	}
+	Reader.prototype.byte = function () {
+		if (this.i >= this.b.length) throw new Error("The code is cut short");
+		return this.b[this.i++];
+	};
+	Reader.prototype.num = function () {
+		var n = 0;
+		var mul = 1;
+		var c;
+		do {
+			c = this.byte();
+			n += (c % 128) * mul;
+			mul *= 128;
+		} while (c >= 128);
+		return n % 2 ? -(n + 1) / 2 : n / 2;
+	};
+
+	// Drops points that sit on a straight line between their neighbours, to within a
+	// quarter of a screen pixel at the zoom the line was written at. Points where the
+	// pressure changes are kept so the line's width survives.
+	function keepPoints(s) {
+		var pts = s.points;
+		var n = pts.length;
+		var keep = new Array(n);
+		if (n <= 2) {
+			for (var k = 0; k < n; k++) keep[k] = true;
+			return keep;
+		}
+		var tol = 0.25 / (s.scale || 1);
+		keep[0] = keep[n - 1] = true;
+		var stack = [[0, n - 1]];
+		while (stack.length) {
+			var seg = stack.pop();
+			var a = pts[seg[0]];
+			var b = pts[seg[1]];
+			var dx = b.x - a.x;
+			var dy = b.y - a.y;
+			var len = Math.hypot(dx, dy);
+			var far = -1;
+			var farDist = tol;
+			for (var i = seg[0] + 1; i < seg[1]; i++) {
+				var p = pts[i];
+				var dist = len ? Math.abs((p.x - a.x) * dy - (p.y - a.y) * dx) / len : Math.hypot(p.x - a.x, p.y - a.y);
+				if (dist > farDist) {
+					farDist = dist;
+					far = i;
+				}
+			}
+			if (far >= 0) {
+				keep[far] = true;
+				stack.push([seg[0], far], [far, seg[1]]);
+			}
+		}
+		var lastP = pts[0].p;
+		for (i = 1; i < n; i++) {
+			if (keep[i]) lastP = pts[i].p;
+			else if (Math.abs(pts[i].p - lastP) > 0.06) {
+				keep[i] = true;
+				lastP = pts[i].p;
+			}
+		}
+		return keep;
+	}
+
+	function packPage() {
+		var list = pageActions().filter(function (a) {
+			return a.type !== "clear";
+		});
+		var out = [1];
+		writeNum(out, list.length);
+		list.forEach(function (a) {
+			out.push(TOOLS.indexOf(a.tool) * 4 + Math.max(0, PEN_TYPES.indexOf(a.pen)));
+			out.push(Math.max(0, COLOR_KEYS.indexOf(a.color)));
+			writeNum(out, Math.round(a.size * 10));
+			writeNum(out, Math.round((a.scale || 1) * 100));
+			var keep = keepPoints(a);
+			var pts = a.points.filter(function (_, i) {
+				return keep[i];
+			});
+			writeNum(out, pts.length);
+			// Positions to a twentieth of a page unit, each as a step from the one before.
+			var x = 0;
+			var y = 0;
+			pts.forEach(function (p) {
+				var qx = Math.round(p.x * 20);
+				var qy = Math.round(p.y * 20);
+				writeNum(out, qx - x);
+				writeNum(out, qy - y);
+				x = qx;
+				y = qy;
+				out.push(Math.round(clamp(p.p, 0, 1) * 255));
+				out.push(Math.round(clamp((p.v || 0) / 6, 0, 1) * 255));
+			});
+		});
+		return new Uint8Array(out);
+	}
+
+	function unpackPage(bytes) {
+		var r = new Reader(bytes);
+		if (r.byte() !== 1) throw new Error("This code is from a newer version");
+		var count = r.num();
+		var list = [];
+		for (var j = 0; j < count; j++) {
+			var kind = r.byte();
+			var s = {
+				tool: TOOLS[Math.floor(kind / 4)],
+				pen: PEN_TYPES[kind % 4] || "fountain",
+				color: COLOR_KEYS[r.byte()] || "ink",
+				size: r.num() / 10,
+				scale: r.num() / 100 || 1,
+				points: [],
+			};
+			if (!s.tool || !(s.size > 0)) throw new Error("The code is damaged");
+			var n = r.num();
+			var x = 0;
+			var y = 0;
+			var d = 0;
+			for (var i = 0; i < n; i++) {
+				x += r.num();
+				y += r.num();
+				var pt = { x: x / 20, y: y / 20, p: r.byte() / 255, v: (r.byte() / 255) * 6 };
+				var before = s.points[s.points.length - 1];
+				if (before) d += Math.hypot(pt.x - before.x, pt.y - before.y);
+				pt.d = d;
+				s.points.push(pt);
+			}
+			if (n) list.push(s);
+		}
+		return list;
+	}
+
+	// Runs bytes through a browser compression stream. Older browsers don't have one.
+	function squeeze(bytes, Stream, format) {
+		return new Response(new Blob([bytes]).stream().pipeThrough(new Stream(format))).arrayBuffer().then(function (b) {
+			return new Uint8Array(b);
+		});
+	}
+
+	function toLetters(bytes) {
+		var bin = "";
+		for (var i = 0; i < bytes.length; i += 0x8000) {
+			bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+		}
+		return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+	}
+
+	function fromLetters(text) {
+		var b64 = text.replace(/-/g, "+").replace(/_/g, "/");
+		while (b64.length % 4) b64 += "=";
+		var bin = atob(b64);
+		var bytes = new Uint8Array(bin.length);
+		for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+		return bytes;
+	}
+
+	// "wb1z..." is compressed, "wb1r..." is not.
+	function makeCode() {
+		var raw = packPage();
+		if (window.CompressionStream) {
+			return squeeze(raw, CompressionStream, "deflate")
+				.then(function (z) {
+					return CODE_PREFIX + "z" + toLetters(z);
+				})
+				.catch(function () {
+					return CODE_PREFIX + "r" + toLetters(raw);
+				});
+		}
+		return Promise.resolve(CODE_PREFIX + "r" + toLetters(raw));
+	}
+
+	function readCode(text) {
+		// Accept a whole link too, and ignore spaces or line breaks picked up when pasting.
+		text = String(text || "").replace(/\s+/g, "");
+		var hash = text.indexOf("#n=");
+		if (hash >= 0) text = text.slice(hash + 3);
+		if (text.slice(0, CODE_PREFIX.length) !== CODE_PREFIX) {
+			return Promise.reject(new Error("That isn't a notes code"));
+		}
+		var mode = text.charAt(CODE_PREFIX.length);
+		var bytes;
+		try {
+			bytes = fromLetters(text.slice(CODE_PREFIX.length + 1));
+		} catch (e) {
+			return Promise.reject(new Error("The code is damaged"));
+		}
+		var unzip;
+		if (mode === "r") unzip = Promise.resolve(bytes);
+		else if (mode === "z" && window.DecompressionStream) unzip = squeeze(bytes, DecompressionStream, "deflate");
+		else return Promise.reject(new Error("This browser can't open that code"));
+		return unzip.then(unpackPage, function () {
+			throw new Error("The code is damaged");
+		});
+	}
+
+	// Puts the notes on the page. The old page is cleared as a normal step, so Undo gets it back.
+	function loadNotes(list) {
+		if (current) return;
+		if (!pageIsEmpty()) actions.push({ type: "clear" });
+		var box = null;
+		list.forEach(function (s) {
+			var a = {
+				tool: s.tool,
+				pen: s.pen,
+				color: s.color,
+				size: s.size,
+				scale: s.scale,
+				points: s.points,
+				box: bounds(s.points, s.size * 1.5),
+				detail: Math.max(view.s, 1),
+			};
+			if (a.tool === "eraser") a.shape = eraserShape(a);
+			else if (a.tool === "highlighter") a.shape = highlighterShape(a);
+			else a.shape = penShape(a, null, true);
+			actions.push(a);
+			if (a.tool === "eraser") return;
+			var b = a.box;
+			if (!box) box = { x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 };
+			else {
+				box.x0 = Math.min(box.x0, b.x0);
+				box.y0 = Math.min(box.y0, b.y0);
+				box.x1 = Math.max(box.x1, b.x1);
+				box.y1 = Math.max(box.y1, b.y1);
+			}
+		});
+		redoStack = [];
+		// Fit the notes on screen, below the toolbar, never zoomed in past 100%.
+		if (box) {
+			var top = 80;
+			var fit = Math.min(1, (width - 48) / (box.x1 - box.x0), (height - top - 24) / (box.y1 - box.y0));
+			view.s = clamp(fit, MIN_ZOOM, MAX_ZOOM);
+			view.x = width / 2 - ((box.x0 + box.x1) / 2) * view.s;
+			view.y = top + (height - top) / 2 - ((box.y0 + box.y1) / 2) * view.s;
+		}
+		requestRender(true);
+		updateButtons();
+	}
+
+	function openCode(text) {
+		return readCode(text).then(function (list) {
+			loadNotes(list);
+			toast(list.length ? "Notes opened" : "That code was an empty page");
+		});
+	}
+
+	// The dialog does both jobs: shows a code to copy, or takes one to open.
+	var codeMode = "save";
+
+	function showDialog(mode) {
+		codeMode = mode;
+		notesMenu.hidden = true;
+		codeDialog.dataset.mode = mode;
+		document.getElementById("code-title").textContent = mode === "save" ? "Notes code" : "Open notes";
+		document.getElementById("code-note").textContent =
+			mode === "save"
+				? "Keep this code somewhere safe. Paste it into Open notes, or open the link, to get these notes back."
+				: "Paste a notes code or link. The current page is cleared first; Undo brings it back.";
+		codeText.readOnly = mode === "save";
+		codeText.value = "";
+		document.getElementById("code-error").textContent = "";
+		if (codeDialog.showModal) codeDialog.showModal();
+		else codeDialog.setAttribute("open", "");
+		if (mode === "save") {
+			codeText.placeholder = "Making the code…";
+			makeCode().then(function (code) {
+				codeText.value = code;
+				document.getElementById("code-error").textContent = code.length.toLocaleString() + " characters";
+			});
+		} else {
+			codeText.placeholder = "wb1…";
+			codeText.focus();
+		}
+	}
+
+	function closeDialog() {
+		if (codeDialog.close) codeDialog.close();
+		else codeDialog.removeAttribute("open");
+	}
+
+	function copyText(text, done) {
+		if (!text) return;
+		if (navigator.clipboard && navigator.clipboard.writeText) {
+			navigator.clipboard.writeText(text).then(
+				function () {
+					toast(done);
+				},
+				function () {
+					codeText.select();
+					toast("Select the code and copy it");
+				}
+			);
+		} else {
+			codeText.select();
+			toast("Select the code and copy it");
+		}
+	}
+
+	function notesLink(code) {
+		return location.origin + location.pathname + "#n=" + code;
+	}
+
+	notesBtn.addEventListener("click", function () {
+		if (!notesMenu.hidden) {
+			notesMenu.hidden = true;
+			return;
+		}
+		closePenMenu();
+		copyMenu.hidden = true;
+		notesMenu.querySelector('[data-notes="save"]').disabled = pageIsEmpty();
+		placeMenu(notesMenu, notesBtn);
+	});
+
+	notesMenu.querySelectorAll("button").forEach(function (b) {
+		b.addEventListener("click", function () {
+			showDialog(b.dataset.notes);
+		});
+	});
+
+	document.getElementById("code-copy").addEventListener("click", function () {
+		copyText(codeText.value, "Code copied");
+	});
+	document.getElementById("code-link").addEventListener("click", function () {
+		if (codeText.value) copyText(notesLink(codeText.value), "Link copied");
+	});
+	document.getElementById("code-cancel").addEventListener("click", closeDialog);
+	document.getElementById("code-open").addEventListener("click", function () {
+		var err = document.getElementById("code-error");
+		err.textContent = "";
+		openCode(codeText.value).then(closeDialog, function (e) {
+			err.textContent = e.message;
+		});
+	});
+
+	// Opening a notes link loads its notes, then tidies the address so a reload doesn't redo it.
+	function openFromAddress() {
+		if (location.hash.indexOf("#n=") !== 0) return;
+		var code = location.hash.slice(3);
+		if (history.replaceState) history.replaceState(null, "", location.pathname + location.search);
+		openCode(code).catch(function (e) {
+			toast(e.message);
+		});
+	}
+	window.addEventListener("hashchange", openFromAddress);
+
 	// ---------- Start ----------
 
 	readPalette();
 	resize();
+	openFromAddress();
 	window.addEventListener("resize", resize);
 	// ---------- Light / dark ----------
 
