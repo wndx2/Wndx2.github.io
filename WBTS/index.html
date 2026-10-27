@@ -50,7 +50,7 @@
 
 			<span class="divider"></span>
 
-			<div class="group swatches" data-for="pen" role="radiogroup" aria-label="Pen colour">
+			<div class="group swatches picker" data-for="pen" role="radiogroup" aria-label="Pen colour">
 				<button class="swatch" data-color="ink" aria-label="Black or white" aria-pressed="true"><span></span></button>
 				<button class="swatch" data-color="blue" aria-label="Blue" aria-pressed="false"><span></span></button>
 				<button class="swatch" data-color="red" aria-label="Red" aria-pressed="false"><span></span></button>
@@ -58,7 +58,7 @@
 				<button class="swatch" data-color="purple" aria-label="Purple" aria-pressed="false"><span></span></button>
 				<button class="swatch" data-color="orange" aria-label="Orange" aria-pressed="false"><span></span></button>
 			</div>
-			<div class="group swatches" data-for="highlighter" role="radiogroup" aria-label="Highlighter colour" hidden>
+			<div class="group swatches picker" data-for="highlighter" role="radiogroup" aria-label="Highlighter colour" hidden>
 				<button class="swatch" data-color="hl-yellow" aria-label="Yellow" aria-pressed="true"><span></span></button>
 				<button class="swatch" data-color="hl-orange" aria-label="Orange" aria-pressed="false"><span></span></button>
 				<button class="swatch" data-color="hl-pink" aria-label="Pink" aria-pressed="false"><span></span></button>
@@ -69,7 +69,7 @@
 
 			<span class="divider"></span>
 
-			<div class="group" role="radiogroup" aria-label="Thickness">
+			<div class="group picker" role="radiogroup" aria-label="Thickness">
 				<button class="size" data-size="0" aria-label="Fine" aria-pressed="false"><span></span></button>
 				<button class="size" data-size="1" aria-label="Medium" aria-pressed="true"><span></span></button>
 				<button class="size" data-size="2" aria-label="Bold" aria-pressed="false"><span></span></button>
@@ -84,13 +84,13 @@
 				<button id="redo" aria-label="Redo" disabled>
 					<svg viewBox="0 0 20 20"><path d="M13 4l3.5 3.5L13 11" /><path d="M16 7.5H8.5a4.5 4.5 0 000 9H12" /></svg>
 				</button>
-				<button id="clear" aria-label="Clear page" disabled>
+				<button id="clear" class="secondary" aria-label="Clear page" disabled>
 					<svg viewBox="0 0 20 20"><path d="M4 6h12" /><path d="M8 6V4h4v2" /><path d="M5.5 6l.8 10h7.4l.8-10" /></svg>
 				</button>
-				<button id="copy" aria-label="Copy as image" aria-haspopup="menu" disabled>
+				<button id="copy" class="secondary" aria-label="Copy as image" aria-haspopup="menu" disabled>
 					<svg viewBox="0 0 20 20"><rect x="7" y="7" width="9.5" height="9.5" rx="2" /><path d="M13 4.5A1.5 1.5 0 0011.5 3.5h-6a2 2 0 00-2 2v6A1.5 1.5 0 004.5 13" /></svg>
 				</button>
-				<button id="notes" aria-label="Save or open notes with a code" aria-haspopup="menu">
+				<button id="notes" class="secondary" aria-label="Save or open notes with a code" aria-haspopup="menu">
 					<svg viewBox="0 0 20 20"><circle cx="7" cy="10" r="3.5" /><path d="M10.5 10H17" /><path d="M14.5 10v2.5" /><path d="M17 10v2" /></svg>
 				</button>
 			</div>
@@ -98,10 +98,14 @@
 			<span class="divider"></span>
 
 			<button id="zoom" aria-label="Reset zoom to 100%">100%</button>
-			<button id="theme" aria-label="Switch light or dark">
+			<button id="theme" class="secondary" aria-label="Switch light or dark">
 				<!-- Moon shows in light mode, sun in dark mode. -->
 				<svg class="moon" viewBox="0 0 20 20"><path d="M16 12.5A6.5 6.5 0 017.5 4a6.5 6.5 0 108.5 8.5z" /></svg>
 				<svg class="sun" viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.5" /><path d="M10 2.5v1.5M10 16v1.5M2.5 10H4M16 10h1.5M4.7 4.7l1 1M14.3 14.3l1 1M4.7 15.3l1-1M14.3 5.7l1-1" /></svg>
+			</button>
+			<!-- In a narrow window (such as Split View) the less-used buttons move in here. -->
+			<button id="more" aria-label="More" aria-haspopup="menu">
+				<svg viewBox="0 0 20 20"><circle cx="5" cy="10" r="0.6" /><circle cx="10" cy="10" r="0.6" /><circle cx="15" cy="10" r="0.6" /></svg>
 			</button>
 		</nav>
 
@@ -136,6 +140,15 @@
 				<button id="code-open" class="open-only primary" type="button">Open</button>
 			</div>
 		</dialog>
+
+		<div id="more-menu" class="menu" role="menu" aria-label="More" hidden>
+			<button data-more="clear" role="menuitem"><span>Clear page</span></button>
+			<button data-more="copy-light" role="menuitem"><span class="chip light"><i></i></span><span>Copy as light</span></button>
+			<button data-more="copy-dark" role="menuitem"><span class="chip dark"><i></i></span><span>Copy as dark</span></button>
+			<button data-more="save" role="menuitem"><span>Save notes as code</span></button>
+			<button data-more="open" role="menuitem"><span>Open notes from code</span></button>
+			<button data-more="theme" role="menuitem"><span>Switch to dark</span></button>
+		</div>
 
 		<div id="toast" role="status" aria-live="polite"></div>
 

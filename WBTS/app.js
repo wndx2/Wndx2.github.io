@@ -451,39 +451,100 @@
 		return path;
 	}
 
-	// The highlighter is one even, round-ended swipe along the cleaned-up line, stroked in
-	// one go so it doesn't get darker where the line crosses itself.
-	function highlighterShape(s) {
+	// The highlighter is one even, round-ended swipe along the cleaned-up line.
+	// Safari's own thick-line drawing leaves holes where a wide line bends, so the
+	// swipe is built by hand instead: a circle at every point plus a strip between
+	// each pair, all wound the same way so filling them gives one solid shape.
+	// detail: how finely to cut curves; defaults to suit the current zoom.
+	function highlighterShape(s, detail) {
 		var pts = cleanPoints(s);
 		var path = new Path2D();
-		var first = pts[0];
-		path.moveTo(first.x, first.y);
-		if (pts.length === 1) {
-			path.lineTo(first.x + 0.01, first.y);
-			return path;
-		}
-		// Curves through the midpoints between samples, so it stays smooth when zoomed in.
-		for (var i = 1; i < pts.length - 1; i++) {
+		var r = s.size / 2;
+		var n = pts.length;
+		detail = detail || Math.max(view.s, 1);
+
+		// The centre line: curves through the midpoints between samples, cut into short
+		// straight pieces (more of them when zoomed in) so it stays smooth.
+		var line = [pts[0].x, pts[0].y];
+		var fromX = pts[0].x;
+		var fromY = pts[0].y;
+		for (var i = 1; i < n; i++) {
 			var c = pts[i];
-			var b = pts[i + 1];
-			path.quadraticCurveTo(c.x, c.y, (c.x + b.x) / 2, (c.y + b.y) / 2);
+			var toX = i < n - 1 ? (c.x + pts[i + 1].x) / 2 : c.x;
+			var toY = i < n - 1 ? (c.y + pts[i + 1].y) / 2 : c.y;
+			var len = Math.hypot(c.x - fromX, c.y - fromY) + Math.hypot(toX - c.x, toY - c.y);
+			var steps = clamp(Math.ceil((len * detail) / 2), 1, 16);
+			for (var j = 1; j <= steps; j++) {
+				var t = j / steps;
+				var u = 1 - t;
+				line.push(u * u * fromX + 2 * u * t * c.x + t * t * toX, u * u * fromY + 2 * u * t * c.y + t * t * toY);
+			}
+			fromX = toX;
+			fromY = toY;
 		}
-		var last = pts[pts.length - 1];
-		path.lineTo(last.x, last.y);
+
+		for (var k = 0; k < line.length; k += 2) {
+			var x = line[k];
+			var y = line[k + 1];
+			addCircle(path, x, y, s.size);
+			if (k + 3 >= line.length) continue;
+			var dx = line[k + 2] - x;
+			var dy = line[k + 3] - y;
+			var d = Math.hypot(dx, dy);
+			if (!d) continue;
+			// Half the width out to each side. This corner order winds the same way as the circles.
+			var nx = (-dy / d) * r;
+			var ny = (dx / d) * r;
+			path.moveTo(x - nx, y - ny);
+			path.lineTo(line[k + 2] - nx, line[k + 3] - ny);
+			path.lineTo(line[k + 2] + nx, line[k + 3] + ny);
+			path.lineTo(x + nx, y + ny);
+			path.closePath();
+		}
 		return path;
 	}
 
+
 	// On a light page the highlight darkens like a marker on paper; on a dark page it lightens.
 	// So writing under it stays readable in both.
+	//
+	// The highlight's circles and strips overlap each other, which would show as darker
+	// patches if drawn see-through. So it's first drawn solid on a spare canvas, then laid
+	// on the page see-through in one go.
+	var spare = document.createElement("canvas");
+	var spareCtx = spare.getContext("2d");
+
 	function drawHighlight(ctx, s, path, colors, theme) {
+		// The stroke's box in the target canvas's pixels. The view is only ever a zoom
+		// and a shift, so the corners map straight across.
+		var m = ctx.getTransform();
+		var b = bounds(s.points, s.size);
+		var x0 = Math.max(0, Math.floor(b.x0 * m.a + m.e));
+		var y0 = Math.max(0, Math.floor(b.y0 * m.d + m.f));
+		var x1 = Math.min(ctx.canvas.width, Math.ceil(b.x1 * m.a + m.e));
+		var y1 = Math.min(ctx.canvas.height, Math.ceil(b.y1 * m.d + m.f));
+		var w = x1 - x0;
+		var h = y1 - y0;
+		if (w <= 0 || h <= 0) return;
+
+		// Grow the spare canvas when needed; never shrink it, so it isn't reallocated each frame.
+		if (spare.width < w || spare.height < h) {
+			spare.width = Math.max(spare.width, w);
+			spare.height = Math.max(spare.height, h);
+		}
+		spareCtx.setTransform(1, 0, 0, 1, 0, 0);
+		spareCtx.globalAlpha = 1;
+		spareCtx.globalCompositeOperation = "source-over";
+		spareCtx.clearRect(0, 0, w, h);
+		spareCtx.setTransform(m.a, m.b, m.c, m.d, m.e - x0, m.f - y0);
+		spareCtx.fillStyle = colors[s.color];
+		spareCtx.fill(path);
+
 		ctx.save();
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
 		ctx.globalCompositeOperation = theme === "dark" ? "screen" : "multiply";
 		ctx.globalAlpha = HIGHLIGHT_ALPHA[theme];
-		ctx.strokeStyle = colors[s.color];
-		ctx.lineWidth = s.size;
-		ctx.lineCap = "round";
-		ctx.lineJoin = "round";
-		ctx.stroke(path);
+		ctx.drawImage(spare, 0, 0, w, h, x0, y0, w, h);
 		ctx.restore();
 	}
 
@@ -507,6 +568,11 @@
 			return;
 		}
 		if (a.tool === "highlighter") {
+			// Rebuild with finer curves when zoomed in well past where it was built, like the pen.
+			if (view.s > a.detail * 1.5) {
+				a.shape = highlighterShape(a);
+				a.detail = Math.max(view.s, 1);
+			}
 			drawHighlight(ctx, a, a.shape, palette, themeName());
 			return;
 		}
@@ -793,10 +859,11 @@
 		if (e.pointerType === "mouse" && e.button !== 0) return;
 		e.preventDefault();
 		// A tap on the page while a menu is open only closes the menu.
-		if (!penMenu.hidden || !copyMenu.hidden || !notesMenu.hidden) {
+		if (!penMenu.hidden || !copyMenu.hidden || !notesMenu.hidden || !moreMenu.hidden) {
 			closePenMenu();
 			copyMenu.hidden = true;
 			notesMenu.hidden = true;
+			moreMenu.hidden = true;
 			return;
 		}
 		try {
@@ -1035,11 +1102,13 @@
 			[penMenu, '[data-tool="pen"]'],
 			[copyMenu, "#copy"],
 			[notesMenu, "#notes"],
+			[moreMenu, "#more"],
 		].forEach(function (m) {
 			if (m[0].hidden || m[0].contains(t)) return;
 			if (t.closest && t.closest(m[1])) return;
 			m[0].hidden = true;
 		});
+		if (!(t.closest && t.closest(".picker"))) closePickers();
 	});
 
 	penMenu.querySelectorAll("button").forEach(function (b) {
@@ -1052,8 +1121,31 @@
 		});
 	});
 
+	// In a narrow window only the colour and thickness in use show. Tapping it opens the
+	// rest; picking one closes them again.
+	var narrow = matchMedia("(max-width: 860px)");
+
+	function closePickers() {
+		document.querySelectorAll(".picker.open").forEach(function (g) {
+			g.classList.remove("open");
+		});
+	}
+
+	// True if this tap only opened the picker.
+	function openPicker(b) {
+		var group = b.closest(".picker");
+		if (!narrow.matches || group.classList.contains("open") || b.getAttribute("aria-pressed") !== "true") {
+			closePickers();
+			return false;
+		}
+		closePickers();
+		group.classList.add("open");
+		return true;
+	}
+
 	document.querySelectorAll(".size").forEach(function (b) {
 		b.addEventListener("click", function () {
+			if (openPicker(b)) return;
 			sizeChoice[tool] = Number(b.dataset.size);
 			press(".size", "size", b.dataset.size);
 		});
@@ -1061,7 +1153,10 @@
 
 	document.querySelectorAll(".swatch").forEach(function (b) {
 		b.addEventListener("click", function () {
+			// Picking the colour already in use with another tool in hand still switches tool.
 			var forTool = b.closest(".swatches").dataset.for;
+			if (tool === forTool && openPicker(b)) return;
+			closePickers();
 			colorChoice[forTool] = b.dataset.color;
 			// Picking a colour means you want to write (or highlight) with it.
 			selectTool(forTool);
@@ -1141,7 +1236,7 @@
 				return;
 			}
 			if (a.tool === "highlighter") {
-				drawHighlight(ctx, a, a.shape, colors, themeName);
+				drawHighlight(ctx, a, highlighterShape(a, scale), colors, themeName);
 				return;
 			}
 			var shape = penShape(a, null, true, scale);
@@ -1621,6 +1716,40 @@
 		});
 	}
 	window.addEventListener("hashchange", openFromAddress);
+
+	// ---------- More menu (narrow windows) ----------
+
+	var moreMenu = document.getElementById("more-menu");
+	var moreBtn = document.getElementById("more");
+
+	moreBtn.addEventListener("click", function () {
+		if (!moreMenu.hidden) {
+			moreMenu.hidden = true;
+			return;
+		}
+		closePenMenu();
+		copyMenu.hidden = true;
+		notesMenu.hidden = true;
+		var empty = pageIsEmpty();
+		moreMenu.querySelectorAll('[data-more="clear"], [data-more^="copy"], [data-more="save"]').forEach(function (b) {
+			b.disabled = empty;
+		});
+		moreMenu.querySelector('[data-more="theme"] span').textContent =
+			themeName() === "dark" ? "Switch to light" : "Switch to dark";
+		placeMenu(moreMenu, moreBtn);
+	});
+
+	moreMenu.querySelectorAll("button").forEach(function (b) {
+		b.addEventListener("click", function () {
+			moreMenu.hidden = true;
+			var what = b.dataset.more;
+			if (what === "clear") clearPage();
+			else if (what === "copy-light") copyImage("light");
+			else if (what === "copy-dark") copyImage("dark");
+			else if (what === "save" || what === "open") showDialog(what);
+			else if (what === "theme") document.getElementById("theme").click();
+		});
+	});
 
 	// ---------- Start ----------
 

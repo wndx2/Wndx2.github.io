@@ -67,9 +67,15 @@ body {
 #toolbar {
 	position: fixed;
 	top: max(12px, env(safe-area-inset-top));
-	left: 50%;
-	transform: translateX(-50%);
+	/* Centred, never wider than the window. If it still doesn't fit it wraps onto a second row. */
+	left: 8px;
+	right: 8px;
+	margin: 0 auto;
+	width: max-content;
+	max-width: calc(100vw - 16px);
 	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
 	align-items: center;
 	gap: 6px;
 	padding: 5px 8px;
@@ -341,4 +347,42 @@ body {
 .menu button:disabled {
 	opacity: 0.4;
 	cursor: default;
+}
+
+/* ---------- Narrow windows (Split View, Slide Over) ---------- */
+
+#toolbar #more {
+	display: none;
+}
+
+/* Colours and thicknesses shrink to just the one in use. Tapping it opens the rest. */
+@media (max-width: 860px) {
+	#toolbar .picker:not(.open) > button[aria-pressed="false"] {
+		display: none;
+	}
+}
+
+/* Clear, copy, notes code and theme move into the "more" menu, and buttons get a bit smaller. */
+@media (max-width: 600px) {
+	#toolbar .secondary {
+		display: none;
+	}
+	#toolbar #more {
+		display: grid;
+	}
+	#toolbar {
+		gap: 4px;
+		padding: 4px 6px;
+	}
+	#toolbar button {
+		width: 36px;
+		height: 36px;
+	}
+	#toolbar .swatch {
+		width: 30px;
+	}
+	#toolbar #zoom {
+		min-width: 48px;
+		padding: 0 4px;
+	}
 }
