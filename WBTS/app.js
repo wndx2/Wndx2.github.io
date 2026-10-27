@@ -218,28 +218,60 @@
 			pts[i].corner = turn[i] < -0.2 && turn[i] <= turn[i - 1] && turn[i] <= turn[i + 1];
 		}
 
-		// Smooth everything but the ends and the corners.
-		for (var pass = 0; pass < 3; pass++) {
-			var px0 = pts[0].x;
-			var py0 = pts[0].y;
-			var pp0 = pts[0].p;
-			for (i = 1; i < n - 1; i++) {
-				var c = pts[i];
-				var next = pts[i + 1];
-				var cx = c.x;
-				var cy = c.y;
-				var cp = c.p;
-				if (!c.corner) {
-					c.x = (px0 + 2 * cx + next.x) / 4;
-					c.y = (py0 + 2 * cy + next.y) / 4;
-					c.p = (pp0 + 2 * cp + next.p) / 4;
-				}
-				px0 = cx;
-				py0 = cy;
-				pp0 = cp;
-			}
+		// Smooth everything but the ends and the corners, over a set distance along the
+		// line rather than a set number of samples, so the result doesn't depend on how
+		// fast the Pencil moved.
+		var d = pts.map(function (p) { return p.d; });
+		var fixed = pts.map(function (p) { return p.corner; });
+		var xs = smoothAlong(d, pts.map(function (p) { return p.x; }), 2 * px, fixed);
+		var ys = smoothAlong(d, pts.map(function (p) { return p.y; }), 2 * px, fixed);
+		for (i = 0; i < n; i++) {
+			pts[i].x = xs[i];
+			pts[i].y = ys[i];
 		}
 		return pts;
+	}
+
+	// Gaussian smoothing of vals along the line. d: distance along the line for each value.
+	// sigma: how far the smoothing reaches. The ends and any fixed points stay as they are,
+	// and the window shrinks near them so lines don't shrink back from their ends.
+	function smoothAlong(d, vals, sigma, fixed) {
+		var n = vals.length;
+		var out = vals.slice();
+		if (n < 3 || !(sigma > 0)) return out;
+		var lo = 0;
+		for (var i = 1; i < n - 1; i++) {
+			if (fixed && fixed[i]) {
+				lo = i;
+				continue;
+			}
+			var hi = i + 1;
+			while (hi < n - 1 && !(fixed && fixed[hi])) hi++;
+			var reach = Math.min(3 * sigma, d[i] - d[lo], d[hi] - d[i]);
+			if (reach <= 0) continue;
+			var k = 1 / (2 * sigma * sigma);
+			var sum = 0;
+			var total = 0;
+			for (var j = i; j >= lo && d[i] - d[j] <= reach; j--) {
+				var w = Math.exp(-(d[i] - d[j]) * (d[i] - d[j]) * k) * spacing(d, j);
+				sum += vals[j] * w;
+				total += w;
+			}
+			for (j = i + 1; j <= hi && d[j] - d[i] <= reach; j++) {
+				w = Math.exp(-(d[j] - d[i]) * (d[j] - d[i]) * k) * spacing(d, j);
+				sum += vals[j] * w;
+				total += w;
+			}
+			if (total > 0) out[i] = sum / total;
+		}
+		return out;
+	}
+
+	// How much of the line a sample stands for, so bunched-up samples don't count extra.
+	function spacing(d, j) {
+		var a = d[Math.max(0, j - 1)];
+		var b = d[Math.min(d.length - 1, j + 1)];
+		return Math.max(b - a, 1e-6);
 	}
 
 	// Builds the outline of a pen stroke. extra: predicted points to add on the end.
@@ -251,6 +283,14 @@
 		var total = finished ? pts[n - 1].d : null;
 		var W = new Array(n);
 		for (var q = 0; q < n; q++) W[q] = strokeWidth(s, pts[q], total);
+		// Pressure and speed jitter from sample to sample. Even it out so the edges
+		// stay clean when zoomed in; real swells in width happen over a longer stretch.
+		W = smoothAlong(
+			pts.map(function (p) { return p.d; }),
+			W,
+			Math.max(4 / (s.scale || 1), s.size * 0.75),
+			pts.map(function (p) { return p.corner; })
+		);
 
 		var body = new Path2D();
 		// Round ends, plus blobs at sharp corners so the outline never shows a notch.
