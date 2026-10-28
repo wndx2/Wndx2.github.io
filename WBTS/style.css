@@ -50,17 +50,48 @@ body {
 	position: absolute;
 	inset: 0;
 	touch-action: none;
-	/* Dot grid that moves with the page, so panning and zooming can be seen. app.js sets its size and position. */
+	overflow: hidden;
+}
+
+/* Dot grid that moves with the page, so panning and zooming can be seen. app.js sets its
+   size and moves it with a transform, so panning never repaints it. */
+#grid {
+	position: absolute;
+	left: 0;
+	top: 0;
+	transform-origin: 0 0;
+	will-change: transform;
+	pointer-events: none;
 	background-image: radial-gradient(circle, var(--dot) 1px, transparent 1.3px);
 	background-size: 24px 24px;
 }
 
-#board canvas {
+/* Finished strokes, as tiles. Each zoom's tiles sit in one layer that app.js moves with a
+   transform, so panning and pinching only move pictures already drawn. */
+#tiles,
+.tileset {
+	position: absolute;
+	left: 0;
+	top: 0;
+	pointer-events: none;
+}
+
+.tileset {
+	transform-origin: 0 0;
+	will-change: transform;
+}
+
+.tileset canvas {
+	position: absolute;
+}
+
+#live {
 	position: absolute;
 	inset: 0;
 	width: 100%;
 	height: 100%;
 	touch-action: none;
+	pointer-events: none;
 }
 
 /* Floating toolbar */

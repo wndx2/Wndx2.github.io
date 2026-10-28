@@ -3,9 +3,9 @@
 	"use strict";
 
 	var board = document.getElementById("board");
-	var inkCanvas = document.getElementById("ink");
+	var tileLayer = document.getElementById("tiles");
+	var gridEl = document.getElementById("grid");
 	var liveCanvas = document.getElementById("live");
-	var ink = inkCanvas.getContext("2d");
 	var live = liveCanvas.getContext("2d");
 	var zoomBtn = document.getElementById("zoom");
 
@@ -34,6 +34,7 @@
 	// The pen or highlighter, whichever was used last. The eraser shows its colours.
 	var inkTool = "pen";
 	var palette = {};
+	var theme = "light";
 
 	// Every ink colour in both themes. The toolbar swatches and copied images use these too.
 	var THEMES = {
@@ -97,12 +98,22 @@
 
 	var frame = 0;
 	var dirty = true;
+	var liveDirty = true;
 	var shownZoom = "";
+	// The dot spacing the grid was last painted at, in CSS pixels, and its transform.
+	var gridPainted = 0;
+	var shownGrid = "";
 
 	// ---------- View ----------
 
+	// The shift is rounded to whole device pixels so tiles (see Rendering) line up exactly.
 	function applyView(ctx) {
-		ctx.setTransform(dpr * view.s, 0, 0, dpr * view.s, dpr * view.x, dpr * view.y);
+		var k = dpr * view.s;
+		ctx.setTransform(k, 0, 0, k, Math.round(dpr * view.x), Math.round(dpr * view.y));
+	}
+
+	function len2(dx, dy) {
+		return Math.sqrt(dx * dx + dy * dy);
 	}
 
 	function wipe(ctx) {
@@ -117,13 +128,21 @@
 	}
 
 	// Zoom by a factor while keeping the page point under (cx, cy) in place.
-	function zoomAt(cx, cy, factor) {
+	// pinch: part of a continuous pinch or scroll, so tiles wait for it to settle.
+	function zoomAt(cx, cy, factor, pinch) {
 		var s = clamp(view.s * factor, MIN_ZOOM, MAX_ZOOM);
 		var px = (cx - view.x) / view.s;
 		var py = (cy - view.y) / view.s;
 		view.s = s;
 		view.x = cx - px * s;
 		view.y = cy - py * s;
+		if (pinch) {
+			zoomedAt = performance.now();
+			clearTimeout(settleTimer);
+			settleTimer = setTimeout(function () {
+				requestRender(true);
+			}, SETTLE + 10);
+		}
 		requestRender(true);
 	}
 
@@ -137,10 +156,19 @@
 		var step = GRID * view.s;
 		while (step < 14) step *= 2;
 		while (step > 56) step /= 2;
+		// The dots are painted once and then only moved and stretched, which costs nothing.
+		// They're painted again only once stretched by more than a quarter.
+		if (!gridPainted || step / gridPainted > 1.25 || gridPainted / step > 1.25) {
+			gridPainted = step;
+			gridEl.style.backgroundSize = step + "px " + step + "px";
+		}
 		var ox = ((view.x % step) + step) % step;
 		var oy = ((view.y % step) + step) % step;
-		board.style.backgroundSize = step + "px " + step + "px";
-		board.style.backgroundPosition = ox - step / 2 + "px " + (oy - step / 2) + "px";
+		// A dot is painted in the middle of each square, and the layer starts a square
+		// and a half up and left so it always covers the screen.
+		var grid =
+			"translate3d(" + (ox - step * 1.5) + "px," + (oy - step * 1.5) + "px,0) scale(" + step / gridPainted + ")";
+		if (grid !== shownGrid) gridEl.style.transform = shownGrid = grid;
 		// Only touch the toolbar when the number changes, so it isn't re-laid-out every frame.
 		var z = Math.round(view.s * 100) + "%";
 		if (z !== shownZoom) zoomBtn.textContent = shownZoom = z;
@@ -153,24 +181,32 @@
 	}
 
 	function readPalette() {
-		palette = THEMES[themeName()];
+		theme = themeName();
+		palette = THEMES[theme];
 		document.querySelectorAll(".swatch span").forEach(function (span) {
 			span.style.background = palette[span.parentNode.dataset.color];
 		});
 	}
 
 	function resize() {
+		var oldDpr = dpr;
 		dpr = window.devicePixelRatio || 1;
 		width = board.clientWidth;
 		height = board.clientHeight;
-		[inkCanvas, liveCanvas].forEach(function (c) {
-			c.width = Math.round(width * dpr);
-			c.height = Math.round(height * dpr);
-		});
-		[ink, live].forEach(function (ctx) {
-			ctx.lineCap = "round";
-			ctx.lineJoin = "round";
-		});
+		liveCanvas.width = Math.round(width * dpr);
+		liveCanvas.height = Math.round(height * dpr);
+		live.lineCap = "round";
+		live.lineJoin = "round";
+		liveDrawn = true;
+		// Big enough to cover the screen at the least stretch (1 / 1.25) plus a square and a half.
+		gridEl.style.width = Math.ceil((width + 84) * 1.25) + "px";
+		gridEl.style.height = Math.ceil((height + 84) * 1.25) + "px";
+		// Tiles are laid out in CSS pixels, so a new pixel density needs new tiles.
+		if (dpr !== oldDpr) dropAllTiles();
+		// Room for the tiles on screen, the ring around them, and some from other zooms.
+		var cols = Math.ceil(liveCanvas.width / TILE) + 1;
+		var rows = Math.ceil(liveCanvas.height / TILE) + 1;
+		maxTiles = Math.max(48, Math.ceil(2.5 * cols * rows));
 		requestRender(true);
 	}
 
@@ -226,7 +262,7 @@
 			var r = raw[i];
 			var last = pts[pts.length - 1];
 			var copy = { x: r.x, y: r.y, p: r.p, v: r.v, d: r.d, corner: false };
-			if (last && Math.hypot(r.x - last.x, r.y - last.y) < gap) {
+			if (last && len2(r.x - last.x, r.y - last.y) < gap) {
 				// Always end exactly where the Pencil lifted.
 				if (i === raw.length - 1 && pts.length > 1) pts[pts.length - 1] = copy;
 				continue;
@@ -251,8 +287,8 @@
 			var uy = pts[i].y - pts[a].y;
 			var vx = pts[b].x - pts[i].x;
 			var vy = pts[b].y - pts[i].y;
-			var lu = Math.hypot(ux, uy);
-			var lv = Math.hypot(vx, vy);
+			var lu = len2(ux, uy);
+			var lv = len2(vx, vy);
 			turn[i] = lu && lv ? (ux * vx + uy * vy) / (lu * lv) : 1;
 		}
 		// A corner is the sharpest point of a sharp turn. It stays exactly where it was drawn.
@@ -351,7 +387,7 @@
 		var right = [];
 
 		function edge(x, y, w, tx, ty) {
-			var len = Math.hypot(tx, ty);
+			var len = len2(tx, ty);
 			if (!len) return;
 			var h = w / 2 / len;
 			left.push(x - ty * h, y + tx * h);
@@ -372,8 +408,8 @@
 			var uy = c.y - a.y;
 			var vx = b.x - c.x;
 			var vy = b.y - c.y;
-			var lu = Math.hypot(ux, uy);
-			var lv = Math.hypot(vx, vy);
+			var lu = len2(ux, uy);
+			var lv = len2(vx, vy);
 			if (c.corner && lu && lv) {
 				inX[i] = ux / lu;
 				inY[i] = uy / lu;
@@ -385,7 +421,7 @@
 			}
 			var dx = b.x - a.x;
 			var dy = b.y - a.y;
-			var ld = Math.hypot(dx, dy) || 1;
+			var ld = len2(dx, dy) || 1;
 			inX[i] = outX[i] = dx / ld;
 			inY[i] = outY[i] = dy / ld;
 		}
@@ -395,7 +431,7 @@
 		for (i = 0; i < n - 1; i++) {
 			var p0 = pts[i];
 			var p3 = pts[i + 1];
-			var len = Math.hypot(p3.x - p0.x, p3.y - p0.y);
+			var len = len2(p3.x - p0.x, p3.y - p0.y);
 			// Bezier handles a third of the gap long, so the curve never overshoots.
 			var h = len / 3;
 			var p1x = p0.x + outX[i] * h;
@@ -472,7 +508,7 @@
 			var c = pts[i];
 			var toX = i < n - 1 ? (c.x + pts[i + 1].x) / 2 : c.x;
 			var toY = i < n - 1 ? (c.y + pts[i + 1].y) / 2 : c.y;
-			var len = Math.hypot(c.x - fromX, c.y - fromY) + Math.hypot(toX - c.x, toY - c.y);
+			var len = len2(c.x - fromX, c.y - fromY) + len2(toX - c.x, toY - c.y);
 			var steps = clamp(Math.ceil((len * detail) / 2), 1, 16);
 			for (var j = 1; j <= steps; j++) {
 				var t = j / steps;
@@ -490,7 +526,7 @@
 			if (k + 3 >= line.length) continue;
 			var dx = line[k + 2] - x;
 			var dy = line[k + 3] - y;
-			var d = Math.hypot(dx, dy);
+			var d = len2(dx, dy);
 			if (!d) continue;
 			// Half the width out to each side. This corner order winds the same way as the circles.
 			var nx = (-dy / d) * r;
@@ -518,7 +554,8 @@
 		// The stroke's box in the target canvas's pixels. The view is only ever a zoom
 		// and a shift, so the corners map straight across.
 		var m = ctx.getTransform();
-		var b = bounds(s.points, s.size);
+		// A finished stroke keeps its box; the one being drawn is still growing.
+		var b = s.box || bounds(s.points, s.size);
 		var x0 = Math.max(0, Math.floor(b.x0 * m.a + m.e));
 		var y0 = Math.max(0, Math.floor(b.y0 * m.d + m.f));
 		var x1 = Math.min(ctx.canvas.width, Math.ceil(b.x1 * m.a + m.e));
@@ -562,25 +599,31 @@
 		ctx.stroke(path);
 	}
 
-	function drawAction(ctx, a) {
+	// The outline was built for the zoom it was last drawn at. Zoomed in well past that,
+	// it's rebuilt with more pieces so its curves don't show straight edges. Zoomed out
+	// well past it, it's rebuilt with fewer, so a page full of writing stays quick to draw.
+	function needsRebuild(a, zoom) {
+		return zoom > a.detail * 1.5 || (a.detail > 1 && zoom * 4 < a.detail);
+	}
+
+	// zoom: the zoom the canvas is drawn at, as in view.s.
+	function drawAction(ctx, a, zoom) {
 		if (a.tool === "eraser") {
-			eraseShape(ctx, a, a.shape);
+			eraseShape(ctx, a, a.shape || (a.shape = eraserShape(a)));
 			return;
 		}
+		var detail = Math.max(zoom, 1);
 		if (a.tool === "highlighter") {
-			// Rebuild with finer curves when zoomed in well past where it was built, like the pen.
-			if (view.s > a.detail * 1.5) {
-				a.shape = highlighterShape(a);
-				a.detail = Math.max(view.s, 1);
+			if (needsRebuild(a, zoom)) {
+				a.shape = highlighterShape(a, detail);
+				a.detail = detail;
 			}
-			drawHighlight(ctx, a, a.shape, palette, themeName());
+			drawHighlight(ctx, a, a.shape, palette, theme);
 			return;
 		}
-		// The outline was built for the zoom it was last drawn at. Zoomed in well past
-		// that, rebuild it with more pieces so its curves don't show straight edges.
-		if (view.s > a.detail * 1.5) {
-			a.shape = penShape(a, null, true);
-			a.detail = Math.max(view.s, 1);
+		if (needsRebuild(a, zoom)) {
+			a.shape = penShape(a, null, true, detail);
+			a.detail = detail;
 		}
 		fillShape(ctx, a, a.shape);
 	}
@@ -603,57 +646,448 @@
 
 	// ---------- Rendering ----------
 	//
-	// Two layers: "ink" holds finished strokes, "live" holds the pen stroke being
-	// drawn. The live stroke is rebuilt each frame (it's short), then moved onto
-	// the ink layer once when the Pencil lifts. The eraser works straight on the
-	// ink layer since it has to cut into it.
+	// Finished strokes are drawn once into tiles: small canvases of TILE device pixels,
+	// all at one zoom. Each zoom's tiles sit in one layer that's moved and stretched with
+	// a CSS transform, so moving the page never redraws anything; the browser just slides
+	// pictures it already has. Tiles are drawn a little at a time between frames, and one
+	// shows once it's complete. Until then, tiles from another zoom underneath stand in,
+	// stretched. During a pinch tiles are drawn at the nearest of a few fixed zooms, and
+	// once the zoom settles they're drawn again at exactly the zoom on screen, so lines
+	// end up sharp.
+	//
+	// The "live" canvas on top holds the stroke being drawn. It's rebuilt each frame (it's
+	// short), then joins the finished strokes when the Pencil lifts. The eraser cuts
+	// straight into the tiles on screen as it goes.
 
-	function redrawAll() {
-		wipe(ink);
-		// Only draw strokes that are on screen.
-		var vx0 = -view.x / view.s;
-		var vy0 = -view.y / view.s;
-		var vx1 = vx0 + width / view.s;
-		var vy1 = vy0 + height / view.s;
+	var TILE = 512;
+	// The most time a frame spends drawing tiles, in ms: less while writing so the pen keeps up.
+	var BUDGET = 6;
+	var BUDGET_WRITING = 2;
+	// How long a pinch has to rest before tiles are drawn at exactly its zoom, in ms.
+	var SETTLE = 160;
 
-		var start = 0;
+	// One set of tiles per zoom, in device pixels per page unit (ds).
+	var tileSets = [];
+	// Canvases from thrown-away tiles, ready for reuse.
+	var spareTiles = [];
+	var tileCanvases = 0;
+	var tileCount = 0;
+	var maxTiles = 64;
+	// The first action after the last "clear".
+	var pageStart = 0;
+	var frameNo = 0;
+	var zoomedAt = -Infinity;
+	var settleTimer = 0;
+	// Tiles on screen still to draw, nearest the middle first, and the grid on screen.
+	var todo = [];
+	var shown = null;
+	// Draw these tiles on screen right away instead of a little at a time: all of them
+	// (after an undo, say) or the ones a new stroke lands on.
+	var urgent = false;
+	var urgentBox = null;
+	// The tiles the eraser being used has cut into so far.
+	var cut = null;
+	// Whether the live canvas has anything on it.
+	var liveDrawn = true;
+
+	function findStart() {
 		for (var i = actions.length - 1; i >= 0; i--) {
-			if (actions[i].type === "clear") {
-				start = i + 1;
-				break;
+			if (actions[i].type === "clear") return i + 1;
+		}
+		return 0;
+	}
+
+	// The zoom tiles are drawn at: exactly the one on screen, or during a pinch the
+	// nearest of a few fixed zooms, so the tiles aren't redrawn for every step of it.
+	function tileZoom() {
+		var ds = dpr * view.s;
+		if (performance.now() - zoomedAt >= SETTLE) return ds;
+		return Math.pow(2, Math.round(Math.log2(ds) * 2) / 2);
+	}
+
+	function tileSet(ds) {
+		for (var i = 0; i < tileSets.length; i++) {
+			if (tileSets[i].ds === ds) return tileSets[i];
+		}
+		var el = document.createElement("div");
+		el.className = "tileset";
+		// New sets start at the bottom; the one on screen is moved to the top.
+		tileLayer.insertBefore(el, tileLayer.firstChild);
+		var set = { ds: ds, tiles: new Map(), el: el, transform: "", hidden: false };
+		tileSets.push(set);
+		return set;
+	}
+
+	function getTile(set, i, j) {
+		var key = i + "," + j;
+		var t = set.tiles.get(key);
+		if (!t) {
+			// The tile's square on the page.
+			var size = TILE / set.ds;
+			t = {
+				set: set,
+				key: key,
+				i: i,
+				j: j,
+				x0: i * size,
+				y0: j * size,
+				x1: (i + 1) * size,
+				y1: (j + 1) * size,
+				canvas: null,
+				ctx: null,
+				visible: false,
+				// The next action to draw into it. It's ready once this reaches the end.
+				next: pageStart,
+				used: frameNo,
+			};
+			set.tiles.set(key, t);
+			tileCount++;
+		}
+		return t;
+	}
+
+	function forEachTile(fn) {
+		tileSets.forEach(function (set) {
+			set.tiles.forEach(fn);
+		});
+	}
+
+	function ready(t) {
+		return t.next === actions.length;
+	}
+
+	function hits(t, b) {
+		return !(b.x1 < t.x0 || b.x0 > t.x1 || b.y1 < t.y0 || b.y0 > t.y1);
+	}
+
+	function setVisible(t, on) {
+		if (!t.canvas || t.visible === on) return;
+		t.visible = on;
+		t.canvas.style.visibility = on ? "visible" : "hidden";
+	}
+
+	// A tile on screen shows once it's complete. Stand-ins are handled by updateStandIns.
+	function syncTile(t) {
+		if (!shown || t.set === shown.set) setVisible(t, ready(t));
+	}
+
+	// A tile only gets a canvas once something is drawn on it, so empty page costs nothing.
+	function giveCanvas(t) {
+		var c = spareTiles.pop();
+		if (!c) {
+			c = document.createElement("canvas");
+			c.width = c.height = TILE;
+		}
+		var ctx = c.getContext("2d");
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.globalCompositeOperation = "source-over";
+		ctx.globalAlpha = 1;
+		ctx.clearRect(0, 0, TILE, TILE);
+		ctx.lineCap = "round";
+		ctx.lineJoin = "round";
+		ctx.setTransform(t.set.ds, 0, 0, t.set.ds, -t.i * TILE, -t.j * TILE);
+		// Placed in CSS pixels inside its set's layer; whole device pixels apart.
+		var size = TILE / dpr;
+		c.style.left = t.i * size + "px";
+		c.style.top = t.j * size + "px";
+		c.style.width = c.style.height = size + "px";
+		c.style.visibility = "hidden";
+		t.visible = false;
+		t.set.el.appendChild(c);
+		t.canvas = c;
+		t.ctx = ctx;
+		tileCanvases++;
+	}
+
+	function takeCanvas(t) {
+		if (!t.canvas) return;
+		t.canvas.remove();
+		if (spareTiles.length < 4) spareTiles.push(t.canvas);
+		// Safari only gives a canvas's memory back once it's shrunk.
+		else t.canvas.width = t.canvas.height = 0;
+		t.canvas = t.ctx = null;
+		t.visible = false;
+		tileCanvases--;
+	}
+
+	// Starts a tile over from a blank page.
+	function emptyTile(t) {
+		takeCanvas(t);
+		t.next = pageStart;
+	}
+
+	function dropTile(t) {
+		takeCanvas(t);
+		t.set.tiles.delete(t.key);
+		tileCount--;
+	}
+
+	function dropAllTiles() {
+		forEachTile(takeCanvas);
+		tileSets = [];
+		tileLayer.textContent = "";
+		tileCount = 0;
+		todo = [];
+		shown = null;
+		cut = null;
+	}
+
+	// Draws strokes into a tile until it's up to date or the time runs out. True if it's done.
+	function drawTile(t, deadline) {
+		var zoom = t.set.ds / dpr;
+		while (t.next < actions.length) {
+			var a = actions[t.next++];
+			if (!hits(t, a.box)) continue;
+			if (!t.canvas) {
+				// Nothing to rub out on a blank tile.
+				if (a.tool === "eraser") continue;
+				giveCanvas(t);
+			}
+			drawAction(t.ctx, a, zoom);
+			if (performance.now() > deadline) break;
+		}
+		syncTile(t);
+		return ready(t);
+	}
+
+	// Moves and stretches a set's layer to match the view.
+	function place(set, ox, oy, ds) {
+		var k = ds / set.ds;
+		var tf = "translate3d(" + ox / dpr + "px," + oy / dpr + "px,0) scale(" + k + ")";
+		if (tf !== set.transform) set.el.style.transform = set.transform = tf;
+	}
+
+	// Tiles from other zooms show only where a tile on screen isn't complete yet, so
+	// they don't double up see-through highlighter.
+	function updateStandIns() {
+		var cur = shown.set;
+		var pending = todo.length > 0;
+		var size = TILE / cur.ds;
+		tileSets.forEach(function (s) {
+			if (s === cur) return;
+			var hide = !pending;
+			if (s.hidden !== hide) {
+				s.hidden = hide;
+				s.el.style.display = hide ? "none" : "";
+			}
+			if (hide) return;
+			s.tiles.forEach(function (ft) {
+				if (!ft.canvas) return;
+				var need = ready(ft) && !covered(cur, ft, size);
+				setVisible(ft, need);
+			});
+		});
+	}
+
+	// Whether complete tiles of the set on screen cover all of tile ft.
+	function covered(cur, ft, size) {
+		var i0 = Math.floor(ft.x0 / size + 1e-6);
+		var i1 = Math.ceil(ft.x1 / size - 1e-6) - 1;
+		var j0 = Math.floor(ft.y0 / size + 1e-6);
+		var j1 = Math.ceil(ft.y1 / size - 1e-6) - 1;
+		// A far zoomed-out tile covers a lot; just keep it.
+		if ((i1 - i0 + 1) * (j1 - j0 + 1) > 64) return false;
+		for (var j = j0; j <= j1; j++) {
+			for (var i = i0; i <= i1; i++) {
+				var t = cur.tiles.get(i + "," + j);
+				if (!t || !ready(t)) return false;
 			}
 		}
-		for (var j = start; j < actions.length; j++) {
-			var b = actions[j].box;
-			if (b.x1 < vx0 || b.x0 > vx1 || b.y1 < vy0 || b.y0 > vy1) continue;
-			drawAction(ink, actions[j]);
-		}
+		return true;
+	}
 
-		if (current && current.tool === "eraser") {
-			eraseShape(ink, current, eraserShape(current));
-			current.erasedTo = current.points.length;
+	// Lines the tile layers up with the view and lists the tiles on screen that aren't ready.
+	function compose() {
+		var ds = dpr * view.s;
+		var set = tileSet(tileZoom());
+		var span = (TILE * ds) / set.ds;
+		var ox = Math.round(dpr * view.x);
+		var oy = Math.round(dpr * view.y);
+		var w = liveCanvas.width;
+		var h = liveCanvas.height;
+		var i0 = Math.floor(-ox / span);
+		var i1 = Math.ceil((w - ox) / span) - 1;
+		var j0 = Math.floor(-oy / span);
+		var j1 = Math.ceil((h - oy) / span) - 1;
+		var changed = !shown || shown.set !== set;
+		shown = { set: set, i0: i0, i1: i1, j0: j0, j1: j1 };
+		if (changed) {
+			if (set.hidden) {
+				set.hidden = false;
+				set.el.style.display = "";
+			}
+			if (tileLayer.lastChild !== set.el) tileLayer.appendChild(set.el);
+			// It may have been a stand-in with some tiles hidden.
+			set.tiles.forEach(syncTile);
 		}
+		tileSets.forEach(function (s) {
+			place(s, ox, oy, ds);
+		});
+
+		todo = [];
+		for (var j = j0; j <= j1; j++) {
+			for (var i = i0; i <= i1; i++) {
+				var t = getTile(set, i, j);
+				t.used = frameNo;
+				if (ready(t)) continue;
+				var dx = 2 * (ox + (i + 0.5) * span) - w;
+				var dy = 2 * (oy + (j + 0.5) * span) - h;
+				t.dist = dx * dx + dy * dy;
+				todo.push(t);
+			}
+		}
+		todo.sort(function (a, b) {
+			return a.dist - b.dist;
+		});
+		updateStandIns();
 		updateChrome();
 	}
 
+	// With time to spare, draws the ring of tiles just off screen so moving the page
+	// finds them ready. True once they all are.
+	function prefetch(deadline) {
+		var g = shown;
+		for (var j = g.j0 - 1; j <= g.j1 + 1; j++) {
+			for (var i = g.i0 - 1; i <= g.i1 + 1; i++) {
+				if (i >= g.i0 && i <= g.i1 && j >= g.j0 && j <= g.j1) continue;
+				var t = getTile(g.set, i, j);
+				t.used = frameNo;
+				if (ready(t)) continue;
+				if (performance.now() >= deadline || !drawTile(t, deadline)) return false;
+			}
+		}
+		return true;
+	}
+
+	// Keeps tile memory in bounds, throwing away the tiles least recently on screen.
+	function trimTiles() {
+		if (tileCanvases <= maxTiles && tileCount <= maxTiles * 40) return;
+		// Never the ones on screen.
+		var g = shown;
+		if (g) {
+			for (var j = g.j0; j <= g.j1; j++) {
+				for (var i = g.i0; i <= g.i1; i++) {
+					var t = g.set.tiles.get(i + "," + j);
+					if (t) t.used = frameNo;
+				}
+			}
+		}
+		var old = [];
+		forEachTile(function (t) {
+			if (t.used < frameNo) old.push(t);
+		});
+		old.sort(function (a, b) {
+			return a.used - b.used;
+		});
+		for (var n = 0; n < old.length; n++) {
+			if (tileCanvases <= maxTiles && tileCount <= maxTiles * 20) break;
+			dropTile(old[n]);
+		}
+		tileSets = tileSets.filter(function (s) {
+			if (s.tiles.size > 0 || (shown && s === shown.set)) return true;
+			s.el.remove();
+			return false;
+		});
+	}
+
+	// Adds a finished stroke or a "clear" to the page.
+	function pushAction(a) {
+		actions.push(a);
+		if (a.type === "clear") {
+			pageStart = actions.length;
+			forEachTile(emptyTile);
+		} else {
+			// Tiles that were ready get the new stroke straight away. Ones the eraser
+			// already cut into as it went are done.
+			forEachTile(function (t) {
+				if (t.next !== actions.length - 1) return;
+				if (cut && cut.has(t)) t.next++;
+				else drawTile(t, Infinity);
+			});
+			urgentBox = a.box;
+		}
+		cut = null;
+		requestRender(true);
+	}
+
+	// Takes the last stroke or "clear" off the page. Tiles it touched are drawn again.
+	function popAction() {
+		var a = actions.pop();
+		var at = actions.length;
+		if (a.type === "clear") pageStart = findStart();
+		forEachTile(function (t) {
+			if (t.next <= at) return;
+			if (a.type === "clear" || hits(t, a.box)) emptyTile(t);
+			else t.next = at;
+			syncTile(t);
+		});
+		urgent = true;
+		requestRender(true);
+		return a;
+	}
+
+	// Cuts the eraser into the complete tiles on screen: the new part of the swipe (seg,
+	// inside segBox) into tiles already cut, the whole swipe so far into the rest.
+	function cutTiles(s, seg, segBox) {
+		var g = shown;
+		if (!g) return;
+		if (!cut) cut = new Set();
+		// Every tile already cut, even ones the page has since moved off, so none miss a part.
+		if (seg) {
+			cut.forEach(function (t) {
+				if (t.canvas && hits(t, segBox)) eraseShape(t.ctx, s, seg);
+			});
+		}
+		var whole = null;
+		var wholeBox = null;
+		for (var j = g.j0; j <= g.j1; j++) {
+			for (var i = g.i0; i <= g.i1; i++) {
+				var t = g.set.tiles.get(i + "," + j);
+				if (!t || !t.canvas || !ready(t) || cut.has(t)) continue;
+				cut.add(t);
+				if (!wholeBox) wholeBox = bounds(s.points, s.size);
+				if (!hits(t, wholeBox)) continue;
+				if (!whole) whole = eraserShape(s);
+				eraseShape(t.ctx, s, whole);
+			}
+		}
+	}
+
+	// The eraser was cancelled: tiles it cut into are drawn again without it.
+	function uncut() {
+		if (!cut) return;
+		cut.forEach(emptyTile);
+		cut = null;
+		urgent = true;
+	}
+
 	function renderLive() {
+		if (!current) {
+			if (liveDrawn) wipe(live);
+			liveDrawn = false;
+			return;
+		}
 		wipe(live);
-		if (!current) return;
+		liveDrawn = true;
 		var s = current;
 		var pts = s.points;
 		var last = pts[pts.length - 1];
 
 		if (s.tool === "eraser") {
 			// Cut the new part of the swipe into the ink.
+			var path = null;
+			var box = null;
 			if (s.erasedTo < pts.length) {
-				var path = new Path2D();
-				var from = pts[Math.max(0, s.erasedTo - 1)];
+				var start = Math.max(0, s.erasedTo - 1);
+				path = new Path2D();
+				var from = pts[start];
 				path.moveTo(from.x, from.y);
 				for (var i = s.erasedTo; i < pts.length; i++) path.lineTo(pts[i].x, pts[i].y);
 				if (s.erasedTo === 0) path.lineTo(from.x + 0.01, from.y);
-				eraseShape(ink, s, path);
+				box = bounds(pts.slice(start), s.size);
 				s.erasedTo = pts.length;
 			}
+			cutTiles(s, path, box);
 			// Show where the eraser is.
 			live.lineWidth = 1 / view.s;
 			live.strokeStyle = palette.ink;
@@ -666,7 +1100,7 @@
 		}
 
 		if (s.tool === "highlighter") {
-			drawHighlight(live, s, highlighterShape(s), palette, themeName());
+			drawHighlight(live, s, highlighterShape(s), palette, theme);
 			return;
 		}
 		fillShape(live, s, penShape(s, s.predicted));
@@ -674,17 +1108,57 @@
 
 	function onFrame() {
 		frame = 0;
+		frameNo++;
+		var start = performance.now();
 		if (dirty) {
 			dirty = false;
-			redrawAll();
+			compose();
 		}
-		renderLive();
+
+		// Draw the tiles on screen that aren't ready, for as long as the frame allows.
+		var budget = start + (current ? BUDGET_WRITING : BUDGET);
+		var left = [];
+		for (var n = 0; n < todo.length; n++) {
+			var t = todo[n];
+			t.used = frameNo;
+			var deadline = urgent || (urgentBox && hits(t, urgentBox)) ? Infinity : budget;
+			if (!ready(t) && performance.now() < deadline) drawTile(t, deadline);
+			if (!ready(t)) left.push(t);
+		}
+		urgent = false;
+		urgentBox = null;
+		if (left.length < todo.length) {
+			todo = left;
+			// Stand-ins under the tiles just finished can go.
+			if (shown) updateStandIns();
+			// Tiles just finished need the eraser in use cut into them too.
+			if (current && current.tool === "eraser") liveDirty = true;
+		}
+
+		var more = todo.length > 0;
+		// Off-screen tiles only once the screen is done, nothing is being written,
+		// and the zoom has settled.
+		if (!more && !current && shown && shown.set.ds === dpr * view.s) {
+			more = !prefetch(budget);
+		}
+		trimTiles();
+
+		if (liveDirty) {
+			liveDirty = false;
+			renderLive();
+		}
+		if (more) schedule();
 	}
 
-	// full: the view or the strokes changed, so everything is redrawn.
+	function schedule() {
+		if (!frame) frame = requestAnimationFrame(onFrame);
+	}
+
+	// full: the view or the strokes changed, so the tiles are lined up again.
 	function requestRender(full) {
 		if (full) dirty = true;
-		if (!frame) frame = requestAnimationFrame(onFrame);
+		liveDirty = true;
+		schedule();
 	}
 
 	// ---------- Drawing input ----------
@@ -705,7 +1179,7 @@
 		// Speed on screen, smoothed so it doesn't jitter.
 		pt.v = 0;
 		if (prev) {
-			var dist = Math.hypot(pt.x - prev.x, pt.y - prev.y) * view.s;
+			var dist = len2(pt.x - prev.x, pt.y - prev.y) * view.s;
 			var speed = dist / Math.max(1, pt.t - prev.t);
 			pt.v = prev.v * 0.75 + Math.min(speed, 6) * 0.25;
 		}
@@ -736,7 +1210,7 @@
 				last.p = pt.p;
 				return;
 			}
-			pt.d = last.d + Math.hypot(dx, dy);
+			pt.d = last.d + len2(dx, dy);
 		}
 		pts.push(pt);
 	}
@@ -775,7 +1249,8 @@
 		var wasEraser = current.tool === "eraser";
 		current = null;
 		activeId = null;
-		// An eraser has already cut into the ink, so the page needs redrawing.
+		// An eraser has already cut into the ink, so those tiles are drawn again.
+		if (wasEraser) uncut();
 		requestRender(wasEraser);
 	}
 
@@ -792,21 +1267,15 @@
 			box: bounds(s.points, s.size * 1.5),
 			detail: Math.max(view.s, 1),
 		};
-		if (s.tool === "eraser") {
-			a.shape = eraserShape(s);
-		} else if (s.tool === "highlighter") {
-			a.shape = highlighterShape(s);
-			drawHighlight(ink, a, a.shape, palette, themeName());
-		} else {
-			a.shape = penShape(s, null, true);
-			fillShape(ink, a, a.shape);
-		}
-		actions.push(a);
-		redoStack = [];
+		if (s.tool === "eraser") a.shape = eraserShape(s);
+		else if (s.tool === "highlighter") a.shape = highlighterShape(s);
+		else a.shape = penShape(s, null, true);
 		current = null;
 		activeId = null;
+		// Draws it into the tiles, which then show in place of the live stroke.
+		pushAction(a);
+		redoStack = [];
 		updateButtons();
-		requestRender();
 	}
 
 	// ---------- Finger gestures ----------
@@ -840,7 +1309,7 @@
 	function moveGesture() {
 		var g = fingerState();
 		if (gesture && g.n === gesture.n) {
-			if (g.n >= 2 && gesture.d > 0) zoomAt(gesture.cx, gesture.cy, g.d / gesture.d);
+			if (g.n >= 2 && gesture.d > 0) zoomAt(gesture.cx, gesture.cy, g.d / gesture.d, true);
 			panBy(g.cx - gesture.cx, g.cy - gesture.cy);
 		}
 		gesture = g;
@@ -940,7 +1409,7 @@
 			var unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? height : 1;
 			var dx = e.deltaX * unit;
 			var dy = e.deltaY * unit;
-			if (e.ctrlKey || e.metaKey) zoomAt(e.clientX, e.clientY, Math.exp(-dy * 0.01));
+			if (e.ctrlKey || e.metaKey) zoomAt(e.clientX, e.clientY, Math.exp(-dy * 0.01), true);
 			else panBy(-dx, -dy);
 		},
 		{ passive: false }
@@ -985,24 +1454,21 @@
 
 	function undo() {
 		if (current || !actions.length) return;
-		redoStack.push(actions.pop());
-		requestRender(true);
+		redoStack.push(popAction());
 		updateButtons();
 	}
 
 	function redo() {
 		if (current || !redoStack.length) return;
-		actions.push(redoStack.pop());
-		requestRender(true);
+		pushAction(redoStack.pop());
 		updateButtons();
 	}
 
 	function clearPage() {
 		if (current || pageIsEmpty()) return;
 		// Clearing is just another step, so Undo brings the page back.
-		actions.push({ type: "clear" });
+		pushAction({ type: "clear" });
 		redoStack = [];
-		requestRender(true);
 		updateButtons();
 	}
 
@@ -1232,7 +1698,7 @@
 		ctx.lineJoin = "round";
 		list.forEach(function (a) {
 			if (a.tool === "eraser") {
-				eraseShape(ctx, a, a.shape);
+				eraseShape(ctx, a, a.shape || (a.shape = eraserShape(a)));
 				return;
 			}
 			if (a.tool === "highlighter") {
@@ -1254,6 +1720,8 @@
 		octx.fillRect(0, 0, pw, ph);
 		octx.drawImage(layer, 0, 0);
 		layer.width = layer.height = 0;
+		// A big picture can grow the spare canvas a lot; let it go back to tile size.
+		spare.width = spare.height = 0;
 		return out;
 	}
 
@@ -1582,11 +2050,10 @@
 				scale: s.scale,
 				points: s.points,
 				box: bounds(s.points, s.size * 1.5),
-				detail: Math.max(view.s, 1),
+				// No shape yet: each is built the first time a tile draws it.
+				shape: null,
+				detail: 0,
 			};
-			if (a.tool === "eraser") a.shape = eraserShape(a);
-			else if (a.tool === "highlighter") a.shape = highlighterShape(a);
-			else a.shape = penShape(a, null, true);
 			actions.push(a);
 			if (a.tool === "eraser") return;
 			var b = a.box;
@@ -1607,6 +2074,9 @@
 			view.x = width / 2 - ((box.x0 + box.x1) / 2) * view.s;
 			view.y = top + (height - top) / 2 - ((box.y0 + box.y1) / 2) * view.s;
 		}
+		// A new page at a new zoom: start the tiles afresh.
+		pageStart = findStart();
+		dropAllTiles();
 		requestRender(true);
 		updateButtons();
 	}
@@ -1766,6 +2236,8 @@
 		themeMeta.content = name === "dark" ? "#000000" : "#fbfaf7";
 		// Ink colours change with the theme, so redraw every stroke in the new colours.
 		readPalette();
+		dropAllTiles();
+		urgent = true;
 		requestRender(true);
 	}
 
