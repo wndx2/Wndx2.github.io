@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NCEA Statistics</title>
+<style>
+:root { color-scheme:dark; }
+@font-face { font-family:"ChosunSm"; src:url("../ChosunSm.TTF"); }
+body { font-family:"ChosunSm", serif; margin:12px; background:#1a1a19; color:#e6e6e6; }
+a { color:#8ab4f8; }
+svg text { font-family:"ChosunSm", serif; }
+svg .grid { stroke:#3a3a3a; }
+svg .tick { fill:#9a9a9a; }
+svg .yr   { fill:#dddddd; }
+svg .tot  { fill:#888888; }
+fieldset { margin:6px 0; border:1px solid #444; }
+label { margin-right:10px; white-space:nowrap; }
+.sw { display:inline-block; width:12px; height:12px; vertical-align:middle; }
+table { border-collapse:collapse; }
+td, th { padding:3px 6px; border-color:#555 !important; }
+table[border] { border-color:#555; }
+#controls select, #controls input, button { font-family:inherit; }
+.stat { display:inline-block; border:1px solid #666; padding:4px 8px; margin:2px; }
+.stat b { font-size:1.2em; }
+#charts { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-start; }
+.chartbox { border:1px solid #444; padding:6px 10px; }
+.chartbox h3 { margin:4px 0; }
+</style>
+</head>
+<body>
+
+<h1>NCEA Statistics</h1>
+<p>National totals &amp; Provider 120 (Otumoetai College).
+Levels 2 &amp; 3, all internals &amp; externals, Scholarship Calculus, years 2008&ndash;2025.
+Pick filters below; the chart, summary and table update live. Hover a chart segment for exact figures.</p>
+
+<div id="controls">
+<fieldset>
+<label>Dataset: <select id="f_ds"></select></label>
+<label>Subject: <select id="f_sub"></select></label>
+<label>Level: <select id="f_lvl"></select></label>
+<label>Assessment: <select id="f_at"></select></label>
+</fieldset>
+<fieldset>
+<label>Standard: <select id="f_std" style="max-width:520px"></select></label>
+<label>Version: <select id="f_ver"></select></label>
+</fieldset>
+<fieldset>
+<label>Years: <select id="f_y0"></select> to <select id="f_y1"></select></label>
+<label>Chart: <select id="f_metric">
+  <option value="pct">Percentage (100% stacked)</option>
+  <option value="cnt">Count</option></select></label>
+<label><input type="checkbox" id="f_smooth"> hide empty years</label>
+</fieldset>
+<fieldset id="f_grades">Grades: </fieldset>
+</div>
+
+<div id="head"></div>
+<div id="summary"></div>
+
+<div id="charts">
+  <div class="chartbox">
+    <h3>Grade distribution by year</h3>
+    <div id="chart" style="overflow-x:auto"></div>
+    <div id="legend"></div>
+  </div>
+  <div class="chartbox">
+    <h3>Outcome rates over time</h3>
+    <div id="chart2" style="overflow-x:auto"></div>
+    <div id="legend2"></div>
+  </div>
+  <div class="chartbox">
+    <h3>National vs Provider 120 — <span id="cmpMetric"></span></h3>
+    <div id="chart3" style="overflow-x:auto"></div>
+    <div id="legend3"></div>
+  </div>
+  <div class="chartbox">
+    <h3>Grade mix — National</h3>
+    <div id="pie1"></div>
+  </div>
+  <div class="chartbox">
+    <h3>Grade mix — Provider 120</h3>
+    <div id="pie2"></div>
+    <div id="legendp"></div>
+  </div>
+</div>
+
+<p><button id="csv">Download current table (CSV)</button></p>
+<div id="table"></div>
+
+<script src="data.js"></script>
+<script>
+const COLORS={V:'#a3a7af',Y:'#6f7580',N:'#d94452',A:'#3cab6d',M:'#4e8fd1',E:'#e8c84a',S:'#4e8fd1',O:'#e8c84a'};
+const LABELS={V:'Void',Y:'Absent',N:'Not Achieved',A:'Achievement',M:'Merit',E:'Excellence',S:'Scholarship',O:'Outstanding'};
+const ACH=['V','Y','N','A','M','E'], SCH=['V','Y','N','S','O'];
+const D=window.DATA;
+const $=id=>document.getElementById(id);
+
+function uniq(a){return [...new Set(a)];}
+function opt(sel,vals,labels){ sel.innerHTML=vals.map((v,i)=>`<option value="${v}">${labels?labels[i]:v}</option>`).join(''); }
+
+// ---- populate top-level filters ----
+opt($('f_ds'), uniq(D.map(r=>r.ds)));
+const SUBORDER=['Accounting','Chemistry','Digital Technologies','English',
+  'Mathematics & Statistics (incl. Calculus)','Physics'];
+opt($('f_sub'), SUBORDER.filter(s=>D.some(r=>r.sub===s)));
+opt($('f_lvl'), ['All','2','3']);
+opt($('f_at'), ['All','Internal','External','Scholarship']);
+const allYears=uniq(D.map(r=>r.yr)).sort((a,b)=>a-b);
+opt($('f_y0'), allYears); opt($('f_y1'), allYears);
+$('f_y0').value=allYears[0]; $('f_y1').value=allYears[allYears.length-1];
+
+function gradeSet(){ // based on current assessment/standard
+  const at=$('f_at').value;
+  if(at==='Scholarship') return SCH;
+  // detect if the selected standard is scholarship
+  const std=+$('f_std').value;
+  if(D.some(r=>r.std===std && r.typ==='Scholarship')) return SCH;
+  return ACH;
+}
+
+function rebuildStandards(){
+  const ds=$('f_ds').value, sub=$('f_sub').value, lvl=$('f_lvl').value, at=$('f_at').value;
+  let rows=D.filter(r=>r.ds===ds && r.sub===sub
+      && (lvl==='All'||r.lvl===lvl)
+      && (at==='All'||r.at===at));
+  const stds=uniq(rows.map(r=>r.std)).sort((a,b)=>a-b);
+  const info=s=>{const r=rows.find(x=>x.std===s); return {cur:r?r.cur:true, label:s+' — '+(r?r.title:'')};};
+  const cur=stds.filter(s=>info(s).cur), non=stds.filter(s=>!info(s).cur);
+  const grp=(name,list)=> list.length
+    ? `<optgroup label="${name}">`+list.map(s=>`<option value="${s}">${info(s).label}</option>`).join('')+'</optgroup>'
+    : '';
+  const prev=$('f_std').value;
+  $('f_std').innerHTML=grp('Current standards',cur)+grp('Non-current standards',non);
+  if(stds.includes(+prev)) $('f_std').value=prev;
+}
+
+function rebuildVersions(){
+  const ds=$('f_ds').value, std=+$('f_std').value;
+  const vers=uniq(D.filter(r=>r.ds===ds && r.std===std).map(r=>r.ver))
+             .sort((a,b)=>(+a)-(+b));
+  const vals=['Latest','All',...vers];
+  const labels=['Latest version','All versions',...vers.map(v=>'v'+v)];
+  opt($('f_ver'), vals, labels);
+  $('f_ver').value='Latest';
+}
+
+function rebuildGrades(){
+  const codes=gradeSet();
+  $('f_grades').innerHTML='Grades: '+codes.map(c=>
+    `<label><input type="checkbox" class="gck" value="${c}" checked> `+
+    `<span class="sw" style="background:${COLORS[c]}"></span> ${LABELS[c]} (${c})</label>`).join('');
+  $('f_grades').querySelectorAll('.gck').forEach(cb=>cb.addEventListener('change',render));
+}
+
+// ---- data selection ----
+function selectedRows(dsOverride){
+  const ds=dsOverride||$('f_ds').value, std=+$('f_std').value, ver=$('f_ver').value;
+  const y0=+$('f_y0').value, y1=+$('f_y1').value;
+  let rows=D.filter(r=>r.ds===ds && r.std===std && r.yr>=y0 && r.yr<=y1);
+  if(ver==='All') return {rows, mode:'all'};
+  if(ver==='Latest'){
+    // per year, keep max version
+    const by={};
+    rows.forEach(r=>{ if(!by[r.yr] || (+r.ver)>(+by[r.yr].ver)) by[r.yr]=r; });
+    return {rows:Object.values(by), mode:'latest'};
+  }
+  return {rows:rows.filter(r=>r.ver===ver), mode:'ver'};
+}
+
+// aggregate rows -> per-year {tot, counts{}}
+function perYear(rows, codes){
+  const by={};
+  rows.forEach(r=>{
+    if(!by[r.yr]) by[r.yr]={yr:r.yr, tot:0, c:Object.fromEntries(codes.map(k=>[k,0]))};
+    by[r.yr].tot += r.tot||0;
+    codes.forEach(k=>{ if(r.g[k]!=null) by[r.yr].c[k]+=r.g[k]; });
+  });
+  return Object.values(by).sort((a,b)=>a.yr-b.yr);
+}
+
+function activeCodes(){
+  const all=gradeSet();
+  const on=[...$('f_grades').querySelectorAll('.gck')].filter(c=>c.checked).map(c=>c.value);
+  return all.filter(c=>on.includes(c));
+}
+
+// ---- chart ----
+function chartSVG(years, codes, metric){
+  if($('f_smooth').checked) years=years.filter(y=>y.tot>0);
+  if(!years.length) return '<p><i>No data for this selection.</i></p>';
+  const bw=26,bg=12,ml=40,mt=10,ph=170,mb=34;
+  const W=ml+years.length*(bw+bg)+8, H=mt+ph+mb, base=mt+ph;
+  const maxTot=Math.max(...years.map(y=>y.tot),1);
+  let s=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img">`;
+  const ticks=metric==='pct'?[0,25,50,75,100]:[0,.25,.5,.75,1].map(f=>Math.round(f*maxTot));
+  ticks.forEach(t=>{
+    const frac=metric==='pct'?t/100:t/maxTot;
+    const y=base-frac*ph;
+    s+=`<line class="grid" x1="${ml}" y1="${y}" x2="${W-4}" y2="${y}"/>`+
+       `<text class="tick" x="${ml-5}" y="${y+3}" font-size="9" text-anchor="end">${t}</text>`;
+  });
+  years.forEach((yr,i)=>{
+    const x=ml+i*(bw+bg); let cum=0;
+    const denom=metric==='pct'?(yr.tot||1):maxTot;
+    codes.forEach(c=>{
+      const cnt=yr.c[c]||0; if(!cnt && metric==='pct') {}
+      const val=metric==='pct'?(yr.tot?cnt/yr.tot*100:0):cnt;
+      const h=(metric==='pct'?val/100:val/maxTot)*ph;
+      if(h>0){
+        const y0=base-cum-h, hh=Math.max(.5,h-2);
+        const pct=yr.tot?(cnt/yr.tot*100).toFixed(1):'0.0';
+        s+=`<rect x="${x}" y="${y0}" width="${bw}" height="${hh}" fill="${COLORS[c]}">`+
+           `<title>${yr.yr} — ${LABELS[c]}: ${pct}% (${cnt})</title></rect>`;
+      }
+      cum+=h;
+    });
+    s+=`<text class="yr" x="${x+bw/2}" y="${base+12}" font-size="9" text-anchor="middle">${String(yr.yr).slice(2)}</text>`+
+       `<text class="tot" x="${x+bw/2}" y="${base+22}" font-size="7" text-anchor="middle">${yr.tot}</text>`;
+  });
+  return s+'</svg>';
+}
+
+function legendHTML(codes){
+  return '<p>'+codes.map(c=>`<span class="sw" style="background:${COLORS[c]}"></span> ${LABELS[c]} (${c})`).join(' &nbsp; ')+
+         ' &nbsp; <small>bar label = year; small number = total entries</small></p>';
+}
+
+// ---- line / multi-series chart (rates over time) ----
+function lineChart(years, series){
+  years=years.filter(y=>y.tot>0);
+  if(years.length<1) return '<p><i>No data for this selection.</i></p>';
+  const sp=40, ml=40, mt=10, ph=170, mb=26, pw=Math.max(1,years.length-1)*sp;
+  const W=ml+pw+40, H=mt+ph+mb, base=mt+ph;
+  const X=i=>ml+i*sp, Yv=v=>base-v/100*ph;
+  let s=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img">`;
+  [0,25,50,75,100].forEach(t=>{ const y=Yv(t);
+    s+=`<line class="grid" x1="${ml}" y1="${y}" x2="${W-6}" y2="${y}"/>`+
+       `<text class="tick" x="${ml-5}" y="${y+3}" font-size="9" text-anchor="end">${t}</text>`; });
+  years.forEach((yr,i)=>{ s+=`<text class="yr" x="${X(i)}" y="${base+12}" font-size="9" text-anchor="middle">${String(yr.yr).slice(2)}</text>`; });
+  series.forEach(se=>{
+    const pts=years.map((yr,i)=>[X(i), Yv(se.val(yr))]);
+    s+=`<polyline fill="none" stroke="${se.color}" stroke-width="2" points="${pts.map(p=>p.join(',')).join(' ')}"/>`;
+    years.forEach((yr,i)=>{ const v=se.val(yr);
+      s+=`<circle cx="${X(i)}" cy="${Yv(v)}" r="4" fill="${se.color}">`+
+         `<title>${yr.yr} — ${se.label}: ${v.toFixed(1)}%</title></circle>`; });
+  });
+  return s+'</svg>';
+}
+function rateSeries(scholarship){
+  const p=(yr,...ks)=>yr.tot?ks.reduce((a,k)=>a+(yr.c[k]||0),0)/yr.tot*100:0;
+  return scholarship
+    ? [{label:'Scholarship or better',color:COLORS.S,val:yr=>p(yr,'S','O')},
+       {label:'Outstanding',color:COLORS.O,val:yr=>p(yr,'O')},
+       {label:'No Scholarship',color:COLORS.N,val:yr=>p(yr,'N')}]
+    : [{label:'Achieved or better',color:COLORS.A,val:yr=>p(yr,'A','M','E')},
+       {label:'Merit or better',color:COLORS.M,val:yr=>p(yr,'M','E')},
+       {label:'Excellence',color:COLORS.E,val:yr=>p(yr,'E')},
+       {label:'Not Achieved',color:COLORS.N,val:yr=>p(yr,'N')}];
+}
+function seriesLegend(series){
+  return '<p>'+series.map(se=>`<span class="sw" style="background:${se.color}"></span> ${se.label}`).join(' &nbsp; ')+'</p>';
+}
+// National vs Provider comparison of one headline metric
+function compareChart(codes, scholarship){
+  const metricVal=yr=>yr.tot?( (scholarship?['S','O']:['A','M','E']).reduce((a,k)=>a+(yr.c[k]||0),0)/yr.tot*100 ):0;
+  const nat=perYear(latestRows(selectedRows('National')), codes);
+  const pro=perYear(latestRows(selectedRows('Provider 120')), codes);
+  const idx={}; nat.forEach(y=>idx[y.yr]=idx[y.yr]||{}); pro.forEach(y=>idx[y.yr]=idx[y.yr]||{});
+  nat.forEach(y=>idx[y.yr].n=y); pro.forEach(y=>idx[y.yr].p=y);
+  const years=Object.keys(idx).map(Number).sort((a,b)=>a-b);
+  const rows=years.map(y=>({yr:y,
+    n: idx[y].n&&idx[y].n.tot?metricVal(idx[y].n):null,
+    p: idx[y].p&&idx[y].p.tot?metricVal(idx[y].p):null}));
+  const have=rows.filter(r=>r.n!=null||r.p!=null);
+  if(!have.length) return '<p><i>No data.</i></p>';
+  const sp=44, ml=40, mt=10, ph=170, mb=26, pw=Math.max(1,have.length-1)*sp;
+  const W=ml+pw+40, H=mt+ph+mb, base=mt+ph;
+  const X=i=>ml+i*sp, Yv=v=>base-v/100*ph;
+  const CN='#5b9bd5', CP='#e08a2e';
+  let s=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img">`;
+  [0,25,50,75,100].forEach(t=>{ const y=Yv(t);
+    s+=`<line class="grid" x1="${ml}" y1="${y}" x2="${W-6}" y2="${y}"/>`+
+       `<text class="tick" x="${ml-5}" y="${y+3}" font-size="9" text-anchor="end">${t}</text>`; });
+  have.forEach((r,i)=>{ s+=`<text class="yr" x="${X(i)}" y="${base+12}" font-size="9" text-anchor="middle">${String(r.yr).slice(2)}</text>`; });
+  [['n',CN,'National'],['p',CP,'Provider 120']].forEach(([k,col,lab])=>{
+    const pts=have.map((r,i)=>r[k]!=null?[X(i),Yv(r[k])]:null).filter(Boolean);
+    if(pts.length>1) s+=`<polyline fill="none" stroke="${col}" stroke-width="2" points="${pts.map(p=>p.join(',')).join(' ')}"/>`;
+    have.forEach((r,i)=>{ if(r[k]!=null) s+=`<circle cx="${X(i)}" cy="${Yv(r[k])}" r="4" fill="${col}"><title>${r.yr} — ${lab}: ${r[k].toFixed(1)}%</title></circle>`; });
+  });
+  return s+'</svg>';
+}
+function latestRows(sel){ return sel.rows; }  // selectedRows already applies version rule
+
+// aggregate per-year array -> {code:sum}, total
+function aggCounts(years, codes){
+  const o={total:0}; codes.forEach(c=>o[c]=0);
+  years.forEach(y=>{ o.total+=y.tot||0; codes.forEach(c=>o[c]+=y.c[c]||0); });
+  return o;
+}
+// ---- pie chart ----
+function pieSVG(agg, codes){
+  const tot=agg.total;
+  if(!tot) return '<p><i>No data.</i></p>';
+  const r=78, cx=90, cy=90, surf='#1a1a19';
+  const pt=(ang,rad)=>[cx+rad*Math.cos(ang), cy+rad*Math.sin(ang)];
+  let a0=-Math.PI/2;
+  let s=`<svg width="${cx*2}" height="${cy*2}" viewBox="0 0 ${cx*2} ${cy*2}" role="img">`;
+  codes.forEach(c=>{
+    const v=agg[c]||0; if(!v) return;
+    const frac=v/tot, a1=a0+frac*2*Math.PI;
+    const [x0,y0]=pt(a0,r), [x1,y1]=pt(a1,r);
+    const large=(a1-a0)>Math.PI?1:0;
+    const pct=(frac*100);
+    s+=`<path d="M${cx} ${cy} L${x0.toFixed(1)} ${y0.toFixed(1)} A${r} ${r} 0 ${large} 1 ${x1.toFixed(1)} ${y1.toFixed(1)} Z" `+
+       `fill="${COLORS[c]}" stroke="${surf}" stroke-width="2">`+
+       `<title>${LABELS[c]} (${c}): ${pct.toFixed(1)}% (${v})</title></path>`;
+    if(pct>=7){ const [lx,ly]=pt((a0+a1)/2, r*0.6);
+      s+=`<text x="${lx.toFixed(1)}" y="${(ly+3).toFixed(1)}" font-size="10" fill="#111" text-anchor="middle">${c}</text>`; }
+    a0=a1;
+  });
+  return s+'</svg>';
+}
+
+// ---- summary ----
+function summaryHTML(years, codes){
+  const tot=years.reduce((a,y)=>a+y.tot,0);
+  if(!tot) return '';
+  const sum=Object.fromEntries(codes.map(c=>[c, years.reduce((a,y)=>a+(y.c[c]||0),0)]));
+  const pc=c=>tot?(sum[c]/tot*100).toFixed(1)+'%':'–';
+  const box=(lab,val)=>`<span class="stat">${lab}<br><b>${val}</b></span>`;
+  let h=box('Total entries', tot.toLocaleString());
+  if(codes.includes('S')){ // scholarship
+    h+=box('Scholarship+ ', ((sum.S+sum.O)/tot*100).toFixed(1)+'%');
+    h+=box('Outstanding', pc('O'));
+  }else{
+    const ach=(sum.A||0)+(sum.M||0)+(sum.E||0);
+    const mer=(sum.M||0)+(sum.E||0);
+    h+=box('Achieved or better', (ach/tot*100).toFixed(1)+'%');
+    h+=box('Merit or better', (mer/tot*100).toFixed(1)+'%');
+    h+=box('Excellence', pc('E'));
+    h+=box('Not Achieved', pc('N'));
+  }
+  h+=box('Years shown', years.filter(y=>y.tot).length);
+  return h;
+}
+
+// ---- table ----
+let lastTable=[];
+function tableHTML(sel, codes){
+  const rows=[...sel.rows].sort((a,b)=>a.yr-b.yr || (+a.ver)-(+b.ver));
+  lastTable=[];
+  let h='<table border="1" cellpadding="4" cellspacing="0"><tr><th>Ver</th><th>Year</th><th>Total</th>'+
+        codes.map(c=>`<th>${LABELS[c]} (${c})</th>`).join('')+'</tr>';
+  rows.forEach(r=>{
+    const rec={Ver:r.ver,Year:r.yr,Total:r.tot};
+    h+=`<tr><td>${r.ver}</td><td>${r.yr}</td><td>${r.tot}</td>`+
+       codes.map(c=>{const v=r.g[c]; const p=r.tot&&v!=null?(v/r.tot*100).toFixed(1):null;
+         rec[c]=v==null?'':v; rec[c+'%']=p==null?'':p;
+         return `<td>${v==null?'':v+(p!=null?` (${p}%)`:'')}</td>`;}).join('')+'</tr>';
+    lastTable.push(rec);
+  });
+  return h+'</table>';
+}
+
+function downloadCSV(){
+  if(!lastTable.length) return;
+  const cols=Object.keys(lastTable[0]);
+  const esc=v=>`"${String(v).replace(/"/g,'""')}"`;
+  const csv=[cols.join(',')].concat(lastTable.map(r=>cols.map(c=>esc(r[c])).join(','))).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='ncea_'+$('f_std').value+'_'+$('f_ds').value.replace(/\W+/g,'')+'.csv';
+  a.click();
+}
+
+// ---- main render ----
+function render(){
+  const codes=activeCodes();
+  const sel=selectedRows();
+  const std=+$('f_std').value;
+  const meta=D.find(r=>r.std===std) || {};
+  $('head').innerHTML=`<h2>${std} — ${meta.title||''}</h2>`+
+    `<p>${meta.at||''} · ${meta.cr!=null?meta.cr+' credits':''} · ${$('f_ds').value}`+
+    ` · versions available: ${uniq(D.filter(r=>r.ds===$('f_ds').value&&r.std===std).map(r=>'v'+r.ver)).join(', ')}`+
+    ` · showing: ${$('f_ver').value==='Latest'?'latest version per year':$('f_ver').value==='All'?'all versions combined':'v'+$('f_ver').value}</p>`;
+  const years=perYear(sel.rows, codes);
+  const allCodes=gradeSet();
+  const yearsAll=perYear(sel.rows, allCodes);
+  const sch=allCodes.includes('S');
+  $('summary').innerHTML=summaryHTML(years, codes);
+  $('chart').innerHTML=chartSVG(years, codes, $('f_metric').value);
+  $('legend').innerHTML=legendHTML(codes);
+  // chart 2: outcome rates over time
+  const series=rateSeries(sch);
+  $('chart2').innerHTML=lineChart(yearsAll, series);
+  $('legend2').innerHTML=seriesLegend(series);
+  // chart 3: national vs provider on headline metric
+  $('cmpMetric').textContent = sch ? 'Scholarship or better (%)' : 'Achieved or better (%)';
+  $('chart3').innerHTML=compareChart(allCodes, sch);
+  $('legend3').innerHTML='<p><span class="sw" style="background:#5b9bd5"></span> National &nbsp; '+
+                         '<span class="sw" style="background:#e08a2e"></span> Provider 120</p>';
+  // pies: aggregate grade mix per dataset over the selected years
+  const natAgg=aggCounts(perYear(selectedRows('National').rows, allCodes), allCodes);
+  const proAgg=aggCounts(perYear(selectedRows('Provider 120').rows, allCodes), allCodes);
+  $('pie1').innerHTML=`<p><small>${natAgg.total.toLocaleString()} entries</small></p>`+pieSVG(natAgg, allCodes);
+  $('pie2').innerHTML=`<p><small>${proAgg.total.toLocaleString()} entries</small></p>`+pieSVG(proAgg, allCodes);
+  $('legendp').innerHTML=legendHTML(allCodes);
+  $('table').innerHTML=tableHTML(sel, codes);
+}
+
+// ---- wiring ----
+function onTop(){ rebuildStandards(); rebuildVersions(); rebuildGrades(); render(); }
+['f_ds','f_sub','f_lvl','f_at'].forEach(id=>$(id).addEventListener('change',onTop));
+$('f_std').addEventListener('change',()=>{rebuildVersions();rebuildGrades();render();});
+['f_ver','f_y0','f_y1','f_metric','f_smooth'].forEach(id=>$(id).addEventListener('change',render));
+$('csv').addEventListener('click',downloadCSV);
+
+// init
+rebuildStandards(); rebuildVersions(); rebuildGrades(); render();
+</script>
+</body>
+</html>
