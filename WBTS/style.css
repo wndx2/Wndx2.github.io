@@ -285,6 +285,55 @@ body {
 	background: #f2f2f4;
 }
 
+/* The bar beside a lasso selection. app.js moves it to follow what's selected. */
+#sel-bar {
+	position: fixed;
+	z-index: 3;
+	display: flex;
+	gap: 2px;
+	padding: 4px;
+	background: var(--bar);
+	border: 1px solid var(--bar-line);
+	border-radius: 12px;
+	box-shadow: 0 6px 22px rgba(0, 0, 0, 0.16);
+	touch-action: manipulation;
+}
+
+#sel-bar[hidden] {
+	display: none;
+}
+
+#sel-bar button {
+	display: grid;
+	place-items: center;
+	width: 36px;
+	height: 36px;
+	padding: 0;
+	border: 0;
+	border-radius: 9px;
+	background: transparent;
+	color: var(--icon);
+	cursor: pointer;
+}
+
+#sel-bar svg {
+	width: 19px;
+	height: 19px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.6;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+#sel-bar .danger {
+	color: #d23a32;
+}
+
+:root[data-theme="dark"] #sel-bar .danger {
+	color: #ff6a5f;
+}
+
 /* A short message at the bottom, such as "Copied". */
 #toast {
 	position: fixed;

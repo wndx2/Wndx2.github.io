@@ -22,11 +22,16 @@
 	var MAX_ZOOM = 8;
 	var GRID = 24;
 
-	// Every stroke and every "clear" in order, in page coordinates.
+	// Every stroke, picture and "clear" in order, in page coordinates.
 	var actions = [];
+	// Edits waiting to be taken back, and ones already taken back. Each knows how to
+	// undo and redo itself, so moving a selection can be taken back like a stroke can.
+	var undoStack = [];
 	var redoStack = [];
 
 	var tool = "pen";
+	// The lasso picks up what's already on the page instead of adding to it.
+	var LASSO = "lasso";
 	// fountain, ball or brush, like GoodNotes.
 	var penType = "fountain";
 	// The colour picked for each inking tool. Highlighter colours start with "hl-".
@@ -207,6 +212,11 @@
 		var cols = Math.ceil(liveCanvas.width / TILE) + 1;
 		var rows = Math.ceil(liveCanvas.height / TILE) + 1;
 		maxTiles = Math.max(48, Math.ceil(2.5 * cols * rows));
+		// A selection's bar is placed against the window, so it moves with it.
+		if (sel) {
+			selBarSize = { w: selBar.offsetWidth, h: selBar.offsetHeight };
+			layoutSelection();
+		}
 		requestRender(true);
 	}
 
@@ -606,8 +616,34 @@
 		return zoom > a.detail * 1.5 || (a.detail > 1 && zoom * 4 < a.detail);
 	}
 
+	// A pasted picture: a rectangle on the page with a centre, a size, a turn and flips.
+	function drawImageAction(ctx, a) {
+		if (!a.img) return;
+		ctx.save();
+		ctx.globalCompositeOperation = "source-over";
+		ctx.globalAlpha = 1;
+		ctx.translate(a.cx, a.cy);
+		ctx.rotate(a.rot);
+		ctx.scale(a.flipX ? -1 : 1, a.flipY ? -1 : 1);
+		ctx.drawImage(a.img, -a.w / 2, -a.h / 2, a.w, a.h);
+		ctx.restore();
+	}
+
+	// The upright box around a turned picture.
+	function imageBox(a) {
+		var c = Math.abs(Math.cos(a.rot));
+		var s = Math.abs(Math.sin(a.rot));
+		var ex = (c * a.w + s * a.h) / 2;
+		var ey = (s * a.w + c * a.h) / 2;
+		return { x0: a.cx - ex, y0: a.cy - ey, x1: a.cx + ex, y1: a.cy + ey };
+	}
+
 	// zoom: the zoom the canvas is drawn at, as in view.s.
 	function drawAction(ctx, a, zoom) {
+		if (a.tool === "image") {
+			drawImageAction(ctx, a);
+			return;
+		}
 		if (a.tool === "eraser") {
 			eraseShape(ctx, a, a.shape || (a.shape = eraserShape(a)));
 			return;
@@ -822,6 +858,40 @@
 		tileCount--;
 	}
 
+	// Something on the page changed where it already was: every tile over that part is
+	// drawn again from a blank page, so the old pixels go.
+	function rerenderBox(b) {
+		if (!b) return;
+		forEachTile(function (t) {
+			if (hits(t, b)) emptyTile(t);
+		});
+		urgent = true;
+		requestRender(true);
+	}
+
+	// The box around both, for an edit that moved something.
+	function unionBox(a, b) {
+		if (!a) return b;
+		if (!b) return a;
+		return {
+			x0: Math.min(a.x0, b.x0),
+			y0: Math.min(a.y0, b.y0),
+			x1: Math.max(a.x1, b.x1),
+			y1: Math.max(a.y1, b.y1),
+		};
+	}
+
+	// The upright box around a list of strokes and pictures.
+	function listBox(list) {
+		var b = null;
+		for (var i = 0; i < list.length; i++) {
+			var x = list[i].box;
+			if (!x) continue;
+			b = b ? unionBox(b, x) : { x0: x.x0, y0: x.y0, x1: x.x1, y1: x.y1 };
+		}
+		return b;
+	}
+
 	function dropAllTiles() {
 		forEachTile(takeCanvas);
 		tileSets = [];
@@ -837,7 +907,8 @@
 		var zoom = t.set.ds / dpr;
 		while (t.next < actions.length) {
 			var a = actions[t.next++];
-			if (!hits(t, a.box)) continue;
+			// Rubbed-out strokes, and ones the lasso is holding, aren't on the page.
+			if (a.deleted || a.lifted || !hits(t, a.box)) continue;
 			if (!t.canvas) {
 				// Nothing to rub out on a blank tile.
 				if (a.tool === "eraser") continue;
@@ -1062,13 +1133,25 @@
 	}
 
 	function renderLive() {
-		if (!current) {
+		if (!current && !sel && !lasso) {
 			if (liveDrawn) wipe(live);
 			liveDrawn = false;
 			return;
 		}
 		wipe(live);
 		liveDrawn = true;
+		// What the lasso holds floats above the page until it's put down.
+		if (sel) drawSelection();
+		if (lasso) drawLasso();
+		if (current) drawCurrent();
+	}
+
+	function drawCurrent() {
+		// The selection may have left its own transform behind.
+		applyView(live);
+		live.globalCompositeOperation = "source-over";
+		live.globalAlpha = 1;
+		live.setLineDash([]);
 		var s = current;
 		var pts = s.points;
 		var last = pts[pts.length - 1];
@@ -1273,9 +1356,7 @@
 		current = null;
 		activeId = null;
 		// Draws it into the tiles, which then show in place of the live stroke.
-		pushAction(a);
-		redoStack = [];
-		updateButtons();
+		addActions([a]);
 	}
 
 	// ---------- Finger gestures ----------
@@ -1339,6 +1420,37 @@
 			board.setPointerCapture(e.pointerId);
 		} catch (err) {}
 
+		// The lasso draws a loop, or takes hold of what's already picked up. Two fingers
+		// still move and zoom the page, as with any other tool.
+		if (tool === LASSO) {
+			if (e.pointerType === "touch") {
+				// A finger landing while the Pencil works is a palm.
+				if (activeType === "pen" && (lasso || grab)) {
+					ignored.add(e.pointerId);
+					return;
+				}
+				touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+				if (pencilSeen || touchLock || touches.size > 1) {
+					if (activeType === "touch" && (lasso || grab)) endSelectPointer(true);
+					touchLock = true;
+					resetGesture();
+					return;
+				}
+			}
+			if (e.pointerType === "pen") {
+				pencilSeen = true;
+				// A finger halfway through a loop gives way to the Pencil.
+				if (activeType !== "pen" && (lasso || grab)) endSelectPointer(true);
+				touches.forEach(function (_, id) {
+					ignored.add(id);
+				});
+				touches.clear();
+				gesture = null;
+			}
+			if (!lasso && !grab) startSelectPointer(e);
+			return;
+		}
+
 		if (e.pointerType === "pen") {
 			pencilSeen = true;
 			// A palm touched down just before the Pencil: throw that mark away.
@@ -1373,6 +1485,10 @@
 	});
 
 	board.addEventListener("pointermove", function (e) {
+		if ((lasso || grab) && e.pointerId === activeId) {
+			moveSelectPointer(e);
+			return;
+		}
 		if (current && e.pointerId === activeId) {
 			moveStroke(e);
 			return;
@@ -1387,6 +1503,10 @@
 
 	function pointerEnd(e, cancelled) {
 		if (e.pointerType === "touch") liftFinger(e.pointerId);
+		if ((lasso || grab) && e.pointerId === activeId) {
+			endSelectPointer(cancelled);
+			return;
+		}
 		if (!current || e.pointerId !== activeId) return;
 		current.predicted = null;
 		// A cancelled Pencil stroke is still something you wrote; a cancelled touch is likely a palm.
@@ -1440,36 +1560,79 @@
 	var redoBtn = document.getElementById("redo");
 	var clearBtn = document.getElementById("clear");
 	var copyBtn = document.getElementById("copy");
+	var sizeGroup = document.getElementById("sizes");
+	// The dividers either side of the colour and thickness pickers, which go with them.
+	var pickerDividers = [document.getElementById("div-colours"), document.getElementById("div-sizes")];
 
+	// Looks back from the end for anything still showing, stopping at the last "clear".
+	// An eraser on its own leaves nothing behind, so it doesn't count.
 	function pageIsEmpty() {
-		return !actions.length || actions[actions.length - 1].type === "clear";
+		for (var i = actions.length - 1; i >= 0; i--) {
+			var a = actions[i];
+			if (a.type === "clear") return true;
+			if (!a.deleted && a.tool !== "eraser") return false;
+		}
+		return true;
 	}
 
 	function updateButtons() {
-		undoBtn.disabled = !actions.length;
+		undoBtn.disabled = !undoStack.length;
 		redoBtn.disabled = !redoStack.length;
 		clearBtn.disabled = pageIsEmpty();
 		copyBtn.disabled = pageIsEmpty();
 	}
 
+	// Does an edit and remembers how to take it back.
+	function pushOp(op) {
+		op.redo();
+		undoStack.push(op);
+		redoStack = [];
+		updateButtons();
+	}
+
+	// An edit that has already been made: just remember how to take it back.
+	function recordOp(op) {
+		undoStack.push(op);
+		redoStack = [];
+		updateButtons();
+	}
+
+	// Puts strokes or pictures on the page as one undoable step. They go on the end, and
+	// steps are always taken back in order, so taking them off the end again is safe.
+	function addActions(list) {
+		pushOp({
+			redo: function () {
+				list.forEach(pushAction);
+			},
+			undo: function () {
+				for (var i = 0; i < list.length; i++) popAction();
+			},
+		});
+	}
+
 	function undo() {
-		if (current || !actions.length) return;
-		redoStack.push(popAction());
+		if (current || !undoStack.length) return;
+		clearSelection();
+		var op = undoStack.pop();
+		op.undo();
+		redoStack.push(op);
 		updateButtons();
 	}
 
 	function redo() {
 		if (current || !redoStack.length) return;
-		pushAction(redoStack.pop());
+		clearSelection();
+		var op = redoStack.pop();
+		op.redo();
+		undoStack.push(op);
 		updateButtons();
 	}
 
 	function clearPage() {
 		if (current || pageIsEmpty()) return;
+		clearSelection();
 		// Clearing is just another step, so Undo brings the page back.
-		pushAction({ type: "clear" });
-		redoStack = [];
-		updateButtons();
+		addActions([{ type: "clear" }]);
 	}
 
 	function resetZoom() {
@@ -1483,16 +1646,24 @@
 	}
 
 	function selectTool(name) {
+		// Leaving the lasso puts down whatever it was holding.
+		if (name !== tool) clearSelection();
 		tool = name;
-		if (name !== "eraser") inkTool = name;
+		if (name === "pen" || name === "highlighter") inkTool = name;
 		press(".tool", "tool", tool);
+		// The lasso has no colour or thickness of its own, so neither picker shows.
+		var picking = tool !== LASSO;
 		// Show the colours of the pen or the highlighter, whichever is in hand or was last.
 		document.querySelectorAll(".swatches").forEach(function (g) {
-			g.hidden = g.dataset.for !== inkTool;
+			g.hidden = !picking || g.dataset.for !== inkTool;
+		});
+		sizeGroup.hidden = !picking;
+		pickerDividers.forEach(function (d) {
+			d.hidden = !picking;
 		});
 		press(".swatch", "color", colorChoice[inkTool]);
 		// Each tool remembers its own thickness.
-		press(".size", "size", String(sizeChoice[tool]));
+		if (picking) press(".size", "size", String(sizeChoice[tool]));
 	}
 
 	document.querySelectorAll(".tool").forEach(function (b) {
@@ -1629,6 +1800,800 @@
 		});
 	});
 
+	// ---------- Lasso ----------
+	//
+	// Draw a loop around some writing and it's picked up: the strokes are lifted off the
+	// page (the tiles under them are drawn again without them) and float above it as one
+	// picture, which can then be dragged, resized from a corner, turned, flipped or
+	// duplicated. Each gesture is pressed back into the page as soon as it ends, with the
+	// strokes' own points moved for real, so they stay sharp at any zoom and Undo takes
+	// back one gesture at a time.
+
+	// The loop being drawn, in page coordinates.
+	var lasso = null;
+	// What's picked up, or null.
+	var sel = null;
+	// The gesture happening on it: a move, a corner or the turn handle.
+	var grab = null;
+	// The handles, in screen pixels: how big they're drawn and how near counts as a hit.
+	var HANDLE = 11;
+	var HANDLE_HIT = 22;
+	// How far the turn handle sits off the top edge.
+	var ROT_GAP = 30;
+
+	var selBar = document.getElementById("sel-bar");
+	var selBarSize = { w: 0, h: 0 };
+
+	// ---------- Lasso: geometry ----------
+
+	function pointInPoly(poly, x, y) {
+		var inside = false;
+		for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+			var a = poly[i];
+			var b = poly[j];
+			if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+		}
+		return inside;
+	}
+
+	// Two transforms into one. Each is [a, b, c, d, e, f], as in setTransform:
+	// x' = a x + c y + e, y' = b x + d y + f. The result does n first, then m.
+	function combine(m, n) {
+		return [
+			m[0] * n[0] + m[2] * n[1],
+			m[1] * n[0] + m[3] * n[1],
+			m[0] * n[2] + m[2] * n[3],
+			m[1] * n[2] + m[3] * n[3],
+			m[0] * n[4] + m[2] * n[5] + m[4],
+			m[1] * n[4] + m[3] * n[5] + m[5],
+		];
+	}
+
+	// The selection's live transform: a shift, a turn and an even scale about its centre.
+	// It's identity whenever no gesture is in progress.
+	function selMatrix() {
+		var c = Math.cos(sel.rot) * sel.k;
+		var s = Math.sin(sel.rot) * sel.k;
+		return [c, s, -s, c, sel.cx + sel.tx - (c * sel.cx - s * sel.cy), sel.cy + sel.ty - (s * sel.cx + c * sel.cy)];
+	}
+
+	function applyMatrix(m, x, y) {
+		return { x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5] };
+	}
+
+	// The four corners of the selection, where they are on screen right now.
+	function selCorners() {
+		var m = selMatrix();
+		var box = [
+			[sel.x0, sel.y0],
+			[sel.x1, sel.y0],
+			[sel.x1, sel.y1],
+			[sel.x0, sel.y1],
+		];
+		var out = [];
+		for (var i = 0; i < 4; i++) {
+			var p = applyMatrix(m, box[i][0], box[i][1]);
+			out.push({ x: p.x * view.s + view.x, y: p.y * view.s + view.y });
+		}
+		return out;
+	}
+
+	// Where the selection reaches on the page, including any gesture in progress.
+	function selBounds() {
+		if (!sel) return null;
+		var base = listBox(sel.list);
+		if (!base) return null;
+		var m = selMatrix();
+		var box = [
+			[base.x0, base.y0],
+			[base.x1, base.y0],
+			[base.x1, base.y1],
+			[base.x0, base.y1],
+		];
+		var moved = null;
+		for (var i = 0; i < 4; i++) {
+			var p = applyMatrix(m, box[i][0], box[i][1]);
+			var one = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+			moved = moved ? unionBox(moved, one) : one;
+		}
+		return unionBox(base, moved);
+	}
+
+	// ---------- Lasso: picking things up ----------
+
+	// Only finished strokes and pictures on the page can be picked up. An eraser isn't a
+	// thing on the page, it's a hole in one.
+	function selectable() {
+		return pageActions().filter(function (a) {
+			return a.tool === "pen" || a.tool === "highlighter" || a.tool === "image";
+		});
+	}
+
+	// Mostly inside the loop counts as inside, so a loop drawn close around a word still
+	// takes the whole word.
+	function inLoop(a, poly) {
+		var pts = [];
+		if (a.tool === "image") {
+			var c = Math.cos(a.rot);
+			var s = Math.sin(a.rot);
+			[[-1, -1], [1, -1], [1, 1], [-1, 1], [0, 0]].forEach(function (u) {
+				var x = (u[0] * a.w) / 2;
+				var y = (u[1] * a.h) / 2;
+				pts.push({ x: a.cx + x * c - y * s, y: a.cy + x * s + y * c });
+			});
+		} else {
+			var step = Math.max(1, Math.floor(a.points.length / 48));
+			for (var i = 0; i < a.points.length; i += step) pts.push(a.points[i]);
+			pts.push(a.points[a.points.length - 1]);
+		}
+		var inside = 0;
+		for (var j = 0; j < pts.length; j++) {
+			if (pointInPoly(poly, pts[j].x, pts[j].y)) inside++;
+		}
+		return inside / pts.length >= 0.6;
+	}
+
+	function measureSelection() {
+		var b = listBox(sel.list);
+		sel.x0 = b.x0;
+		sel.y0 = b.y0;
+		sel.x1 = b.x1;
+		sel.y1 = b.y1;
+		sel.cx = (b.x0 + b.x1) / 2;
+		sel.cy = (b.y0 + b.y1) / 2;
+	}
+
+	// Draws what's picked up once, into its own picture. While a gesture is in progress
+	// that picture is just moved about, which costs nothing however much was picked up.
+	function bakeSelectionCanvas() {
+		var w = sel.x1 - sel.x0;
+		var h = sel.y1 - sel.y0;
+		// The zoom it would ideally be drawn at, remembered so a big selection held down
+		// to the size limit below isn't pointlessly drawn again every frame.
+		var want = clamp(dpr * view.s, 0.1, 4);
+		var res = want;
+		sel.wanted = want;
+		// Keep it to a size Safari is happy with.
+		var limit = 4096;
+		var px = Math.max(1, w * res);
+		var py = Math.max(1, h * res);
+		if (px > limit || py > limit) res *= limit / Math.max(px, py);
+		var c = sel.canvas || (sel.canvas = document.createElement("canvas"));
+		c.width = Math.max(1, Math.ceil(w * res));
+		c.height = Math.max(1, Math.ceil(h * res));
+		sel.res = res;
+		var ctx = c.getContext("2d");
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.clearRect(0, 0, c.width, c.height);
+		ctx.setTransform(res, 0, 0, res, -sel.x0 * res, -sel.y0 * res);
+		ctx.lineCap = "round";
+		ctx.lineJoin = "round";
+		sel.list.forEach(function (a) {
+			drawFloating(ctx, a);
+		});
+	}
+
+	function drawFloating(ctx, a) {
+		if (a.tool === "image") {
+			drawImageAction(ctx, a);
+			return;
+		}
+		if (a.tool === "highlighter") {
+			// A flat see-through fill. It's drawn into the page properly, blending with
+			// what's under it, as soon as the selection is put down.
+			ctx.globalCompositeOperation = "source-over";
+			ctx.globalAlpha = HIGHLIGHT_ALPHA[theme];
+			ctx.fillStyle = palette[a.color];
+			ctx.fill(highlighterShape(a, Math.max(view.s, 1)));
+			ctx.globalAlpha = 1;
+			return;
+		}
+		var detail = Math.max(view.s, 1);
+		if (!a.shape || needsRebuild(a, view.s)) {
+			a.shape = penShape(a, null, true, detail);
+			a.detail = detail;
+		}
+		fillShape(ctx, a, a.shape);
+	}
+
+	function makeSelection(list) {
+		clearSelection();
+		if (!list.length) return;
+		sel = { list: list, tx: 0, ty: 0, rot: 0, k: 1, canvas: null, res: 1, wanted: 1, corners: [], handles: [] };
+		list.forEach(function (a) {
+			a.lifted = true;
+		});
+		measureSelection();
+		bakeSelectionCanvas();
+		layoutSelection();
+		selBar.hidden = false;
+		selBarSize = { w: selBar.offsetWidth, h: selBar.offsetHeight };
+		layoutSelection();
+		// The page redraws without what's been lifted off it.
+		rerenderBox(listBox(list));
+	}
+
+	// Puts the selection back down on the page, as it now stands.
+	function clearSelection() {
+		if (!sel) return;
+		bakeSelection();
+		var box = selBounds();
+		sel.list.forEach(function (a) {
+			a.lifted = false;
+		});
+		if (sel.canvas) sel.canvas.width = sel.canvas.height = 0;
+		sel = null;
+		grab = null;
+		selBar.hidden = true;
+		rerenderBox(box);
+	}
+
+	// ---------- Lasso: changing what's picked up ----------
+
+	// Everything needed to put an action back as it was.
+	function snapshot(a) {
+		if (a.tool === "image") {
+			return { cx: a.cx, cy: a.cy, w: a.w, h: a.h, rot: a.rot, flipX: a.flipX, flipY: a.flipY, box: a.box };
+		}
+		return { points: a.points, size: a.size, scale: a.scale, box: a.box, shape: a.shape, detail: a.detail };
+	}
+
+	function restore(a, state) {
+		for (var key in state) {
+			if (Object.prototype.hasOwnProperty.call(state, key)) a[key] = state[key];
+		}
+	}
+
+	// Moves one stroke or picture for real. map: where a page point goes. k: how much
+	// bigger it gets. turn: how far it turns. mirror: the map is a reflection.
+	function applyMap(a, map, k, turn, mirrorX, mirrorY) {
+		if (a.tool === "image") {
+			var c = map(a.cx, a.cy);
+			a.cx = c.x;
+			a.cy = c.y;
+			a.w *= k;
+			a.h *= k;
+			if (mirrorX !== mirrorY) {
+				// A reflection turns the picture the other way and mirrors it.
+				a.rot = -a.rot + turn;
+				if (mirrorX) a.flipX = !a.flipX;
+				else a.flipY = !a.flipY;
+			} else {
+				a.rot += turn;
+				// Both ways at once is just a half turn.
+				if (mirrorX) a.rot += Math.PI;
+			}
+			a.box = imageBox(a);
+			return;
+		}
+		// New points rather than changed ones, so the old array can be kept for Undo.
+		a.points = a.points.map(function (p) {
+			var q = map(p.x, p.y);
+			return { x: q.x, y: q.y, p: p.p, v: p.v, d: p.d * k };
+		});
+		a.size *= k;
+		// scale is the zoom the stroke was written at, which is how the wobble clean-up
+		// knows how big a screen pixel is. Bigger strokes mean bigger pixels.
+		a.scale = (a.scale || 1) / k;
+		// The outline is built again from the new points, so it stays sharp.
+		a.shape = null;
+		a.detail = 0;
+		a.box = bounds(a.points, a.size * 1.5);
+	}
+
+	// Changes the selected strokes and pictures for real, as one step that Undo can take back.
+	function transformSelection(map, k, turn, mirrorX, mirrorY) {
+		var list = sel.list.slice();
+		var before = list.map(snapshot);
+		var oldBox = listBox(list);
+		list.forEach(function (a) {
+			applyMap(a, map, k, turn, mirrorX, mirrorY);
+		});
+		var after = list.map(snapshot);
+		var box = unionBox(oldBox, listBox(list));
+
+		function set(states) {
+			for (var i = 0; i < list.length; i++) restore(list[i], states[i]);
+			rerenderBox(box);
+		}
+
+		recordOp({
+			redo: function () {
+				set(after);
+			},
+			undo: function () {
+				set(before);
+			},
+		});
+		rerenderBox(box);
+		measureSelection();
+		bakeSelectionCanvas();
+		layoutSelection();
+	}
+
+	// Presses the gesture that just finished into the page.
+	function bakeSelection() {
+		if (!sel) return;
+		if (sel.tx === 0 && sel.ty === 0 && sel.rot === 0 && sel.k === 1) return;
+		var m = selMatrix();
+		var k = sel.k;
+		var turn = sel.rot;
+		sel.tx = sel.ty = sel.rot = 0;
+		sel.k = 1;
+		transformSelection(
+			function (x, y) {
+				return applyMatrix(m, x, y);
+			},
+			k,
+			turn,
+			false,
+			false
+		);
+	}
+
+	function flipSelection(horizontal) {
+		if (!sel) return;
+		bakeSelection();
+		var cx = sel.cx;
+		var cy = sel.cy;
+		transformSelection(
+			horizontal
+				? function (x, y) {
+						return { x: 2 * cx - x, y: y };
+					}
+				: function (x, y) {
+						return { x: x, y: 2 * cy - y };
+					},
+			1,
+			0,
+			horizontal,
+			!horizontal
+		);
+	}
+
+	function cloneAction(a) {
+		var c = {};
+		for (var key in a) {
+			if (Object.prototype.hasOwnProperty.call(a, key)) c[key] = a[key];
+		}
+		c.lifted = false;
+		c.deleted = false;
+		c.box = { x0: a.box.x0, y0: a.box.y0, x1: a.box.x1, y1: a.box.y1 };
+		if (a.tool !== "image") {
+			c.points = a.points.map(function (p) {
+				return { x: p.x, y: p.y, p: p.p, v: p.v, d: p.d };
+			});
+			c.shape = null;
+			c.detail = 0;
+		}
+		return c;
+	}
+
+	function duplicateSelection() {
+		if (!sel) return;
+		bakeSelection();
+		// Offset by a little, about 20 screen pixels, so the copy can be seen.
+		var off = 20 / view.s;
+		var copies = sel.list.map(function (a) {
+			var c = cloneAction(a);
+			applyMap(
+				c,
+				function (x, y) {
+					return { x: x + off, y: y + off };
+				},
+				1,
+				0,
+				false,
+				false
+			);
+			return c;
+		});
+		clearSelection();
+		addActions(copies);
+		// The copy is what's now picked up, so it can be dragged straight off.
+		makeSelection(copies);
+	}
+
+	function deleteSelection() {
+		if (!sel) return;
+		bakeSelection();
+		var list = sel.list.slice();
+		var box = listBox(list);
+		clearSelection();
+		pushOp({
+			redo: function () {
+				list.forEach(function (a) {
+					a.deleted = true;
+				});
+				rerenderBox(box);
+			},
+			undo: function () {
+				list.forEach(function (a) {
+					a.deleted = false;
+				});
+				rerenderBox(box);
+			},
+		});
+	}
+
+	// ---------- Lasso: drawing it ----------
+
+	// Works out where the box, its handles and its bar are on screen.
+	function layoutSelection() {
+		if (!sel) return;
+		var poly = selCorners();
+		sel.corners = poly;
+		var ids = ["nw", "ne", "se", "sw"];
+		var hs = [];
+		for (var i = 0; i < 4; i++) hs.push({ id: ids[i], x: poly[i].x, y: poly[i].y });
+		// The turn handle sits off the middle of the top edge, straight out from it.
+		var mx = (poly[0].x + poly[1].x) / 2;
+		var my = (poly[0].y + poly[1].y) / 2;
+		var ux = poly[0].x - poly[3].x;
+		var uy = poly[0].y - poly[3].y;
+		var ul = len2(ux, uy) || 1;
+		hs.push({ id: "rot", x: mx + (ux / ul) * ROT_GAP, y: my + (uy / ul) * ROT_GAP, from: { x: mx, y: my } });
+		sel.handles = hs;
+		placeSelBar();
+	}
+
+	// The bar sits above the selection, or below it when there's no room up there.
+	function placeSelBar() {
+		if (!sel || selBar.hidden) return;
+		var poly = sel.corners;
+		var cx = 0;
+		var top = Infinity;
+		var bottom = -Infinity;
+		for (var i = 0; i < poly.length; i++) {
+			cx += poly[i].x / poly.length;
+			top = Math.min(top, poly[i].y);
+			bottom = Math.max(bottom, poly[i].y);
+		}
+		var w = selBarSize.w || selBar.offsetWidth;
+		var h = selBarSize.h || selBar.offsetHeight;
+		var y = top - h - ROT_GAP - 8;
+		if (y < 72) y = Math.min(bottom + 22, window.innerHeight - h - 8);
+		selBar.style.left = clamp(cx - w / 2, 8, Math.max(8, window.innerWidth - w - 8)) + "px";
+		selBar.style.top = clamp(y, 8, Math.max(8, window.innerHeight - h - 8)) + "px";
+	}
+
+	function drawSelection() {
+		layoutSelection();
+		var s = sel;
+		// Zoomed a long way since it was picked up: draw its picture again at the new zoom,
+		// so it stays sharp. The picture is only ever redrawn when the zoom really changes.
+		var want = clamp(dpr * view.s, 0.1, 4);
+		if (want > s.wanted * 1.6 || want * 1.6 < s.wanted) bakeSelectionCanvas();
+		if (s.canvas && s.canvas.width > 1) {
+			// The picture maps onto the page, and the page onto the screen. One draw.
+			var k = dpr * view.s;
+			var toScreen = [k, 0, 0, k, Math.round(dpr * view.x), Math.round(dpr * view.y)];
+			var fromCanvas = [1 / s.res, 0, 0, 1 / s.res, s.x0, s.y0];
+			var m = combine(toScreen, combine(selMatrix(), fromCanvas));
+			live.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]);
+			live.globalCompositeOperation = "source-over";
+			live.globalAlpha = 1;
+			live.imageSmoothingQuality = "high";
+			live.drawImage(s.canvas, 0, 0);
+		}
+
+		// The box and its handles are drawn at screen size, so they don't grow with the zoom.
+		live.setTransform(dpr, 0, 0, dpr, 0, 0);
+		live.setLineDash([]);
+		live.globalAlpha = 1;
+		var accent = palette.blue;
+		var poly = s.corners;
+		live.beginPath();
+		live.moveTo(poly[0].x, poly[0].y);
+		for (var i = 1; i < 4; i++) live.lineTo(poly[i].x, poly[i].y);
+		live.closePath();
+		live.strokeStyle = accent;
+		live.lineWidth = 1.5;
+		live.stroke();
+
+		var rot = s.handles[s.handles.length - 1];
+		live.beginPath();
+		live.moveTo(rot.from.x, rot.from.y);
+		live.lineTo(rot.x, rot.y);
+		live.stroke();
+
+		for (i = 0; i < s.handles.length; i++) {
+			var h = s.handles[i];
+			live.beginPath();
+			live.arc(h.x, h.y, HANDLE / 2, 0, Math.PI * 2);
+			live.fillStyle = palette.paper;
+			live.fill();
+			live.lineWidth = 2;
+			live.stroke();
+		}
+	}
+
+	function drawLasso() {
+		applyView(live);
+		live.globalCompositeOperation = "source-over";
+		var pts = lasso.points;
+		live.beginPath();
+		live.moveTo(pts[0].x, pts[0].y);
+		for (var i = 1; i < pts.length; i++) live.lineTo(pts[i].x, pts[i].y);
+		live.closePath();
+		live.fillStyle = palette.blue;
+		live.globalAlpha = 0.08;
+		live.fill();
+		live.globalAlpha = 0.9;
+		live.strokeStyle = palette.blue;
+		live.lineWidth = 1.4 / view.s;
+		live.setLineDash([6 / view.s, 5 / view.s]);
+		live.stroke();
+		live.setLineDash([]);
+		live.globalAlpha = 1;
+	}
+
+	// ---------- Lasso: the gestures ----------
+
+	// What's under the finger: a handle, the selection itself, or nothing.
+	function grabAt(cx, cy) {
+		if (!sel) return null;
+		layoutSelection();
+		var poly = sel.corners;
+		// On a small selection the corners would otherwise swallow the whole box and leave
+		// nowhere to take hold of it, so their reach shrinks with it.
+		var side = Math.min(len2(poly[1].x - poly[0].x, poly[1].y - poly[0].y), len2(poly[3].x - poly[0].x, poly[3].y - poly[0].y));
+		var reach = clamp(side * 0.3, 9, HANDLE_HIT);
+		for (var i = 0; i < sel.handles.length; i++) {
+			var h = sel.handles[i];
+			// The turn handle sits outside the box, so it always has room.
+			var r = h.id === "rot" ? HANDLE_HIT : reach;
+			if (len2(cx - h.x, cy - h.y) <= r) return h.id;
+		}
+		if (pointInPoly(poly, cx, cy)) return "move";
+		return null;
+	}
+
+	// The corner opposite the one being dragged stays put, in the selection's own box.
+	var OPPOSITE = { nw: [1, 1], ne: [0, 1], se: [0, 0], sw: [1, 0] };
+	var CORNER = { nw: [0, 0], ne: [1, 0], se: [1, 1], sw: [0, 1] };
+
+	function boxCorner(which) {
+		return { x: which[0] ? sel.x1 : sel.x0, y: which[1] ? sel.y1 : sel.y0 };
+	}
+
+	function startSelectPointer(e) {
+		activeId = e.pointerId;
+		activeType = e.pointerType;
+		var id = grabAt(e.clientX, e.clientY);
+		if (id) {
+			startGrab(id, e);
+			return;
+		}
+		// Nothing under the finger: put down what was held and draw a new loop.
+		clearSelection();
+		lasso = { points: [toPage(e)], from: { x: e.clientX, y: e.clientY }, moved: false };
+		requestRender();
+	}
+
+	function startGrab(id, e) {
+		var p = toPage(e);
+		grab = { id: id, px: p.x, py: p.y, tx: sel.tx, ty: sel.ty, rot: sel.rot, k: sel.k, moved: false };
+		if (id === "rot") {
+			// The angle the finger is at now counts as no turn.
+			grab.a0 = Math.atan2(p.y - (sel.cy + sel.ty), p.x - (sel.cx + sel.tx)) - sel.rot;
+			return;
+		}
+		if (id === "move") return;
+		var m = selMatrix();
+		var anchor = boxCorner(OPPOSITE[id]);
+		var corner = boxCorner(CORNER[id]);
+		// Where the corner that stays put is, and how far the dragged one is from it.
+		var a = applyMatrix(m, anchor.x, anchor.y);
+		var c = applyMatrix(m, corner.x, corner.y);
+		grab.ax = a.x;
+		grab.ay = a.y;
+		grab.bx = anchor.x;
+		grab.by = anchor.y;
+		grab.d0 = len2(c.x - a.x, c.y - a.y);
+	}
+
+	function moveSelectPointer(e) {
+		var p = toPage(e);
+		if (lasso) {
+			var last = lasso.points[lasso.points.length - 1];
+			// A point every screen pixel and a half is plenty for a loop.
+			if (len2(p.x - last.x, p.y - last.y) * view.s < 1.5) return;
+			lasso.points.push(p);
+			if (len2(e.clientX - lasso.from.x, e.clientY - lasso.from.y) > 6) lasso.moved = true;
+			requestRender();
+			return;
+		}
+		if (!grab || !sel) return;
+		dragGrab(p);
+		layoutSelection();
+		requestRender();
+	}
+
+	function dragGrab(p) {
+		var g = grab;
+		if (len2(p.x - g.px, p.y - g.py) * view.s > 2) g.moved = true;
+		if (g.id === "move") {
+			sel.tx = g.tx + (p.x - g.px);
+			sel.ty = g.ty + (p.y - g.py);
+			return;
+		}
+		if (g.id === "rot") {
+			var a = Math.atan2(p.y - (sel.cy + sel.ty), p.x - (sel.cx + sel.tx)) - g.a0;
+			// A gentle catch every 15 degrees, so writing can be straightened up.
+			var step = Math.PI / 12;
+			var near = Math.round(a / step) * step;
+			if (Math.abs(a - near) < 0.045) a = near;
+			sel.rot = a;
+			return;
+		}
+		// A corner: how far the finger is from the corner that stays put sets the size.
+		if (!(g.d0 > 0)) return;
+		var k = clamp((g.k * len2(p.x - g.ax, p.y - g.ay)) / g.d0, 0.02, 100);
+		sel.k = k;
+		// Then the shift is set so that corner really does stay put.
+		var c = Math.cos(sel.rot) * k;
+		var s = Math.sin(sel.rot) * k;
+		var dx = g.bx - sel.cx;
+		var dy = g.by - sel.cy;
+		sel.tx = g.ax - (sel.cx + dx * c - dy * s);
+		sel.ty = g.ay - (sel.cy + dx * s + dy * c);
+	}
+
+	function endSelectPointer(cancelled) {
+		activeId = null;
+		activeType = null;
+		if (lasso) {
+			var l = lasso;
+			lasso = null;
+			if (!cancelled && l.moved && l.points.length > 2) {
+				var list = selectable().filter(function (a) {
+					return inLoop(a, l.points);
+				});
+				if (list.length) makeSelection(list);
+			}
+			requestRender(true);
+			return;
+		}
+		if (!grab) return;
+		var g = grab;
+		grab = null;
+		if (!cancelled && g.moved) bakeSelection();
+		else {
+			sel.tx = g.tx;
+			sel.ty = g.ty;
+			sel.rot = g.rot;
+			sel.k = g.k;
+		}
+		layoutSelection();
+		requestRender(true);
+	}
+
+	selBar.querySelectorAll("button").forEach(function (b) {
+		b.addEventListener("click", function () {
+			var what = b.dataset.sel;
+			if (what === "flip-h") flipSelection(true);
+			else if (what === "flip-v") flipSelection(false);
+			else if (what === "duplicate") duplicateSelection();
+			else if (what === "delete") deleteSelection();
+			else clearSelection();
+		});
+	});
+
+	// ---------- Pictures ----------
+	//
+	// A pasted picture is another thing on the page, alongside the strokes: it draws into
+	// the tiles like they do, the lasso picks it up like they do, and it goes into a
+	// copied image. Notes codes are strokes only, so pictures aren't in them.
+
+	function addImage(img) {
+		var iw = img.naturalWidth || img.width;
+		var ih = img.naturalHeight || img.height;
+		if (!iw || !ih) {
+			toast("That picture couldn't be read");
+			return;
+		}
+		// One picture pixel per screen pixel, but never more than three quarters of the screen.
+		var k = Math.min(1 / view.s, (width * 0.75) / view.s / iw, (height * 0.75) / view.s / ih);
+		var a = {
+			tool: "image",
+			img: img,
+			cx: (width / 2 - view.x) / view.s,
+			cy: (height / 2 - view.y) / view.s,
+			w: iw * k,
+			h: ih * k,
+			rot: 0,
+			flipX: false,
+			flipY: false,
+		};
+		a.box = imageBox(a);
+		// The lasso comes out, with the picture already picked up, ready to be placed.
+		selectTool(LASSO);
+		addActions([a]);
+		makeSelection([a]);
+	}
+
+	function loadImageBlob(blob) {
+		return new Promise(function (resolve, reject) {
+			var url = URL.createObjectURL(blob);
+			var img = new Image();
+			img.onload = function () {
+				resolve(img);
+			};
+			img.onerror = function () {
+				URL.revokeObjectURL(url);
+				reject(new Error("That picture couldn't be read"));
+			};
+			img.src = url;
+		});
+	}
+
+	function imageFromItems(items) {
+		for (var i = 0; i < items.length; i++) {
+			var type = items[i].type || "";
+			if (type.indexOf("image/") === 0) return items[i].getAsFile ? items[i].getAsFile() : items[i];
+		}
+		return null;
+	}
+
+	// ⌘V, and the paste menu on an iPad with a keyboard attached.
+	document.addEventListener("paste", function (e) {
+		// Inside the code box, paste belongs to the text.
+		if (codeDialog.open) return;
+		var data = e.clipboardData;
+		var blob = data && ((data.items && imageFromItems(data.items)) || (data.files && imageFromItems(data.files)));
+		if (!blob) return;
+		e.preventDefault();
+		loadImageBlob(blob).then(addImage, function (err) {
+			toast(err.message);
+		});
+	});
+
+	// The paste button, for when there's no keyboard. Safari asks before it hands the
+	// clipboard over, which is why this only runs straight from a tap.
+	function pasteFromClipboard() {
+		if (!navigator.clipboard || !navigator.clipboard.read) {
+			toast("Press ⌘V to paste a picture");
+			return;
+		}
+		navigator.clipboard.read().then(function (items) {
+			for (var i = 0; i < items.length; i++) {
+				var types = items[i].types || [];
+				for (var j = 0; j < types.length; j++) {
+					if (types[j].indexOf("image/") !== 0) continue;
+					return items[i]
+						.getType(types[j])
+						.then(loadImageBlob)
+						.then(addImage)
+						.catch(function (err) {
+							toast(err.message);
+						});
+				}
+			}
+			toast("No picture on the clipboard");
+		}, function () {
+			toast("Nothing was pasted");
+		});
+	}
+
+	document.getElementById("paste").addEventListener("click", pasteFromClipboard);
+
+	// A picture dragged onto the page from elsewhere lands where everything else does.
+	// Anything else dropped is turned away: letting the browser open it would throw the
+	// page, and everything on it, away.
+	document.addEventListener("dragover", function (e) {
+		e.preventDefault();
+	});
+	document.addEventListener("drop", function (e) {
+		e.preventDefault();
+		var files = e.dataTransfer && e.dataTransfer.files;
+		var blob = files && files.length ? imageFromItems(files) : null;
+		if (!blob) return;
+		loadImageBlob(blob).then(addImage, function (err) {
+			toast(err.message);
+		});
+	});
+
 	// ---------- Copy as image ----------
 	//
 	// The strokes are vector shapes, so the picture is drawn fresh from them at a high
@@ -1649,16 +2614,15 @@
 		}, 1800);
 	}
 
-	// Everything drawn since the last "clear".
+	// Everything still on the page: drawn since the last "clear", and not deleted.
 	function pageActions() {
-		var start = 0;
-		for (var i = actions.length - 1; i >= 0; i--) {
-			if (actions[i].type === "clear") {
-				start = i + 1;
-				break;
-			}
+		var list = [];
+		for (var i = findStart(); i < actions.length; i++) {
+			var a = actions[i];
+			if (a.type === "clear" || a.deleted) continue;
+			list.push(a);
 		}
-		return actions.slice(start);
+		return list;
 	}
 
 	// Draws the page onto a new canvas in the given theme, or returns null if there's no ink.
@@ -1697,6 +2661,10 @@
 		ctx.lineCap = "round";
 		ctx.lineJoin = "round";
 		list.forEach(function (a) {
+			if (a.tool === "image") {
+				drawImageAction(ctx, a);
+				return;
+			}
 			if (a.tool === "eraser") {
 				eraseShape(ctx, a, a.shape || (a.shape = eraserShape(a)));
 				return;
@@ -1792,6 +2760,15 @@
 	redoBtn.addEventListener("click", redo);
 	clearBtn.addEventListener("click", clearPage);
 	zoomBtn.addEventListener("click", resetZoom);
+
+	// Escape lets a selection go; Delete gets rid of what's selected.
+	document.addEventListener("keydown", function (e) {
+		if (e.metaKey || e.ctrlKey || e.altKey || codeDialog.open) return;
+		if (e.key === "Escape" && sel) clearSelection();
+		else if ((e.key === "Backspace" || e.key === "Delete") && sel) deleteSelection();
+		else return;
+		e.preventDefault();
+	});
 
 	// Hardware keyboard shortcuts.
 	document.addEventListener("keydown", function (e) {
@@ -1906,9 +2883,16 @@
 		return keep;
 	}
 
+	// Pictures aren't written into the code: they'd make it enormous. Strokes only.
+	function pageHasImage() {
+		return pageActions().some(function (a) {
+			return a.tool === "image";
+		});
+	}
+
 	function packPage() {
 		var list = pageActions().filter(function (a) {
-			return a.type !== "clear";
+			return a.type !== "clear" && a.tool !== "image";
 		});
 		var out = [1];
 		writeNum(out, list.length);
@@ -2039,7 +3023,9 @@
 	// Puts the notes on the page. The old page is cleared as a normal step, so Undo gets it back.
 	function loadNotes(list) {
 		if (current) return;
-		if (!pageIsEmpty()) actions.push({ type: "clear" });
+		clearSelection();
+		var added = [];
+		if (!pageIsEmpty()) added.push({ type: "clear" });
 		var box = null;
 		list.forEach(function (s) {
 			var a = {
@@ -2054,7 +3040,7 @@
 				shape: null,
 				detail: 0,
 			};
-			actions.push(a);
+			added.push(a);
 			if (a.tool === "eraser") return;
 			var b = a.box;
 			if (!box) box = { x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 };
@@ -2065,20 +3051,34 @@
 				box.y1 = Math.max(box.y1, b.y1);
 			}
 		});
-		redoStack = [];
-		// Fit the notes on screen, below the toolbar, never zoomed in past 100%.
-		if (box) {
-			var top = 80;
-			var fit = Math.min(1, (width - 48) / (box.x1 - box.x0), (height - top - 24) / (box.y1 - box.y0));
-			view.s = clamp(fit, MIN_ZOOM, MAX_ZOOM);
-			view.x = width / 2 - ((box.x0 + box.x1) / 2) * view.s;
-			view.y = top + (height - top) / 2 - ((box.y0 + box.y1) / 2) * view.s;
-		}
+
 		// A new page at a new zoom: start the tiles afresh.
-		pageStart = findStart();
-		dropAllTiles();
-		requestRender(true);
-		updateButtons();
+		function settle() {
+			pageStart = findStart();
+			dropAllTiles();
+			requestRender(true);
+		}
+
+		pushOp({
+			redo: function () {
+				added.forEach(function (a) {
+					actions.push(a);
+				});
+				// Fit the notes on screen, below the toolbar, never zoomed in past 100%.
+				if (box) {
+					var top = 80;
+					var fit = Math.min(1, (width - 48) / (box.x1 - box.x0), (height - top - 24) / (box.y1 - box.y0));
+					view.s = clamp(fit, MIN_ZOOM, MAX_ZOOM);
+					view.x = width / 2 - ((box.x0 + box.x1) / 2) * view.s;
+					view.y = top + (height - top) / 2 - ((box.y0 + box.y1) / 2) * view.s;
+				}
+				settle();
+			},
+			undo: function () {
+				actions.length = Math.max(0, actions.length - added.length);
+				settle();
+			},
+		});
 	}
 
 	function openCode(text) {
@@ -2098,7 +3098,8 @@
 		document.getElementById("code-title").textContent = mode === "save" ? "Notes code" : "Open notes";
 		document.getElementById("code-note").textContent =
 			mode === "save"
-				? "Keep this code somewhere safe. Paste it into Open notes, or open the link, to get these notes back."
+				? "Keep this code somewhere safe. Paste it into Open notes, or open the link, to get these notes back." +
+					(pageHasImage() ? " Pasted pictures aren't part of the code, only writing." : "")
 				: "Paste a notes code or link. The current page is cleared first; Undo brings it back.";
 		codeText.readOnly = mode === "save";
 		codeText.value = "";
@@ -2214,6 +3215,7 @@
 			moreMenu.hidden = true;
 			var what = b.dataset.more;
 			if (what === "clear") clearPage();
+			else if (what === "paste") pasteFromClipboard();
 			else if (what === "copy-light") copyImage("light");
 			else if (what === "copy-dark") copyImage("dark");
 			else if (what === "save" || what === "open") showDialog(what);
@@ -2236,6 +3238,11 @@
 		themeMeta.content = name === "dark" ? "#000000" : "#fbfaf7";
 		// Ink colours change with the theme, so redraw every stroke in the new colours.
 		readPalette();
+		// Including anything the lasso is holding.
+		if (sel) {
+			bakeSelectionCanvas();
+			layoutSelection();
+		}
 		dropAllTiles();
 		urgent = true;
 		requestRender(true);
