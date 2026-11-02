@@ -1909,6 +1909,124 @@
 		});
 	}
 
+	// Rubbing something out doesn't take it away: the eraser is a hole cut in the page,
+	// and the stroke underneath is still sitting there with nothing showing. The lasso
+	// has to tell the difference, or a loop drawn over a blank patch picks up writing
+	// that was rubbed out ages ago and drags it back into view.
+
+	function boxesOverlap(a, b) {
+		return a.x0 <= b.x1 && b.x0 <= a.x1 && a.y0 <= b.y1 && b.y0 <= a.y1;
+	}
+
+	// How far a point is from a line between two others.
+	function distToSeg(x, y, a, b) {
+		var dx = b.x - a.x;
+		var dy = b.y - a.y;
+		var l = dx * dx + dy * dy;
+		var t = l ? ((x - a.x) * dx + (y - a.y) * dy) / l : 0;
+		t = clamp(t, 0, 1);
+		return len2(x - (a.x + t * dx), y - (a.y + t * dy));
+	}
+
+	// The eraser swipes drawn after this, over the top of it. Ones drawn before it are
+	// underneath and never took anything off it.
+	function erasersOver(a) {
+		var out = [];
+		var from = actions.indexOf(a);
+		if (from < 0) return out;
+		for (var i = from + 1; i < actions.length; i++) {
+			var e = actions[i];
+			if (e.deleted || e.tool !== "eraser" || !e.points) continue;
+			if (!boxesOverlap(e.box, a.box)) continue;
+			out.push(e);
+		}
+		return out;
+	}
+
+	// Is this spot on the page covered by one of the swipes?
+	function underErasers(x, y, erasers) {
+		for (var i = 0; i < erasers.length; i++) {
+			var e = erasers[i];
+			var b = e.box;
+			// The box is drawn wider than the swipe, so anything outside it is clear.
+			if (x < b.x0 || x > b.x1 || y < b.y0 || y > b.y1) continue;
+			var r = e.size / 2;
+			var pts = e.points;
+			if (pts.length === 1) {
+				if (len2(x - pts[0].x, y - pts[0].y) <= r) return true;
+				continue;
+			}
+			for (var j = 1; j < pts.length; j++) {
+				if (distToSeg(x, y, pts[j - 1], pts[j]) <= r) return true;
+			}
+		}
+		return false;
+	}
+
+	// Walks the middle of a stroke and both its edges, stopping at the first spot fn
+	// says yes to. The steps are no longer than the narrowest eraser's reach, so a swipe
+	// can't slip between two of them unnoticed.
+	function walkStroke(a, step, fn) {
+		var pts = a.points;
+		var r = a.size / 2;
+		for (var i = 0; i < pts.length; i++) {
+			var p = pts[i];
+			var q = pts[i + 1];
+			// Square across the way the line is heading, to reach its two edges.
+			var ref = q || pts[i - 1];
+			var nx = 0;
+			var ny = 0;
+			if (ref) {
+				var dx = q ? ref.x - p.x : p.x - ref.x;
+				var dy = q ? ref.y - p.y : p.y - ref.y;
+				var d = len2(dx, dy);
+				if (d) {
+					nx = (-dy / d) * r;
+					ny = (dx / d) * r;
+				}
+			}
+			if (fn(p.x, p.y) || fn(p.x + nx, p.y + ny) || fn(p.x - nx, p.y - ny)) return true;
+			if (!q) continue;
+			// Samples can be far apart when the pen moved fast, so fill in between.
+			var steps = Math.floor(len2(q.x - p.x, q.y - p.y) / step);
+			for (var j = 1; j < steps; j++) {
+				var t = j / steps;
+				var mx = p.x + (q.x - p.x) * t;
+				var my = p.y + (q.y - p.y) * t;
+				if (fn(mx, my) || fn(mx + nx, my + ny) || fn(mx - nx, my - ny)) return true;
+			}
+		}
+		return false;
+	}
+
+	// Is any of this still showing? Only once every last bit of it is under an eraser is
+	// it counted as gone, so a stroke the eraser only nicked still gets picked up.
+	function stillShowing(a) {
+		var erasers = erasersOver(a);
+		if (!erasers.length) return true;
+		var step = Infinity;
+		for (var i = 0; i < erasers.length; i++) step = Math.min(step, erasers[i].size / 2);
+		step = Math.max(2, step);
+		var clear = function (x, y) {
+			return !underErasers(x, y, erasers);
+		};
+		if (a.tool === "image") {
+			// A picture: a grid of spots across it, turned and flipped as it is.
+			var cos = Math.cos(a.rot);
+			var sin = Math.sin(a.rot);
+			var n = Math.max(8, Math.ceil(Math.max(a.w, a.h) / step));
+			for (var iy = 0; iy <= n; iy++) {
+				for (var ix = 0; ix <= n; ix++) {
+					var lx = (ix / n - 0.5) * a.w;
+					var ly = (iy / n - 0.5) * a.h;
+					if (clear(a.cx + lx * cos - ly * sin, a.cy + lx * sin + ly * cos)) return true;
+				}
+			}
+			return false;
+		}
+		return walkStroke(a, step, clear);
+	}
+
 	// Mostly inside the loop counts as inside, so a loop drawn close around a word still
 	// takes the whole word.
 	function inLoop(a, poly) {
@@ -2448,7 +2566,7 @@
 			lasso = null;
 			if (!cancelled && l.moved && l.points.length > 2) {
 				var list = selectable().filter(function (a) {
-					return inLoop(a, l.points);
+					return inLoop(a, l.points) && stillShowing(a);
 				});
 				if (list.length) makeSelection(list);
 			}
