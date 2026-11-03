@@ -15,9 +15,13 @@
 		pen: [1.6, 3.2, 6.5],
 		highlighter: [10, 18, 30],
 		eraser: [12, 28, 60],
+		// A ball pen draws a little under its named width, so these run thicker to come
+		// out at the same weight as a hand-drawn line.
+		shape: [2.3, 4.2, 8],
+		graph: [1.2, 2.2, 3.6],
 	};
 	// The size picked for each tool, as an index into SIZES.
-	var sizeChoice = { pen: 1, highlighter: 1, eraser: 1 };
+	var sizeChoice = { pen: 1, highlighter: 1, eraser: 1, shape: 1, graph: 1 };
 	var MIN_ZOOM = 0.1;
 	var MAX_ZOOM = 8;
 	var GRID = 24;
@@ -32,6 +36,9 @@
 	var tool = "pen";
 	// The lasso picks up what's already on the page instead of adding to it.
 	var LASSO = "lasso";
+	// Dragged out rather than drawn: straight lines, arrows, circles and boxes, and a
+	// set of axes with sums drawn on it.
+	var GRAPH = "graph";
 	// fountain, ball or brush, like GoodNotes.
 	var penType = "fountain";
 	// The colour picked for each inking tool. Highlighter colours start with "hl-".
@@ -629,8 +636,14 @@
 		ctx.restore();
 	}
 
-	// The upright box around a turned picture.
-	function imageBox(a) {
+	// Some things on the page aren't strokes but rectangles with a middle, a size and a
+	// turn: a pasted picture, and a set of axes. They share this much.
+	function isFramed(a) {
+		return a.tool === "image" || a.tool === "graph";
+	}
+
+	// The upright box around one of those, turned as it is.
+	function frameBox(a) {
 		var c = Math.abs(Math.cos(a.rot));
 		var s = Math.abs(Math.sin(a.rot));
 		var ex = (c * a.w + s * a.h) / 2;
@@ -642,6 +655,10 @@
 	function drawAction(ctx, a, zoom) {
 		if (a.tool === "image") {
 			drawImageAction(ctx, a);
+			return;
+		}
+		if (a.tool === "graph") {
+			drawGraph(ctx, a, zoom);
 			return;
 		}
 		if (a.tool === "eraser") {
@@ -1133,7 +1150,7 @@
 	}
 
 	function renderLive() {
-		if (!current && !sel && !lasso) {
+		if (!current && !sel && !lasso && !shaping) {
 			if (liveDrawn) wipe(live);
 			liveDrawn = false;
 			return;
@@ -1143,6 +1160,7 @@
 		// What the lasso holds floats above the page until it's put down.
 		if (sel) drawSelection();
 		if (lasso) drawLasso();
+		if (shaping) drawShaping(live);
 		if (current) drawCurrent();
 	}
 
@@ -1409,11 +1427,8 @@
 		if (e.pointerType === "mouse" && e.button !== 0) return;
 		e.preventDefault();
 		// A tap on the page while a menu is open only closes the menu.
-		if (!penMenu.hidden || !copyMenu.hidden || !notesMenu.hidden || !moreMenu.hidden) {
-			closePenMenu();
-			copyMenu.hidden = true;
-			notesMenu.hidden = true;
-			moreMenu.hidden = true;
+		if (!penMenu.hidden || !shapeMenu.hidden || !copyMenu.hidden || !notesMenu.hidden || !moreMenu.hidden) {
+			closeMenus();
 			return;
 		}
 		try {
@@ -1448,6 +1463,35 @@
 				gesture = null;
 			}
 			if (!lasso && !grab) startSelectPointer(e);
+			return;
+		}
+
+		// A line, a circle or a set of axes is dragged out. Same rules: a finger landing
+		// while the Pencil draws is a palm, two fingers still move the page.
+		if (tool === SHAPE || tool === GRAPH) {
+			if (e.pointerType === "touch") {
+				if (activeType === "pen" && shaping) {
+					ignored.add(e.pointerId);
+					return;
+				}
+				touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+				if (pencilSeen || touchLock || touches.size > 1) {
+					if (activeType === "touch" && shaping) endShape(true);
+					touchLock = true;
+					resetGesture();
+					return;
+				}
+			}
+			if (e.pointerType === "pen") {
+				pencilSeen = true;
+				if (activeType !== "pen" && shaping) endShape(true);
+				touches.forEach(function (_, id) {
+					ignored.add(id);
+				});
+				touches.clear();
+				gesture = null;
+			}
+			if (!shaping) startShape(e);
 			return;
 		}
 
@@ -1489,6 +1533,10 @@
 			moveSelectPointer(e);
 			return;
 		}
+		if (shaping && e.pointerId === activeId) {
+			moveShape(e);
+			return;
+		}
 		if (current && e.pointerId === activeId) {
 			moveStroke(e);
 			return;
@@ -1505,6 +1553,11 @@
 		if (e.pointerType === "touch") liftFinger(e.pointerId);
 		if ((lasso || grab) && e.pointerId === activeId) {
 			endSelectPointer(cancelled);
+			return;
+		}
+		if (shaping && e.pointerId === activeId) {
+			// A cancelled drag is a palm or a second finger: no mark either way.
+			endShape(cancelled && activeType !== "pen");
 			return;
 		}
 		if (!current || e.pointerId !== activeId) return;
@@ -1653,35 +1706,62 @@
 		press(".tool", "tool", tool);
 		// The lasso has no colour or thickness of its own, so neither picker shows.
 		var picking = tool !== LASSO;
+		// Lines and axes take the pen's colours: a highlighter-yellow graph is no use.
+		var showing = tool === SHAPE || tool === GRAPH ? "pen" : inkTool;
 		// Show the colours of the pen or the highlighter, whichever is in hand or was last.
 		document.querySelectorAll(".swatches").forEach(function (g) {
-			g.hidden = !picking || g.dataset.for !== inkTool;
+			g.hidden = !picking || g.dataset.for !== showing;
 		});
 		sizeGroup.hidden = !picking;
 		pickerDividers.forEach(function (d) {
 			d.hidden = !picking;
 		});
-		press(".swatch", "color", colorChoice[inkTool]);
+		press(".swatch", "color", colorChoice[showing]);
 		// Each tool remembers its own thickness.
 		if (picking) press(".size", "size", String(sizeChoice[tool]));
 	}
 
 	document.querySelectorAll(".tool").forEach(function (b) {
 		b.addEventListener("click", function () {
-			// Tapping the pen again opens its menu, as in GoodNotes.
-			if (b.dataset.tool === "pen" && tool === "pen") {
-				if (penMenu.hidden) openPenMenu(b);
-				else closePenMenu();
-				return;
+			var which = b.dataset.tool;
+			// Tapping a tool that's already in hand opens its own menu, as in GoodNotes:
+			// which pen, which shape, or what the graph is to show.
+			if (which === tool) {
+				if (which === "pen") {
+					if (penMenu.hidden) openPenMenu(b);
+					else closePenMenu();
+					return;
+				}
+				if (which === SHAPE) {
+					closeMenus();
+					if (shapeMenu.hidden) placeMenu(shapeMenu, b);
+					else shapeMenu.hidden = true;
+					return;
+				}
+				if (which === GRAPH) {
+					closeMenus();
+					showGraphDialog(null);
+					return;
+				}
 			}
-			closePenMenu();
-			selectTool(b.dataset.tool);
+			closeMenus();
+			selectTool(which);
 		});
 	});
 
-	// ---------- Pen menu ----------
+	// ---------- Tool menus ----------
 
 	var penMenu = document.getElementById("pen-menu");
+	var shapeMenu = document.getElementById("shape-menu");
+
+	// Shuts every menu that's open.
+	function closeMenus() {
+		penMenu.hidden = true;
+		shapeMenu.hidden = true;
+		copyMenu.hidden = true;
+		notesMenu.hidden = true;
+		moreMenu.hidden = true;
+	}
 
 	// Draws a sample stroke for a pen type, light at both ends and heavy in the middle.
 	function drawPreview(canvas, pen) {
@@ -1720,6 +1800,7 @@
 	}
 
 	function openPenMenu(button) {
+		shapeMenu.hidden = true;
 		copyMenu.hidden = true;
 		notesMenu.hidden = true;
 		placeMenu(penMenu, button);
@@ -1732,11 +1813,23 @@
 		penMenu.hidden = true;
 	}
 
+	shapeMenu.querySelectorAll("button").forEach(function (b) {
+		b.addEventListener("click", function () {
+			shapeKind = b.dataset.shape;
+			shapeMenu.querySelectorAll("button").forEach(function (o) {
+				o.setAttribute("aria-checked", String(o === b));
+			});
+			shapeMenu.hidden = true;
+			selectTool(SHAPE);
+		});
+	});
+
 	// Any tap outside a menu (and not on the button that toggles it) closes it.
 	document.addEventListener("pointerdown", function (e) {
 		var t = e.target;
 		[
 			[penMenu, '[data-tool="pen"]'],
+			[shapeMenu, '[data-tool="shape"]'],
 			[copyMenu, "#copy"],
 			[notesMenu, "#notes"],
 			[moreMenu, "#more"],
@@ -1822,6 +1915,7 @@
 	var ROT_GAP = 30;
 
 	var selBar = document.getElementById("sel-bar");
+	var selEdit = document.getElementById("sel-edit");
 	var selBarSize = { w: 0, h: 0 };
 
 	// ---------- Lasso: geometry ----------
@@ -1905,7 +1999,7 @@
 	// thing on the page, it's a hole in one.
 	function selectable() {
 		return pageActions().filter(function (a) {
-			return a.tool === "pen" || a.tool === "highlighter" || a.tool === "image";
+			return a.tool === "pen" || a.tool === "highlighter" || isFramed(a);
 		});
 	}
 
@@ -2010,8 +2104,8 @@
 		var clear = function (x, y) {
 			return !underErasers(x, y, erasers);
 		};
-		if (a.tool === "image") {
-			// A picture: a grid of spots across it, turned and flipped as it is.
+		if (isFramed(a)) {
+			// A picture or a graph: a grid of spots across it, turned as it is.
 			var cos = Math.cos(a.rot);
 			var sin = Math.sin(a.rot);
 			var n = Math.max(8, Math.ceil(Math.max(a.w, a.h) / step));
@@ -2031,7 +2125,7 @@
 	// takes the whole word.
 	function inLoop(a, poly) {
 		var pts = [];
-		if (a.tool === "image") {
+		if (isFramed(a)) {
 			var c = Math.cos(a.rot);
 			var s = Math.sin(a.rot);
 			[[-1, -1], [1, -1], [1, 1], [-1, 1], [0, 0]].forEach(function (u) {
@@ -2096,6 +2190,10 @@
 			drawImageAction(ctx, a);
 			return;
 		}
+		if (a.tool === "graph") {
+			drawGraph(ctx, a, sel ? sel.res || view.s : view.s);
+			return;
+		}
 		if (a.tool === "highlighter") {
 			// A flat see-through fill. It's drawn into the page properly, blending with
 			// what's under it, as soon as the selection is put down.
@@ -2124,6 +2222,7 @@
 		measureSelection();
 		bakeSelectionCanvas();
 		layoutSelection();
+		selEdit.hidden = !(list.length === 1 && list[0].tool === "graph");
 		selBar.hidden = false;
 		selBarSize = { w: selBar.offsetWidth, h: selBar.offsetHeight };
 		layoutSelection();
@@ -2150,8 +2249,13 @@
 
 	// Everything needed to put an action back as it was.
 	function snapshot(a) {
-		if (a.tool === "image") {
-			return { cx: a.cx, cy: a.cy, w: a.w, h: a.h, rot: a.rot, flipX: a.flipX, flipY: a.flipY, box: a.box };
+		if (isFramed(a)) {
+			return {
+				cx: a.cx, cy: a.cy, w: a.w, h: a.h, rot: a.rot,
+				flipX: a.flipX, flipY: a.flipY, box: a.box,
+				// A graph is mirrored by turning its numbers round, so they go back too.
+				x0: a.x0, x1: a.x1, y0: a.y0, y1: a.y1, size: a.size,
+			};
 		}
 		return { points: a.points, size: a.size, scale: a.scale, box: a.box, shape: a.shape, detail: a.detail };
 	}
@@ -2165,23 +2269,36 @@
 	// Moves one stroke or picture for real. map: where a page point goes. k: how much
 	// bigger it gets. turn: how far it turns. mirror: the map is a reflection.
 	function applyMap(a, map, k, turn, mirrorX, mirrorY) {
-		if (a.tool === "image") {
+		if (isFramed(a)) {
 			var c = map(a.cx, a.cy);
 			a.cx = c.x;
 			a.cy = c.y;
 			a.w *= k;
 			a.h *= k;
 			if (mirrorX !== mirrorY) {
-				// A reflection turns the picture the other way and mirrors it.
+				// A reflection turns the thing the other way and mirrors it.
 				a.rot = -a.rot + turn;
-				if (mirrorX) a.flipX = !a.flipX;
+				if (a.tool === "graph") {
+					// A graph is mirrored by turning its numbers round instead, so they
+					// stay the right way up and still say what the curve is doing.
+					if (mirrorX) {
+						var x0 = a.x0;
+						a.x0 = -a.x1;
+						a.x1 = -x0;
+					} else {
+						var y0 = a.y0;
+						a.y0 = -a.y1;
+						a.y1 = -y0;
+					}
+				} else if (mirrorX) a.flipX = !a.flipX;
 				else a.flipY = !a.flipY;
 			} else {
 				a.rot += turn;
 				// Both ways at once is just a half turn.
 				if (mirrorX) a.rot += Math.PI;
 			}
-			a.box = imageBox(a);
+			if (a.tool === "graph") a.size *= k;
+			a.box = frameBox(a);
 			return;
 		}
 		// New points rather than changed ones, so the old array can be kept for Undo.
@@ -2277,7 +2394,13 @@
 		c.lifted = false;
 		c.deleted = false;
 		c.box = { x0: a.box.x0, y0: a.box.y0, x1: a.box.x1, y1: a.box.y1 };
-		if (a.tool !== "image") {
+		// A graph's sums are its own, or editing the copy would change the original too.
+		if (a.funcs) {
+			c.funcs = a.funcs.map(function (f) {
+				return { expr: f.expr, color: f.color, fn: f.fn };
+			});
+		}
+		if (!isFramed(a)) {
 			c.points = a.points.map(function (p) {
 				return { x: p.x, y: p.y, p: p.p, v: p.v, d: p.d };
 			});
@@ -2590,7 +2713,10 @@
 	selBar.querySelectorAll("button").forEach(function (b) {
 		b.addEventListener("click", function () {
 			var what = b.dataset.sel;
-			if (what === "flip-h") flipSelection(true);
+			if (what === "edit") {
+				// The graph stays held, so it can be nudged again after.
+				if (sel && sel.list.length === 1 && sel.list[0].tool === "graph") showGraphDialog(sel.list[0]);
+			} else if (what === "flip-h") flipSelection(true);
 			else if (what === "flip-v") flipSelection(false);
 			else if (what === "duplicate") duplicateSelection();
 			else if (what === "delete") deleteSelection();
@@ -2624,7 +2750,7 @@
 			flipX: false,
 			flipY: false,
 		};
-		a.box = imageBox(a);
+		a.box = frameBox(a);
 		// The lasso comes out, with the picture already picked up, ready to be placed.
 		selectTool(LASSO);
 		addActions([a]);
@@ -2712,6 +2838,989 @@
 		});
 	});
 
+	// ---------- Straight lines, circles and boxes ----------
+	//
+	// Drag one out and it's laid down as ordinary ink: the same even-width ball pen a
+	// hand-drawn line uses. So the eraser cuts it, the lasso picks it up and a notes code
+	// carries it, with nothing added anywhere to make that work. A box is four lines and
+	// an arrow is three, all laid down as one step, so one Undo takes the whole thing back.
+	//
+	// Nothing on an iPad can hold Shift, so the snapping happens on its own: near one of
+	// the grid dots an end lands on it, and near a sixth of a turn a line straightens to it.
+
+	var SHAPE = "shape";
+	var shapeKind = "line";
+	// The drag in progress: where it started, where it is now.
+	var shaping = null;
+
+	// How far apart the dots on the page are, in page units. They're drawn every GRID
+	// units, doubled or halved to stay a comfortable distance apart on screen.
+	function gridSpacing() {
+		var step = GRID * view.s;
+		while (step < 14) step *= 2;
+		while (step > 56) step /= 2;
+		return step / view.s;
+	}
+
+	// Lands on a dot if it's close enough to one, within the smaller of a quarter of the
+	// gap and ten screen pixels.
+	function snapToDots(p) {
+		var gap = gridSpacing();
+		var reach = Math.min(gap * 0.25, 10 / view.s);
+		var x = Math.round(p.x / gap) * gap;
+		var y = Math.round(p.y / gap) * gap;
+		return {
+			x: Math.abs(x - p.x) <= reach ? x : p.x,
+			y: Math.abs(y - p.y) <= reach ? y : p.y,
+		};
+	}
+
+	// Straightens a line to the nearest sixth of a half turn - every 15 degrees - when
+	// it's already within four of them, keeping its length.
+	function snapToAngle(from, to) {
+		var dx = to.x - from.x;
+		var dy = to.y - from.y;
+		var len = len2(dx, dy);
+		if (len < 1e-6) return to;
+		var step = Math.PI / 12;
+		var angle = Math.atan2(dy, dx);
+		var near = Math.round(angle / step) * step;
+		if (Math.abs(angle - near) > step * 0.3) return to;
+		return { x: from.x + Math.cos(near) * len, y: from.y + Math.sin(near) * len };
+	}
+
+	// The colour and thickness a shape is drawn with. Shapes share the pen's colours;
+	// a highlighter-yellow set of axes would be no use to anyone.
+	function shapeColor() {
+		return colorChoice.pen;
+	}
+
+	// Lays points out as a stroke, ready to go on the page. An even width, so a straight
+	// line looks drawn with a ruler rather than by hand.
+	function inkStroke(points, size, color) {
+		var at = 0;
+		var pts = points.map(function (p, i) {
+			if (i) at += len2(p.x - points[i - 1].x, p.y - points[i - 1].y);
+			return { x: p.x, y: p.y, p: 1, v: 0, d: at };
+		});
+		var s = {
+			tool: "pen",
+			pen: "ball",
+			color: color,
+			size: size,
+			scale: view.s,
+			points: pts,
+		};
+		s.box = bounds(pts, size * 1.5);
+		s.shape = penShape(s, null, true);
+		s.detail = Math.max(view.s, 1);
+		return s;
+	}
+
+	function straightPoints(from, to) {
+		return [
+			{ x: from.x, y: from.y },
+			{ x: to.x, y: to.y },
+		];
+	}
+
+	// Round all the way, or an oval when the drag isn't square. Drawn from the middle out.
+	function ovalPoints(from, to) {
+		var rx = Math.abs(to.x - from.x);
+		var ry = Math.abs(to.y - from.y);
+		// Near enough round counts as round.
+		var big = Math.max(rx, ry);
+		if (big > 0 && Math.abs(rx - ry) / big < 0.08) rx = ry = (rx + ry) / 2;
+		var round = Math.max(rx, ry);
+		var n = clamp(Math.round(round * view.s * 0.9), 24, 240);
+		var pts = [];
+		for (var i = 0; i <= n; i++) {
+			var t = (i / n) * Math.PI * 2;
+			pts.push({ x: from.x + Math.cos(t) * rx, y: from.y + Math.sin(t) * ry });
+		}
+		return pts;
+	}
+
+	// The pieces a shape is made of, each a run of points to be laid down as one stroke.
+	function shapeRuns(kind, from, to) {
+		if (kind === "circle") return [ovalPoints(from, to)];
+		if (kind === "rect") {
+			var a = { x: from.x, y: from.y };
+			var b = { x: to.x, y: to.y };
+			return [
+				straightPoints({ x: a.x, y: a.y }, { x: b.x, y: a.y }),
+				straightPoints({ x: b.x, y: a.y }, { x: b.x, y: b.y }),
+				straightPoints({ x: b.x, y: b.y }, { x: a.x, y: b.y }),
+				straightPoints({ x: a.x, y: b.y }, { x: a.x, y: a.y }),
+			];
+		}
+		var runs = [straightPoints(from, to)];
+		if (kind === "arrow") {
+			var dx = to.x - from.x;
+			var dy = to.y - from.y;
+			var len = len2(dx, dy);
+			if (len > 1e-6) {
+				var size = SIZES[SHAPE][sizeChoice[SHAPE]];
+				var head = clamp(len * 0.22, size * 2.5, size * 7);
+				var ux = dx / len;
+				var uy = dy / len;
+				// Two strokes back from the point, a fifth of a turn out to each side.
+				var spread = Math.PI / 7;
+				var c = Math.cos(spread);
+				var s = Math.sin(spread);
+				runs.push(straightPoints(to, { x: to.x - head * (ux * c - uy * s), y: to.y - head * (uy * c + ux * s) }));
+				runs.push(straightPoints(to, { x: to.x - head * (ux * c + uy * s), y: to.y - head * (uy * c - ux * s) }));
+			}
+		}
+		return runs;
+	}
+
+	// Where a drag has got to, with the snapping applied.
+	function shapeEnds(g) {
+		var from = snapToDots(g.from);
+		var to = snapToDots(g.to);
+		if (g.kind === "line" || g.kind === "arrow") to = snapToAngle(from, to);
+		return { from: from, to: to };
+	}
+
+	// Shown while the drag is going on: the same lines, drawn plainly and quickly.
+	function drawShaping(ctx) {
+		if (!shaping) return;
+		var ends = shapeEnds(shaping);
+		ctx.save();
+		applyView(ctx);
+		ctx.globalCompositeOperation = "source-over";
+		ctx.globalAlpha = 1;
+		ctx.setLineDash([]);
+		if (shaping.kind === "graph") {
+			// A graph is placed by its corners, so the frame is what's shown.
+			ctx.strokeStyle = palette[shapeColor()] || palette.ink;
+			ctx.lineWidth = SIZES.graph[sizeChoice.graph] / view.s;
+			ctx.globalAlpha = 0.7;
+			ctx.beginPath();
+			ctx.rect(Math.min(ends.from.x, ends.to.x), Math.min(ends.from.y, ends.to.y), Math.abs(ends.to.x - ends.from.x), Math.abs(ends.to.y - ends.from.y));
+			ctx.stroke();
+			ctx.restore();
+			return;
+		}
+		ctx.strokeStyle = palette[shapeColor()] || palette.ink;
+		// The ball pen draws a little under its named width, so the preview matches.
+		ctx.lineWidth = SIZES[SHAPE][sizeChoice[SHAPE]] * 0.7;
+		ctx.beginPath();
+		shapeRuns(shaping.kind, ends.from, ends.to).forEach(function (run) {
+			ctx.moveTo(run[0].x, run[0].y);
+			for (var i = 1; i < run.length; i++) ctx.lineTo(run[i].x, run[i].y);
+		});
+		ctx.stroke();
+		ctx.restore();
+	}
+
+	function startShape(e) {
+		var p = toPage(e);
+		activeId = e.pointerId;
+		activeType = e.pointerType;
+		shaping = { kind: tool === GRAPH ? "graph" : shapeKind, from: p, to: p, moved: false };
+		liveDirty = true;
+		requestRender();
+	}
+
+	function moveShape(e) {
+		if (!shaping) return;
+		var p = toPage(e);
+		if (len2(p.x - shaping.from.x, p.y - shaping.from.y) * view.s > 3) shaping.moved = true;
+		shaping.to = p;
+		liveDirty = true;
+		requestRender();
+	}
+
+	function endShape(cancelled) {
+		var g = shaping;
+		shaping = null;
+		activeId = null;
+		activeType = null;
+		liveDirty = true;
+		if (!g || cancelled) {
+			requestRender(true);
+			return;
+		}
+		var ends = shapeEnds(g);
+		if (g.kind === "graph") {
+			addGraph(g.moved ? ends : null);
+			return;
+		}
+		// A tap with nothing dragged leaves no mark.
+		if (!g.moved) {
+			requestRender(true);
+			return;
+		}
+		var size = SIZES[SHAPE][sizeChoice[SHAPE]];
+		var color = shapeColor();
+		addActions(
+			shapeRuns(g.kind, ends.from, ends.to).map(function (run) {
+				return inkStroke(run, size, color);
+			})
+		);
+	}
+
+	// ---------- Reading a sum ----------
+	//
+	// "x^2 - 3x" and the like, read into a little tree of operations and turned into a
+	// function of x. Nothing is handed to the browser to run: anything that isn't
+	// arithmetic, a name this knows, or a bracket is refused, so a sum out of a notes
+	// code someone sent you can't do anything but arithmetic.
+
+	var MATH_VALUES = {
+		pi: Math.PI,
+		"π": Math.PI,
+		tau: Math.PI * 2,
+		"τ": Math.PI * 2,
+		e: Math.E,
+		phi: (1 + Math.sqrt(5)) / 2,
+	};
+
+	// Each takes one number, unless it's in MATH_FUNCS2.
+	var MATH_FUNCS = {
+		sin: Math.sin,
+		cos: Math.cos,
+		tan: Math.tan,
+		asin: Math.asin,
+		acos: Math.acos,
+		atan: Math.atan,
+		sinh: Math.sinh,
+		cosh: Math.cosh,
+		tanh: Math.tanh,
+		sec: function (x) {
+			return 1 / Math.cos(x);
+		},
+		csc: function (x) {
+			return 1 / Math.sin(x);
+		},
+		cot: function (x) {
+			return 1 / Math.tan(x);
+		},
+		exp: Math.exp,
+		ln: Math.log,
+		log: function (x) {
+			return Math.log(x) / Math.LN10;
+		},
+		log2: function (x) {
+			return Math.log(x) / Math.LN2;
+		},
+		log10: function (x) {
+			return Math.log(x) / Math.LN10;
+		},
+		sqrt: Math.sqrt,
+		cbrt: function (x) {
+			return x < 0 ? -Math.pow(-x, 1 / 3) : Math.pow(x, 1 / 3);
+		},
+		abs: Math.abs,
+		floor: Math.floor,
+		ceil: Math.ceil,
+		round: Math.round,
+		sign: function (x) {
+			return x > 0 ? 1 : x < 0 ? -1 : 0;
+		},
+	};
+	var MATH_FUNCS2 = {
+		min: Math.min,
+		max: Math.max,
+		mod: function (a, b) {
+			return b ? a - Math.floor(a / b) * b : NaN;
+		},
+		atan2: Math.atan2,
+		pow: Math.pow,
+		logbase: function (x, b) {
+			return Math.log(x) / Math.log(b);
+		},
+	};
+
+	// Reads the text and gives back a function of x, or throws with something a person
+	// can act on.
+	function compileMath(text) {
+		var src = String(text == null ? "" : text);
+		// "y =" on the front is how people write it, and is just noise here.
+		src = src.replace(/^\s*(?:y|f\s*\(\s*x\s*\))\s*=/i, "");
+		// The sorts of characters a keyboard offers in place of the plain ones.
+		src = src
+			.replace(/[−–—]/g, "-")
+			.replace(/[×⋅∙]/g, "*")
+			.replace(/[÷]/g, "/")
+			.replace(/√/g, "sqrt ")
+			// Runs of space become one. They can't all be taken out, or "sin x" would
+			// read as the name of something called sinx.
+			.replace(/\s+/g, " ")
+			.trim();
+		if (!src) throw new Error("There's no sum there");
+		var at = 0;
+		// How many |...| the reader is inside, so a closing bar isn't taken for the
+		// start of another one.
+		var bars = 0;
+
+		// A space is never part of anything, so looking at what comes next steps over it.
+		function peek() {
+			while (src.charAt(at) === " ") at++;
+			return src.charAt(at);
+		}
+		// The character right here, space or not. A name and a number are read with this
+		// rather than the above, or "sin x" would read as sinx and "1 2" as twelve.
+		function cur() {
+			return src.charAt(at);
+		}
+		function isDigit(c) {
+			return c >= "0" && c <= "9";
+		}
+		// Letters, and the few Greek ones that stand for numbers.
+		function isLetter(c) {
+			return (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || c === "π" || c === "τ";
+		}
+
+		function readName() {
+			var start = at;
+			while (at < src.length && (isLetter(cur()) || isDigit(cur()))) at++;
+			return src.slice(start, at);
+		}
+
+		// A number, a name, a bracket, or |something| for how big it is.
+		function primary() {
+			var c = peek();
+			if (c === "(") {
+				at++;
+				var inner = expr();
+				if (peek() !== ")") throw new Error("A bracket was left open");
+				at++;
+				return inner;
+			}
+			if (c === "|") {
+				at++;
+				bars++;
+				var v = expr();
+				if (peek() !== "|") throw new Error("A | was left open");
+				at++;
+				bars--;
+				return function (x) {
+					return Math.abs(v(x));
+				};
+			}
+			if (isDigit(c) || (c === "." && isDigit(src.charAt(at + 1)))) {
+				var start = at;
+				while (isDigit(cur())) at++;
+				if (cur() === ".") {
+					at++;
+					while (isDigit(cur())) at++;
+				}
+				if (cur() === "e" || cur() === "E") {
+					var save = at;
+					at++;
+					if (cur() === "+" || cur() === "-") at++;
+					if (isDigit(cur())) {
+						while (isDigit(cur())) at++;
+					} else {
+						// "2e" is two times e, not a number with no exponent.
+						at = save;
+					}
+				}
+				var n = parseFloat(src.slice(start, at));
+				if (!isFinite(n)) throw new Error("That number can't be read");
+				return function () {
+					return n;
+				};
+			}
+			if (isLetter(c)) {
+				var name = readName();
+				var lower = name.toLowerCase();
+				if (lower === "x") {
+					return function (x) {
+						return x;
+					};
+				}
+				var one = MATH_FUNCS[lower];
+				var two = MATH_FUNCS2[lower];
+				if (one || two) {
+					if (peek() !== "(") {
+						// sin x, as it's written on paper.
+						var bare = unary();
+						if (!one) throw new Error(name + " needs two numbers, as in " + lower + "(a, b)");
+						return function (x) {
+							return one(bare(x));
+						};
+					}
+					at++;
+					var args = [expr()];
+					while (peek() === ",") {
+						at++;
+						args.push(expr());
+					}
+					if (peek() !== ")") throw new Error("A bracket was left open after " + name);
+					at++;
+					if (two && args.length === 2) {
+						return function (x) {
+							return two(args[0](x), args[1](x));
+						};
+					}
+					if (lower === "log" && args.length === 2) {
+						return function (x) {
+							return MATH_FUNCS2.logbase(args[0](x), args[1](x));
+						};
+					}
+					if (!one || args.length !== 1) throw new Error(name + " was given " + args.length + " numbers");
+					return function (x) {
+						return one(args[0](x));
+					};
+				}
+				if (Object.prototype.hasOwnProperty.call(MATH_VALUES, lower)) {
+					var k = MATH_VALUES[lower];
+					return function () {
+						return k;
+					};
+				}
+				throw new Error("I don't know what " + name + " is");
+			}
+			if (!c) throw new Error("The sum stops short");
+			throw new Error("I can't read " + c + " in there");
+		}
+
+		// A minus sign in front, then powers. x^-2 works; -x^2 is -(x^2), as written.
+		function unary() {
+			if (peek() === "-") {
+				at++;
+				var inner = unary();
+				return function (x) {
+					return -inner(x);
+				};
+			}
+			if (peek() === "+") {
+				at++;
+				return unary();
+			}
+			return power();
+		}
+
+		function power() {
+			var base = primary();
+			if (peek() === "^" || (peek() === "*" && src.charAt(at + 1) === "*")) {
+				at += peek() === "^" ? 1 : 2;
+				// Right to left: 2^3^2 is 2^(3^2).
+				var exp = unary();
+				return function (x) {
+					return Math.pow(base(x), exp(x));
+				};
+			}
+			return base;
+		}
+
+		// Is something that follows the start of another thing to multiply by? That's how
+		// 2x, 3(x+1) and 2sin(x) are read.
+		function startsValue() {
+			var c = peek();
+			// A bar only starts something when there isn't one open already: in |x| the
+			// second bar closes the first rather than opening another.
+			if (c === "|") return bars === 0;
+			return isDigit(c) || isLetter(c) || c === "(" || c === ".";
+		}
+
+		function term() {
+			var left = unary();
+			for (;;) {
+				var c = peek();
+				if (c === "*" && src.charAt(at + 1) !== "*") {
+					at++;
+					left = times(left, unary());
+				} else if (c === "/") {
+					at++;
+					left = over(left, unary());
+				} else if (c === "%") {
+					at++;
+					left = (function (a, b) {
+						return function (x) {
+							return a(x) % b(x);
+						};
+					})(left, unary());
+				} else if (startsValue()) {
+					left = times(left, unary());
+				} else {
+					return left;
+				}
+			}
+		}
+		function times(a, b) {
+			return function (x) {
+				return a(x) * b(x);
+			};
+		}
+		function over(a, b) {
+			return function (x) {
+				return a(x) / b(x);
+			};
+		}
+
+		function expr() {
+			var left = term();
+			for (;;) {
+				var c = peek();
+				if (c === "+") {
+					at++;
+					left = (function (a, b) {
+						return function (x) {
+							return a(x) + b(x);
+						};
+					})(left, term());
+				} else if (c === "-") {
+					at++;
+					left = (function (a, b) {
+						return function (x) {
+							return a(x) - b(x);
+						};
+					})(left, term());
+				} else {
+					return left;
+				}
+			}
+		}
+
+		var fn = expr();
+		if (at < src.length) throw new Error("I can't read " + src.slice(at) + " on the end");
+		// Try it out: a sum that throws rather than giving a number is no use.
+		var test = fn(1);
+		if (typeof test !== "number") throw new Error("That doesn't work out to a number");
+		return fn;
+	}
+
+	// ---------- Axes and graphs ----------
+	//
+	// A set of axes is one thing on the page, like a pasted picture: a middle, a size and
+	// a turn, so the lasso moves, resizes and turns it. It holds the window of numbers it
+	// shows and the sums drawn on it, and it draws itself from those every time, so a
+	// curve is smooth however far you zoom in and a notes code carries the whole graph in
+	// a few dozen characters.
+
+	// A step that lands on 1, 2 or 5 times a power of ten, so the numbers along the axis
+	// read nicely.
+	function niceStep(span, want) {
+		if (!(span > 0)) return 1;
+		var rough = span / Math.max(1, want);
+		var pow = Math.pow(10, Math.floor(Math.log(rough) / Math.LN10));
+		var n = rough / pow;
+		return (n < 1.5 ? 1 : n < 3 ? 2 : n < 7 ? 5 : 10) * pow;
+	}
+
+	// The number to write by a tick, with no trailing noise from the arithmetic.
+	function tickLabel(v, step) {
+		var places = clamp(Math.ceil(-Math.log(step) / Math.LN10 + 0.2), 0, 6);
+		var s = v.toFixed(places);
+		if (s.indexOf(".") >= 0) s = s.replace(/0+$/, "").replace(/\.$/, "");
+		if (s === "-0") s = "0";
+		return s;
+	}
+
+	// Everything needed to draw one: where the window sits inside the frame.
+	function graphFrame(a) {
+		var xs = a.w / (a.x1 - a.x0);
+		var ys = a.h / (a.y1 - a.y0);
+		return {
+			xs: xs,
+			ys: ys,
+			left: -a.w / 2,
+			top: -a.h / 2,
+			px: function (x) {
+				return -a.w / 2 + (x - a.x0) * xs;
+			},
+			py: function (y) {
+				return a.h / 2 - (y - a.y0) * ys;
+			},
+		};
+	}
+
+	function drawGraph(ctx, a, zoom) {
+		var f = graphFrame(a);
+		var colors = ctx.__colors || palette;
+		var axisColor = colors[a.color] || colors.ink;
+		var font = clamp(Math.min(a.w, a.h) / 26, 5, 24);
+		// Ticks about this far apart on screen, so a graph you've zoomed into or shrunk
+		// doesn't end up with numbers on top of each other.
+		var stepX = niceStep(a.x1 - a.x0, clamp((a.w * zoom) / 72, 2, 14));
+		var stepY = niceStep(a.y1 - a.y0, clamp((a.h * zoom) / 56, 2, 14));
+		// How far a tick reaches each side of the axis. Measured against the thickness of
+		// the line rather than the size of the frame, so they stay small nicks on the
+		// axis - as on a ruler - instead of growing into crosshairs on a big graph.
+		var tick = clamp(a.size * 0.8, 0.6, 2.5);
+
+		ctx.save();
+		ctx.globalCompositeOperation = "source-over";
+		ctx.globalAlpha = 1;
+		ctx.translate(a.cx, a.cy);
+		ctx.rotate(a.rot);
+		// Nothing drawn here escapes the frame, so a steep curve stops at the edge.
+		ctx.beginPath();
+		ctx.rect(-a.w / 2, -a.h / 2, a.w, a.h);
+		ctx.save();
+		ctx.clip();
+
+		var i;
+		var v;
+		// The squares behind, if they're wanted.
+		if (a.grid) {
+			ctx.strokeStyle = axisColor;
+			ctx.globalAlpha = 0.16;
+			ctx.lineWidth = a.size * 0.5;
+			ctx.beginPath();
+			for (i = Math.ceil(a.x0 / stepX); i * stepX <= a.x1; i++) {
+				v = f.px(i * stepX);
+				ctx.moveTo(v, -a.h / 2);
+				ctx.lineTo(v, a.h / 2);
+			}
+			for (i = Math.ceil(a.y0 / stepY); i * stepY <= a.y1; i++) {
+				v = f.py(i * stepY);
+				ctx.moveTo(-a.w / 2, v);
+				ctx.lineTo(a.w / 2, v);
+			}
+			ctx.stroke();
+			ctx.globalAlpha = 1;
+		}
+
+		// The two axes, kept inside the frame when the origin is off the edge.
+		var zeroX = clamp(f.px(0), -a.w / 2, a.w / 2);
+		var zeroY = clamp(f.py(0), -a.h / 2, a.h / 2);
+		ctx.strokeStyle = axisColor;
+		ctx.fillStyle = axisColor;
+		ctx.lineWidth = a.size;
+		ctx.beginPath();
+		ctx.moveTo(-a.w / 2, zeroY);
+		ctx.lineTo(a.w / 2, zeroY);
+		ctx.moveTo(zeroX, -a.h / 2);
+		ctx.lineTo(zeroX, a.h / 2);
+		ctx.stroke();
+
+		// Ticks, and a number under or beside each.
+		ctx.lineWidth = a.size * 0.8;
+		ctx.beginPath();
+		for (i = Math.ceil(a.x0 / stepX); i * stepX <= a.x1; i++) {
+			if (i === 0) continue;
+			v = f.px(i * stepX);
+			ctx.moveTo(v, zeroY - tick);
+			ctx.lineTo(v, zeroY + tick);
+		}
+		for (i = Math.ceil(a.y0 / stepY); i * stepY <= a.y1; i++) {
+			if (i === 0) continue;
+			v = f.py(i * stepY);
+			ctx.moveTo(zeroX - tick, v);
+			ctx.lineTo(zeroX + tick, v);
+		}
+		ctx.stroke();
+
+		// The numbers, when they're wanted. Bare axes with ticks on them are what most
+		// working out needs; numbers are for a graph meant to be read off.
+		if (a.labels && font * zoom > 5) {
+			ctx.font = font + "px ui-sans-serif, -apple-system, Helvetica, Arial, sans-serif";
+			ctx.textAlign = "center";
+			ctx.textBaseline = "top";
+			for (i = Math.ceil(a.x0 / stepX); i * stepX <= a.x1; i++) {
+				if (i === 0) continue;
+				v = f.px(i * stepX);
+				// Numbers go under the axis, or above it when it's at the bottom.
+				var below = zeroY + tick + font * 0.25;
+				if (below + font > a.h / 2) below = zeroY - tick - font * 1.25;
+				ctx.fillText(tickLabel(i * stepX, stepX), v, below);
+			}
+			ctx.textAlign = "right";
+			ctx.textBaseline = "middle";
+			for (i = Math.ceil(a.y0 / stepY); i * stepY <= a.y1; i++) {
+				if (i === 0) continue;
+				v = f.py(i * stepY);
+				var leftOf = zeroX - tick - font * 0.3;
+				ctx.textAlign = leftOf - font * 2 < -a.w / 2 ? "left" : "right";
+				if (ctx.textAlign === "left") leftOf = zeroX + tick + font * 0.3;
+				ctx.fillText(tickLabel(i * stepY, stepY), leftOf, v);
+			}
+			// The origin, named once.
+			if (f.px(0) > -a.w / 2 + font && f.py(0) < a.h / 2 - font) {
+				ctx.textAlign = "right";
+				ctx.textBaseline = "top";
+				ctx.fillText("0", zeroX - tick - font * 0.3, zeroY + tick + font * 0.25);
+			}
+		}
+
+		// The curves.
+		(a.funcs || []).forEach(function (fun) {
+			var fn = graphFn(fun);
+			if (!fn) return;
+			ctx.strokeStyle = colors[fun.color] || axisColor;
+			ctx.lineWidth = a.size * 1.3;
+			// One step for every pixel across the frame, so it stays smooth at any zoom.
+			var steps = Math.round(clamp(a.w * zoom, 48, 4000));
+			var span = a.x1 - a.x0;
+			var limit = a.h * 4;
+			var drawing = false;
+			var lastY = 0;
+			ctx.beginPath();
+			for (i = 0; i <= steps; i++) {
+				var x = a.x0 + (span * i) / steps;
+				var y = fn(x);
+				if (typeof y !== "number" || !isFinite(y)) {
+					drawing = false;
+					continue;
+				}
+				var sy = f.py(y);
+				// Keep the numbers sane, and break the line where it shoots off to
+				// nothing and comes back the other side, as tan(x) does.
+				if (sy > limit || sy < -limit) {
+					if (drawing) {
+						ctx.lineTo(f.px(x), clamp(sy, -limit, limit));
+						drawing = false;
+					}
+					lastY = sy;
+					continue;
+				}
+				if (drawing && Math.abs(sy - lastY) > a.h * 1.5) drawing = false;
+				if (drawing) ctx.lineTo(f.px(x), sy);
+				else {
+					ctx.moveTo(f.px(x), sy);
+					drawing = true;
+				}
+				lastY = sy;
+			}
+			ctx.stroke();
+		});
+
+		ctx.restore();
+		ctx.restore();
+	}
+
+	// The compiled sum, kept on the graph so it isn't read again for every frame. A sum
+	// that won't read is left out rather than stopping the rest of the graph.
+	function graphFn(fun) {
+		if (fun.fn === undefined) {
+			try {
+				fun.fn = compileMath(fun.expr);
+			} catch (e) {
+				fun.fn = null;
+			}
+		}
+		return fun.fn;
+	}
+
+	// What the next graph will show, until it's changed in the dialog.
+	var graphPlan = {
+		x0: -10,
+		x1: 10,
+		y0: -10,
+		y1: 10,
+		// Until a y range is typed in, it's worked out from the shape of the frame so a
+		// step up is as long as a step across and a circle comes out round.
+		ySet: false,
+		// Bare axes by default: the squares behind and the numbers are both there to be
+		// turned on when a graph is meant to be read off rather than worked on.
+		grid: false,
+		labels: false,
+		funcs: [],
+	};
+	// Curves are coloured in this order, so a second function doesn't land on top of the
+	// first in the same colour.
+	var GRAPH_COLORS = ["blue", "red", "green", "purple", "orange", "ink"];
+
+	// Puts a set of axes on the page. ends: the corners dragged out, or null to drop one
+	// of a comfortable size in the middle of the view.
+	function addGraph(ends) {
+		var w;
+		var h;
+		var cx;
+		var cy;
+		if (ends) {
+			w = Math.abs(ends.to.x - ends.from.x);
+			h = Math.abs(ends.to.y - ends.from.y);
+			cx = (ends.from.x + ends.to.x) / 2;
+			cy = (ends.from.y + ends.to.y) / 2;
+		} else {
+			// Two thirds of the screen, the short way, and square.
+			var side = (Math.min(width, height) * 0.66) / view.s;
+			w = h = side;
+			cx = (width / 2 - view.x) / view.s;
+			cy = (height / 2 - view.y) / view.s;
+		}
+		// Too small to read anything on, so give it a usable size instead.
+		if (w * view.s < 60 || h * view.s < 60) {
+			w = Math.max(w, 160 / view.s);
+			h = Math.max(h, 160 / view.s);
+		}
+		var y0 = graphPlan.y0;
+		var y1 = graphPlan.y1;
+		if (!graphPlan.ySet) {
+			// Same scale both ways.
+			var half = (((graphPlan.x1 - graphPlan.x0) / 2) * h) / w;
+			var mid = (graphPlan.y0 + graphPlan.y1) / 2;
+			y0 = mid - half;
+			y1 = mid + half;
+		}
+		var a = {
+			tool: "graph",
+			cx: cx,
+			cy: cy,
+			w: w,
+			h: h,
+			rot: 0,
+			x0: graphPlan.x0,
+			x1: graphPlan.x1,
+			y0: y0,
+			y1: y1,
+			grid: graphPlan.grid,
+			labels: graphPlan.labels,
+			color: shapeColor(),
+			size: SIZES.graph[sizeChoice.graph] / view.s,
+			funcs: graphPlan.funcs.map(function (f) {
+				return { expr: f.expr, color: f.color };
+			}),
+		};
+		a.box = frameBox(a);
+		// The lasso comes out holding it, so it can be placed straight away.
+		selectTool(LASSO);
+		addActions([a]);
+		makeSelection([a]);
+		return a;
+	}
+
+	// ---------- The graph dialog ----------
+
+	var graphDialog = document.getElementById("graph-dialog");
+	var graphText = document.getElementById("graph-text");
+	var graphError = document.getElementById("graph-error");
+	var graphGridBox = document.getElementById("graph-grid");
+	var graphLabelBox = document.getElementById("graph-labels");
+	var graphFields = {
+		x0: document.getElementById("graph-x0"),
+		x1: document.getElementById("graph-x1"),
+		y0: document.getElementById("graph-y0"),
+		y1: document.getElementById("graph-y1"),
+	};
+	// The graph being changed, or null when the next one is being set up.
+	var graphEditing = null;
+
+	function showGraphDialog(target) {
+		graphEditing = target || null;
+		var from = target || graphPlan;
+		graphText.value = (target ? target.funcs : graphPlan.funcs)
+			.map(function (f) {
+				return f.expr;
+			})
+			.join("\n");
+		graphFields.x0.value = String(round4(from.x0));
+		graphFields.x1.value = String(round4(from.x1));
+		graphFields.y0.value = String(round4(from.y0));
+		graphFields.y1.value = String(round4(from.y1));
+		graphGridBox.checked = !!from.grid;
+		graphLabelBox.checked = !!from.labels;
+		graphError.textContent = "";
+		document.getElementById("graph-title").textContent = target ? "This graph" : "Axes and graphs";
+		document.getElementById("graph-apply").textContent = target ? "Apply" : "Draw it";
+		if (graphDialog.showModal) graphDialog.showModal();
+		else graphDialog.setAttribute("open", "");
+		graphText.focus();
+	}
+
+	function closeGraphDialog() {
+		if (graphDialog.close) graphDialog.close();
+		else graphDialog.removeAttribute("open");
+		graphEditing = null;
+	}
+
+	// Enough places for anything anyone types, without the arithmetic's own noise.
+	function round4(v) {
+		return Math.round(v * 10000) / 10000;
+	}
+
+	// Reads the dialog. Throws with something a person can act on.
+	function readGraphDialog() {
+		var want = {};
+		["x0", "x1", "y0", "y1"].forEach(function (k) {
+			var v = parseFloat(graphFields[k].value);
+			if (!isFinite(v)) throw new Error("The " + k.charAt(0) + " range needs two numbers");
+			want[k] = v;
+		});
+		if (want.x1 - want.x0 <= 0) throw new Error("x has to run from a smaller number to a bigger one");
+		if (want.y1 - want.y0 <= 0) throw new Error("y has to run from a smaller number to a bigger one");
+		var lines = graphText.value.split("\n");
+		var funcs = [];
+		var used = 0;
+		for (var i = 0; i < lines.length; i++) {
+			var line = lines[i].trim();
+			if (!line) continue;
+			if (line.length > 200) throw new Error("That sum is too long");
+			// Read it now so a mistake is caught while the dialog is still open.
+			compileMath(line);
+			funcs.push({ expr: line, color: GRAPH_COLORS[used % GRAPH_COLORS.length] });
+			used++;
+		}
+		want.grid = !!graphGridBox.checked;
+		want.labels = !!graphLabelBox.checked;
+		want.funcs = funcs;
+		return want;
+	}
+
+	document.getElementById("graph-cancel").addEventListener("click", closeGraphDialog);
+	document.getElementById("graph-apply").addEventListener("click", function () {
+		var want;
+		try {
+			want = readGraphDialog();
+		} catch (e) {
+			graphError.textContent = e.message;
+			return;
+		}
+		var target = graphEditing;
+		graphPlan.x0 = want.x0;
+		graphPlan.x1 = want.x1;
+		graphPlan.y0 = want.y0;
+		graphPlan.y1 = want.y1;
+		graphPlan.grid = want.grid;
+		graphPlan.labels = want.labels;
+		graphPlan.funcs = want.funcs;
+		// A y range typed in is used as typed; left alone, it follows the frame's shape.
+		if (!target) graphPlan.ySet = true;
+		closeGraphDialog();
+		if (!target) {
+			addGraph(null);
+			return;
+		}
+		// Changing one that's already on the page is a step like any other.
+		var before = {
+			x0: target.x0,
+			x1: target.x1,
+			y0: target.y0,
+			y1: target.y1,
+			grid: target.grid,
+			labels: target.labels,
+			funcs: target.funcs,
+		};
+		var after = {
+			x0: want.x0,
+			x1: want.x1,
+			y0: want.y0,
+			y1: want.y1,
+			grid: want.grid,
+			labels: want.labels,
+			funcs: want.funcs,
+		};
+		function settle() {
+			rerenderBox(target.box);
+			// While it's still held by the lasso, what floats above the page is a picture
+			// taken of it, so that has to be taken again or the change wouldn't show
+			// until it was put down.
+			if (sel && sel.list.indexOf(target) >= 0) {
+				measureSelection();
+				bakeSelectionCanvas();
+				layoutSelection();
+			}
+			requestRender(true);
+		}
+		pushOp({
+			redo: function () {
+				restore(target, after);
+				settle();
+			},
+			undo: function () {
+				restore(target, before);
+				settle();
+			},
+		});
+	});
+
 	// ---------- Copy as image ----------
 	//
 	// The strokes are vector shapes, so the picture is drawn fresh from them at a high
@@ -2781,6 +3890,13 @@
 		list.forEach(function (a) {
 			if (a.tool === "image") {
 				drawImageAction(ctx, a);
+				return;
+			}
+			if (a.tool === "graph") {
+				// The theme's own colours, so a graph copied as light really is light.
+				ctx.__colors = colors;
+				drawGraph(ctx, a, scale);
+				ctx.__colors = null;
 				return;
 			}
 			if (a.tool === "eraser") {
@@ -2917,7 +4033,9 @@
 	var codeDialog = document.getElementById("code-dialog");
 	var codeText = document.getElementById("code-text");
 	var CODE_PREFIX = "wb1";
-	var TOOLS = ["pen", "highlighter", "eraser"];
+	// The tool a stroke was drawn with, two bits of the code. The fourth slot is a set of
+	// axes, which isn't a stroke at all and is written out its own way below.
+	var TOOLS = ["pen", "highlighter", "eraser", "graph"];
 	var PEN_TYPES = ["fountain", "ball", "brush"];
 	var COLOR_KEYS = Object.keys(THEMES.light).filter(function (k) {
 		return k !== "paper";
@@ -2954,18 +4072,201 @@
 		return n % 2 ? -(n + 1) / 2 : n / 2;
 	};
 
-	// Drops points that sit on a straight line between their neighbours, to within a
-	// quarter of a screen pixel at the zoom the line was written at. Points where the
-	// pressure changes are kept so the line's width survives.
-	function keepPoints(s) {
-		var pts = s.points;
+	// ---------- Making the code short ----------
+	//
+	// The code gets pasted into messages and links, so its length is the whole point.
+	// Three things are done about it, and between them they cut it to about a quarter:
+	//
+	//  - Only what's still showing is written down. Anything rubbed out is left out,
+	//    and so is an eraser with nothing left to cut.
+	//  - The line is thinned to the fewest points that still trace it, and those are
+	//    rounded onto a grid. Both are measured against the line's own width: a hair's
+	//    breadth on a 30-wide highlighter can't be seen, on a fine pen it can.
+	//  - How hard and how fast the hand was going is kept to a few bits, and only at
+	//    every few points. It changes slowly and all it does is set the width.
+	//
+	// All three throw away a little of what was written. The amounts below are set so
+	// that what you see doesn't change: the line ends up about a quarter of a page unit
+	// from where it was on average, which is finer than the Pencil itself reports and
+	// finer than the wobble the clean-up already takes out.
+
+	// How far the rebuilt line may stray from what was written, in screen pixels at the
+	// zoom it was written at. Two thirds of the line's width: a fine pen keeps its
+	// shape, a 30-wide highlighter can wander a long way without anyone being able to
+	// tell. Turning this up is the one knob that trades how the writing looks for how
+	// short the code is; past here it costs much more than it saves.
+	function codeTol(size) {
+		return clamp(size / 1.5, 1, 4);
+	}
+
+	// Positions are rounded onto a grid of this many steps to the page unit. A step is
+	// half the line's width, never finer than half a screen pixel (there's nothing there
+	// to keep) nor coarser than three.
+	function codeGrid(size, scale) {
+		var step = clamp(size / 2, 0.5, 3);
+		return clamp((scale || 1) / step, 0.25, 64);
+	}
+
+	// How far apart the rebuilt points are laid down, in screen pixels. Just wider than
+	// the gap the clean-up drops samples at, so they all survive it.
+	function codeStep(scale) {
+		return 2 / (scale || 1);
+	}
+
+	// ---------- The line, as few points as will trace it ----------
+	//
+	// A line of dots has to be dense to look smooth; a curve through them doesn't. So
+	// the code keeps only the points a curve needs, and runs the curve through them
+	// again when the code is opened. Handwriting comes out at about a third of the
+	// points, and the curve is a closer match to a moving hand than the straight lines
+	// it replaces.
+
+	// A smooth curve through every one of these points, laid down in pieces about `step`
+	// apart. Catmull-Rom, which passes through the points it's given rather than near
+	// them, so a point kept is a point landed on. How hard and fast the hand was going
+	// is carried along from point to point the same way.
+	function throughPoints(pts, step) {
+		var n = pts.length;
+		if (n < 2) return pts.slice();
+		var out = [{ x: pts[0].x, y: pts[0].y, p: pts[0].p, v: pts[0].v }];
+		for (var i = 0; i < n - 1; i++) {
+			var p0 = pts[i - 1] || pts[i];
+			var p1 = pts[i];
+			var p2 = pts[i + 1];
+			var p3 = pts[i + 2] || p2;
+			var steps = clamp(Math.round(len2(p2.x - p1.x, p2.y - p1.y) / step), 1, 64);
+			for (var k = 1; k <= steps; k++) {
+				var t = k / steps;
+				var t2 = t * t;
+				var t3 = t2 * t;
+				out.push({
+					x: 0.5 * (2 * p1.x + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+					y: 0.5 * (2 * p1.y + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
+					p: p1.p + (p2.p - p1.p) * t,
+					v: p1.v + (p2.v - p1.v) * t,
+				});
+			}
+		}
+		return out;
+	}
+
+	// How far a point is from a line of points, starting the search at `from` and only
+	// looking a little way along. Both run the same way along the stroke, so the search
+	// can creep forward with it instead of starting over. Looking at only some of the
+	// line can overstate the distance, never understate it, so the worst that comes of
+	// it is a point kept that needn't have been.
+	function nearestOn(path, p, from) {
+		var best = Infinity;
+		var at = from;
+		var stop = Math.min(path.length - 1, from + 160);
+		for (var i = Math.max(1, from); i <= stop; i++) {
+			var d = distToSeg(p.x, p.y, path[i - 1], path[i]);
+			if (d < best) {
+				best = d;
+				at = i;
+			}
+		}
+		if (path.length === 1) best = len2(p.x - path[0].x, p.y - path[0].y);
+		return { d: best, at: Math.max(0, at - 40) };
+	}
+
+	// The points rounded onto the grid, which is how they'll be stored, so the straying
+	// measured below is the straying that will really happen.
+	function snapped(pts, keep, grid) {
+		var out = [];
+		for (var i = 0; i < keep.length; i++) {
+			var p = pts[keep[i]];
+			out.push({ x: Math.round(p.x * grid) / grid, y: Math.round(p.y * grid) / grid, p: p.p, v: p.v });
+		}
+		return out;
+	}
+
+	// Which of a stroke's samples to keep: start with its two ends, then keep adding
+	// wherever the rebuilt curve strays furthest, until none of it strays too far.
+	function curveIndices(pts, grid, tol, step) {
+		var n = pts.length;
+		var i;
+		if (n <= 2) {
+			var all = [];
+			for (i = 0; i < n; i++) all.push(i);
+			return all;
+		}
+		// Start from what straight lines would need, which is close and quick to find,
+		// then let the curve take points back out and put any strays back in.
+		var keep = straightIndices(pts, tol);
+		for (var round = 0; round < 40; round++) {
+			var curve = throughPoints(snapped(pts, keep, grid), step);
+			// The worst stray in each gap between two kept points, so a whole round's
+			// worth of points can be added at once instead of one at a time.
+			var worstAt = [];
+			var worstD = [];
+			for (i = 0; i + 1 < keep.length; i++) {
+				worstAt.push(-1);
+				worstD.push(tol);
+			}
+			var at = 0;
+			var gap = 0;
+			for (i = 1; i < n - 1; i++) {
+				while (gap + 2 < keep.length && i >= keep[gap + 1]) gap++;
+				var m = nearestOn(curve, pts[i], at);
+				at = m.at;
+				if (m.d > worstD[gap]) {
+					worstD[gap] = m.d;
+					worstAt[gap] = i;
+				}
+			}
+			var added = false;
+			for (i = 0; i < worstAt.length; i++) {
+				if (worstAt[i] >= 0) {
+					keep.push(worstAt[i]);
+					added = true;
+				}
+			}
+			if (!added) break;
+			keep.sort(function (a, b) {
+				return a - b;
+			});
+		}
+		return dropSpare(pts, keep, grid, tol, step);
+	}
+
+	// Adding a whole round's worth at once overshoots: a point that strayed before its
+	// neighbours arrived often isn't needed once they have. So each is tried without,
+	// and dropped if the curve holds up without it. Only the stretch around it is
+	// rebuilt, and only the samples between its two neighbours can have moved, so this
+	// costs little and takes about a quarter of the points back out.
+	function dropSpare(pts, keep, grid, tol, step) {
+		var g = 1;
+		while (g < keep.length - 1) {
+			// Two neighbours each way: that's as far as the curve's shape reaches.
+			var lo = Math.max(0, g - 2);
+			var hi = Math.min(keep.length - 1, g + 2);
+			var trial = keep.slice(lo, g).concat(keep.slice(g + 1, hi + 1));
+			var curve = throughPoints(snapped(pts, trial, grid), step);
+			var worst = 0;
+			for (var i = keep[g - 1] + 1; i < keep[g + 1]; i++) {
+				var d = nearestOn(curve, pts[i], 0).d;
+				if (d > worst) worst = d;
+				if (worst > tol) break;
+			}
+			if (worst <= tol) keep.splice(g, 1);
+			else g++;
+		}
+		return keep;
+	}
+
+	// Which points to keep if the line between them were straight. Working up to the
+	// answer one point at a time is slow on a full page, so this is used as the opening
+	// guess: it's quick, and it keeps more than the curve needs rather than fewer, which
+	// is the safe way round to be wrong.
+	function straightIndices(pts, tol) {
 		var n = pts.length;
 		var keep = new Array(n);
+		var i;
 		if (n <= 2) {
-			for (var k = 0; k < n; k++) keep[k] = true;
-			return keep;
+			for (i = 0; i < n; i++) keep[i] = true;
+			return indicesOf(keep);
 		}
-		var tol = 0.25 / (s.scale || 1);
 		keep[0] = keep[n - 1] = true;
 		var stack = [[0, n - 1]];
 		while (stack.length) {
@@ -2990,15 +4291,15 @@
 				stack.push([seg[0], far], [far, seg[1]]);
 			}
 		}
-		var lastP = pts[0].p;
-		for (i = 1; i < n; i++) {
-			if (keep[i]) lastP = pts[i].p;
-			else if (Math.abs(pts[i].p - lastP) > 0.06) {
-				keep[i] = true;
-				lastP = pts[i].p;
-			}
+		return indicesOf(keep);
+	}
+
+	function indicesOf(flags) {
+		var out = [];
+		for (var i = 0; i < flags.length; i++) {
+			if (flags[i]) out.push(i);
 		}
-		return keep;
+		return out;
 	}
 
 	// Pictures aren't written into the code: they'd make it enormous. Strokes only.
@@ -3008,34 +4309,110 @@
 		});
 	}
 
-	function packPage() {
+	// Only a pen whose width answers to the hand needs that written down. A ball pen is
+	// one even width, and the highlighter and eraser are even swipes.
+	function hasFeel(a) {
+		if (a.tool !== "pen") return false;
+		var pen = PENS[a.pen] || PENS.fountain;
+		return pen.press > 0 || pen.slow > 0;
+	}
+
+	// The points that carry how hard and fast the hand was going: every few, and always
+	// the last one. The rest are read off the line between them when the code is opened.
+	var FEEL_STEP = 4;
+	function feelAt(n) {
+		var ix = [];
+		for (var i = 0; i < n; i += FEEL_STEP) ix.push(i);
+		if (n && ix[ix.length - 1] !== n - 1) ix.push(n - 1);
+		return ix;
+	}
+
+	// The zoom a stroke was written at, to a quarter of a doubling. Both writing and
+	// reading work from the rounded value, so they agree on the grid.
+	function packScale(scale) {
+		return clamp(Math.round(Math.log2(scale || 1) * 4) + 16, 0, 31);
+	}
+	function unpackScale(code) {
+		return Math.pow(2, (code - 16) / 4);
+	}
+
+	// Everything on the page that's worth writing down: no pictures, nothing that's
+	// been rubbed out, and no eraser left with nothing to cut.
+	function codeActions() {
 		var list = pageActions().filter(function (a) {
 			return a.type !== "clear" && a.tool !== "image";
 		});
-		var out = [1];
+		var out = [];
+		var ink = [];
+		list.forEach(function (a) {
+			if (a.tool === "eraser") {
+				// Keep it only while something it cuts into is still being written out.
+				for (var i = 0; i < ink.length; i++) {
+					if (boxesOverlap(ink[i].box, a.box)) {
+						out.push(a);
+						return;
+					}
+				}
+				return;
+			}
+			if (!stillShowing(a)) return;
+			ink.push(a);
+			out.push(a);
+		});
+		return out;
+	}
+
+	function packPage() {
+		var list = codeActions();
+		var out = [3];
 		writeNum(out, list.length);
 		list.forEach(function (a) {
-			out.push(TOOLS.indexOf(a.tool) * 4 + Math.max(0, PEN_TYPES.indexOf(a.pen)));
-			out.push(Math.max(0, COLOR_KEYS.indexOf(a.color)));
-			writeNum(out, Math.round(a.size * 10));
-			writeNum(out, Math.round((a.scale || 1) * 100));
-			var keep = keepPoints(a);
-			var pts = a.points.filter(function (_, i) {
-				return keep[i];
+			if (a.tool === "graph") {
+				packGraph(out, a);
+				return;
+			}
+			var sizes = SIZES[a.tool] || [];
+			var sizeIx = sizes.indexOf(a.size);
+			if (sizeIx < 0) sizeIx = 3;
+			var feel = hasFeel(a);
+			var scaleCode = packScale(a.scale);
+			// Two bytes for everything that was a choice from a list: the tool, which pen,
+			// the colour, which of the three thicknesses, and the zoom it was written at.
+			// Each is masked to the bits it's given, so an unknown one can't spill into
+			// the next field and turn a stroke into something else.
+			out.push((Math.max(0, TOOLS.indexOf(a.tool)) & 3) | ((Math.max(0, PEN_TYPES.indexOf(a.pen)) & 3) << 2) | ((Math.max(0, COLOR_KEYS.indexOf(a.color)) & 15) << 4));
+			out.push(sizeIx | (feel ? 4 : 0) | (scaleCode << 3));
+			// A thickness that isn't one of the three is written out in full.
+			if (sizeIx === 3) writeNum(out, Math.round(a.size * 10));
+			var size = sizeIx === 3 ? Math.round(a.size * 10) / 10 : sizes[sizeIx];
+			var scale = unpackScale(scaleCode);
+			var grid = codeGrid(size, scale);
+			// Only the points the curve needs. Measured in screen pixels at the zoom it
+			// was written at, which is what the hand was working to.
+			var keep = curveIndices(a.points, grid, codeTol(size) / scale, codeStep(scale));
+			var pts = keep.map(function (i) {
+				return a.points[i];
 			});
 			writeNum(out, pts.length);
-			// Positions to a twentieth of a page unit, each as a step from the one before.
+			// Positions, each as a step from the one before.
 			var x = 0;
 			var y = 0;
 			pts.forEach(function (p) {
-				var qx = Math.round(p.x * 20);
-				var qy = Math.round(p.y * 20);
+				var qx = Math.round(p.x * grid);
+				var qy = Math.round(p.y * grid);
 				writeNum(out, qx - x);
 				writeNum(out, qy - y);
 				x = qx;
 				y = qy;
-				out.push(Math.round(clamp(p.p, 0, 1) * 255));
-				out.push(Math.round(clamp((p.v || 0) / 6, 0, 1) * 255));
+			});
+			if (!feel) return;
+			// Then the feel of it, all together on the end: pressure to a sixteenth,
+			// speed to an eighth off a curve so slow writing, where it shows, is finer.
+			feelAt(pts.length).forEach(function (i) {
+				var p = pts[i];
+				var press = Math.round(clamp(p.p, 0, 1) * 15);
+				var speed = Math.round(Math.sqrt(clamp((p.v || 0) / 6, 0, 1)) * 7);
+				out.push(press | (speed << 4));
 			});
 		});
 		return new Uint8Array(out);
@@ -3043,7 +4420,157 @@
 
 	function unpackPage(bytes) {
 		var r = new Reader(bytes);
-		if (r.byte() !== 1) throw new Error("This code is from a newer version");
+		var version = r.byte();
+		if (version === 3) return unpackV2(r, true);
+		if (version === 2) return unpackV2(r, false);
+		if (version !== 1) throw new Error("This code is from a newer version");
+		return unpackV1(r);
+	}
+
+	// Versions 2 and 3 are written the same way. The difference is what the points mean:
+	// in 2 they're the line itself, in 3 they're the points a curve runs through.
+	// A set of axes in a notes code: the frame, the window of numbers, and the sums as
+	// the text they were typed as. A whole graph comes to a few dozen characters.
+	function packGraph(out, a) {
+		out.push(3 | ((Math.max(0, COLOR_KEYS.indexOf(a.color)) & 15) << 4) | (a.grid ? 4 : 0) | (a.labels ? 8 : 0));
+		// Twentieths of a page unit for the frame, which is finer than anyone can place it.
+		[a.cx, a.cy, a.w, a.h].forEach(function (v) {
+			writeNum(out, Math.round(v * 20));
+		});
+		// A turn to a thousandth, and the line thickness to a tenth.
+		writeNum(out, Math.round(a.rot * 1000));
+		writeNum(out, Math.round(a.size * 10));
+		// The window, to a ten-thousandth: enough for anything typed into the dialog.
+		[a.x0, a.x1, a.y0, a.y1].forEach(function (v) {
+			writeNum(out, Math.round(v * 10000));
+		});
+		var funcs = (a.funcs || []).slice(0, 32);
+		out.push(funcs.length);
+		funcs.forEach(function (f) {
+			var text = String(f.expr || "").slice(0, 200);
+			out.push(Math.max(0, COLOR_KEYS.indexOf(f.color)) & 15);
+			// Sums are written in plain characters, bar the few Greek ones, which are
+			// spelled out so every byte here stands for one character.
+			var plain = text.replace(/π/g, "pi").replace(/τ/g, "tau");
+			var bytes = [];
+			for (var i = 0; i < plain.length && bytes.length < 200; i++) {
+				var c = plain.charCodeAt(i);
+				if (c >= 32 && c < 127) bytes.push(c);
+			}
+			out.push(bytes.length);
+			for (i = 0; i < bytes.length; i++) out.push(bytes[i]);
+		});
+	}
+
+	function unpackGraph(r, kind) {
+		var a = {
+			tool: "graph",
+			color: COLOR_KEYS[(kind >> 4) & 15] || "ink",
+			grid: !!(kind & 4),
+			labels: !!(kind & 8),
+			cx: r.num() / 20,
+			cy: r.num() / 20,
+			w: r.num() / 20,
+			h: r.num() / 20,
+			rot: r.num() / 1000,
+			size: r.num() / 10,
+			x0: r.num() / 10000,
+			x1: r.num() / 10000,
+			y0: r.num() / 10000,
+			y1: r.num() / 10000,
+			funcs: [],
+		};
+		var n = r.byte();
+		for (var i = 0; i < n; i++) {
+			var color = COLOR_KEYS[r.byte() & 15] || "ink";
+			var len = r.byte();
+			var text = "";
+			for (var j = 0; j < len; j++) text += String.fromCharCode(r.byte());
+			a.funcs.push({ expr: text, color: color });
+		}
+		if (!(a.w > 0) || !(a.h > 0) || !(a.x1 > a.x0) || !(a.y1 > a.y0) || !(a.size > 0)) {
+			throw new Error("The code is damaged");
+		}
+		a.box = frameBox(a);
+		return a;
+	}
+
+	function unpackV2(r, curve) {
+		var count = r.num();
+		var list = [];
+		for (var j = 0; j < count; j++) {
+			var kind = r.byte();
+			if ((kind & 3) === 3) {
+				list.push(unpackGraph(r, kind));
+				continue;
+			}
+			var rest = r.byte();
+			var tool = TOOLS[kind & 3];
+			var sizeIx = rest & 3;
+			var feel = !!(rest & 4);
+			var scale = unpackScale(rest >> 3);
+			var size = sizeIx === 3 ? r.num() / 10 : (SIZES[tool] || [])[sizeIx];
+			var s = {
+				tool: tool,
+				pen: PEN_TYPES[(kind >> 2) & 3] || "fountain",
+				color: COLOR_KEYS[(kind >> 4) & 15] || "ink",
+				size: size,
+				scale: scale,
+				points: [],
+			};
+			if (!s.tool || !(s.size > 0)) throw new Error("The code is damaged");
+			var grid = codeGrid(size, scale);
+			var n = r.num();
+			var kept = [];
+			var x = 0;
+			var y = 0;
+			for (var i = 0; i < n; i++) {
+				x += r.num();
+				y += r.num();
+				kept.push({ x: x / grid, y: y / grid, p: 0.5, v: 0 });
+			}
+			if (feel) {
+				// Read what was kept of how hard and fast the hand was going, then fill
+				// in the points between by running from one to the next.
+				var at = feelAt(n);
+				var press = [];
+				var speed = [];
+				for (i = 0; i < at.length; i++) {
+					var b = r.byte();
+					press.push((b & 15) / 15);
+					var q = ((b >> 4) & 7) / 7;
+					speed.push(q * q * 6);
+				}
+				for (i = 0; i + 1 < at.length; i++) {
+					var from = at[i];
+					var to = at[i + 1];
+					for (var k = from; k <= to; k++) {
+						var t = to === from ? 0 : (k - from) / (to - from);
+						kept[k].p = press[i] + (press[i + 1] - press[i]) * t;
+						kept[k].v = speed[i] + (speed[i + 1] - speed[i]) * t;
+					}
+				}
+				if (at.length === 1 && n) {
+					kept[0].p = press[0];
+					kept[0].v = speed[0];
+				}
+			}
+			// Version 3 keeps only the points a curve needs, so the curve is run through
+			// them again here. Version 2 wrote the line out point by point.
+			s.points = curve ? throughPoints(kept, codeStep(scale)) : kept;
+			// How far along the line each point sits: the pens use it to taper the ends.
+			var d = 0;
+			for (i = 0; i < s.points.length; i++) {
+				if (i) d += Math.hypot(s.points[i].x - s.points[i - 1].x, s.points[i].y - s.points[i - 1].y);
+				s.points[i].d = d;
+			}
+			if (n) list.push(s);
+		}
+		return list;
+	}
+
+	// Codes written before the format was shortened. Kept so old codes still open.
+	function unpackV1(r) {
 		var count = r.num();
 		var list = [];
 		for (var j = 0; j < count; j++) {
@@ -3099,19 +4626,105 @@
 		return bytes;
 	}
 
-	// "wb1z..." is compressed, "wb1r..." is not.
-	function makeCode() {
+	// ---------- Letters that carry more ----------
+	//
+	// The letters above carry six bits each: a-z, A-Z, 0-9 and two more. These carry
+	// fourteen, which leaves the code well under half as long. They're Chinese
+	// characters, picked because there are twenty thousand of them in one unbroken run,
+	// every one is a single character as far as a program is concerned, and none of them
+	// change under the tidying text goes through on its way between apps - no accents to
+	// combine, no upper and lower case, nothing that looks like a space.
+	//
+	// The catch is web addresses, where every one of them has to be spelled out in
+	// escapes and the saving is lost. So a notes link still uses the plain letters, and
+	// the reader takes either.
+	var DENSE_FIRST = 0x4e00;
+	var DENSE_SIZE = 16384;
+	var DENSE_BITS = 14;
+	var DENSE_PREFIX = "wb2";
+
+	function toDense(bytes) {
+		// How many bytes there are goes in first, so the few spare bits rounding off the
+		// last character can't be read as part of the page.
+		var head = [];
+		writeNum(head, bytes.length);
+		var out = "";
+		var acc = 0;
+		var bits = 0;
+		var i;
+		var all = head.concat(Array.prototype.slice.call(bytes));
+		for (i = 0; i < all.length; i++) {
+			acc = acc * 256 + all[i];
+			bits += 8;
+			while (bits >= DENSE_BITS) {
+				bits -= DENSE_BITS;
+				var pow = Math.pow(2, bits);
+				var v = Math.floor(acc / pow);
+				acc -= v * pow;
+				out += String.fromCharCode(DENSE_FIRST + v);
+			}
+		}
+		if (bits) out += String.fromCharCode(DENSE_FIRST + acc * Math.pow(2, DENSE_BITS - bits));
+		return out;
+	}
+
+	function fromDense(text) {
+		var bytes = [];
+		var acc = 0;
+		var bits = 0;
+		for (var i = 0; i < text.length; i++) {
+			var v = text.charCodeAt(i) - DENSE_FIRST;
+			if (!(v >= 0) || v >= DENSE_SIZE) throw new Error("The code is damaged");
+			acc = acc * DENSE_SIZE + v;
+			bits += DENSE_BITS;
+			while (bits >= 8) {
+				bits -= 8;
+				var pow = Math.pow(2, bits);
+				var b = Math.floor(acc / pow);
+				acc -= b * pow;
+				bytes.push(b);
+			}
+		}
+		var r = new Reader(new Uint8Array(bytes));
+		var n = r.num();
+		if (!(n >= 0) || r.i + n > bytes.length) throw new Error("The code is damaged");
+		return new Uint8Array(bytes.slice(r.i, r.i + n));
+	}
+
+	// Four ways to write the same page out: squeezed or not, in plain letters or the ones
+	// that carry more. Squeezing carries a header of its own, so for a line or two of
+	// writing it makes the code longer. All four are made and the shortest is handed
+	// over, along with the shortest that will survive being put in a web address.
+	function makeCodes() {
 		var raw = packPage();
+		function shortest(list) {
+			var best = list[0];
+			for (var i = 1; i < list.length; i++) {
+				if (list[i].length < best.length) best = list[i];
+			}
+			return best;
+		}
+		function pick(bytes, mode) {
+			return [CODE_PREFIX + mode + toLetters(bytes), DENSE_PREFIX + mode + toDense(bytes)];
+		}
+		var plain = pick(raw, "r");
 		if (window.CompressionStream) {
 			return squeeze(raw, CompressionStream, "deflate")
 				.then(function (z) {
-					return CODE_PREFIX + "z" + toLetters(z);
+					var packed = pick(z, "z");
+					return { code: shortest(plain.concat(packed)), link: shortest([plain[0], packed[0]]) };
 				})
 				.catch(function () {
-					return CODE_PREFIX + "r" + toLetters(raw);
+					return { code: shortest(plain), link: plain[0] };
 				});
 		}
-		return Promise.resolve(CODE_PREFIX + "r" + toLetters(raw));
+		return Promise.resolve({ code: shortest(plain), link: plain[0] });
+	}
+
+	function makeCode() {
+		return makeCodes().then(function (both) {
+			return both.code;
+		});
 	}
 
 	function readCode(text) {
@@ -3119,13 +4732,24 @@
 		text = String(text || "").replace(/\s+/g, "");
 		var hash = text.indexOf("#n=");
 		if (hash >= 0) text = text.slice(hash + 3);
-		if (text.slice(0, CODE_PREFIX.length) !== CODE_PREFIX) {
+		// A code in a web address arrives with its characters spelled out in escapes.
+		if (text.indexOf("%") >= 0) {
+			try {
+				text = decodeURIComponent(text);
+			} catch (e) {
+				// Leave it as it is; it'll be turned away below if it isn't a code.
+			}
+		}
+		var dense = text.slice(0, DENSE_PREFIX.length) === DENSE_PREFIX;
+		var head = dense ? DENSE_PREFIX : CODE_PREFIX;
+		if (!dense && text.slice(0, CODE_PREFIX.length) !== CODE_PREFIX) {
 			return Promise.reject(new Error("That isn't a notes code"));
 		}
-		var mode = text.charAt(CODE_PREFIX.length);
+		var mode = text.charAt(head.length);
 		var bytes;
 		try {
-			bytes = fromLetters(text.slice(CODE_PREFIX.length + 1));
+			var body = text.slice(head.length + 1);
+			bytes = dense ? fromDense(body) : fromLetters(body);
 		} catch (e) {
 			return Promise.reject(new Error("The code is damaged"));
 		}
@@ -3146,18 +4770,22 @@
 		if (!pageIsEmpty()) added.push({ type: "clear" });
 		var box = null;
 		list.forEach(function (s) {
-			var a = {
-				tool: s.tool,
-				pen: s.pen,
-				color: s.color,
-				size: s.size,
-				scale: s.scale,
-				points: s.points,
-				box: bounds(s.points, s.size * 1.5),
-				// No shape yet: each is built the first time a tile draws it.
-				shape: null,
-				detail: 0,
-			};
+			// A set of axes arrives whole; it isn't made of points.
+			var a =
+				s.tool === "graph"
+					? s
+					: {
+							tool: s.tool,
+							pen: s.pen,
+							color: s.color,
+							size: s.size,
+							scale: s.scale,
+							points: s.points,
+							box: bounds(s.points, s.size * 1.5),
+							// No shape yet: each is built the first time a tile draws it.
+							shape: null,
+							detail: 0,
+						};
 			added.push(a);
 			if (a.tool === "eraser") return;
 			var b = a.box;
@@ -3208,6 +4836,9 @@
 
 	// The dialog does both jobs: shows a code to copy, or takes one to open.
 	var codeMode = "save";
+	// The code shown is the shortest there is. A link needs the plain-letter one, which
+	// is longer but survives being put in a web address.
+	var linkCode = "";
 
 	function showDialog(mode) {
 		codeMode = mode;
@@ -3226,12 +4857,14 @@
 		else codeDialog.setAttribute("open", "");
 		if (mode === "save") {
 			codeText.placeholder = "Making the code…";
-			makeCode().then(function (code) {
-				codeText.value = code;
-				document.getElementById("code-error").textContent = code.length.toLocaleString() + " characters";
+			linkCode = "";
+			makeCodes().then(function (both) {
+				codeText.value = both.code;
+				linkCode = both.link;
+				document.getElementById("code-error").textContent = both.code.length.toLocaleString() + " characters";
 			});
 		} else {
-			codeText.placeholder = "wb1…";
+			codeText.placeholder = "wb2… or wb1…";
 			codeText.focus();
 		}
 	}
@@ -3284,7 +4917,7 @@
 		copyText(codeText.value, "Code copied");
 	});
 	document.getElementById("code-link").addEventListener("click", function () {
-		if (codeText.value) copyText(notesLink(codeText.value), "Link copied");
+		if (linkCode) copyText(notesLink(linkCode), "Link copied");
 	});
 	document.getElementById("code-cancel").addEventListener("click", closeDialog);
 	document.getElementById("code-open").addEventListener("click", function () {

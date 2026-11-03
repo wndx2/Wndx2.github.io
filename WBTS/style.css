@@ -356,8 +356,8 @@ body {
 	transform: translate(-50%, 0);
 }
 
-/* Notes code dialog */
-#code-dialog {
+/* The dialogs: a notes code, and what a set of axes shows */
+dialog {
 	width: min(480px, calc(100vw - 32px));
 	padding: 18px;
 	background: var(--bar);
@@ -368,19 +368,26 @@ body {
 	-webkit-user-select: text;
 	user-select: text;
 }
-#code-dialog::backdrop {
+dialog::backdrop {
 	background: rgba(0, 0, 0, 0.25);
 }
-#code-dialog h2 {
+dialog h2 {
 	margin: 0 0 4px;
 	font-size: 17px;
 	font-weight: 600;
 }
-#code-dialog p {
+dialog p {
 	margin: 0 0 12px;
 	opacity: 0.7;
 }
-#code-text {
+dialog code {
+	padding: 1px 4px;
+	border-radius: 5px;
+	background: var(--active);
+	font: 12px/1.4 ui-monospace, Menlo, monospace;
+}
+#code-text,
+#graph-text {
 	display: block;
 	width: 100%;
 	padding: 10px;
@@ -395,18 +402,50 @@ body {
 	-webkit-user-select: text;
 	user-select: text;
 }
-#code-error {
+#graph-text {
+	font-size: 14px;
+	word-break: normal;
+}
+/* The window of numbers a graph shows. */
+.fields {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 14px;
+	margin-top: 12px;
+	font-size: 13px;
+	opacity: 0.85;
+}
+.fields label {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.fields input[type="number"] {
+	width: 72px;
+	padding: 7px 8px;
+	border: 1px solid var(--bar-line);
+	border-radius: 8px;
+	background: var(--paper);
+	color: var(--icon);
+	font: 13px/1 ui-monospace, Menlo, monospace;
+}
+.fields .check {
+	gap: 8px;
+}
+#code-error,
+#graph-error {
 	min-height: 1.4em;
 	margin: 8px 0 0 !important;
 	font-size: 13px;
 }
-#code-dialog .actions {
+dialog .actions {
 	display: flex;
 	justify-content: flex-end;
 	gap: 8px;
 	margin-top: 8px;
 }
-#code-dialog .actions button {
+dialog .actions button {
 	padding: 9px 16px;
 	border: 1px solid var(--bar-line);
 	border-radius: 10px;
@@ -415,10 +454,28 @@ body {
 	font: 500 14px/1 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
 	cursor: pointer;
 }
-#code-dialog .actions .primary {
+dialog .actions .primary {
 	background: var(--icon);
 	color: var(--bar);
 	border-color: transparent;
+}
+/* The little drawing beside each shape in its menu. */
+.shape-icon {
+	display: flex;
+	width: 32px;
+	height: 24px;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+}
+.shape-icon svg {
+	width: 22px;
+	height: 22px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.8;
+	stroke-linecap: round;
+	stroke-linejoin: round;
 }
 #code-dialog[data-mode="save"] .open-only,
 #code-dialog[data-mode="open"] .save-only {

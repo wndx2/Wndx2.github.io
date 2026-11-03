@@ -54,6 +54,21 @@
 						<path d="M7.8 12.2l-.8 2.2a1.6 1.6 0 101.8 1.1" />
 					</svg>
 				</button>
+				<!-- Straight lines, arrows, circles and boxes. Tap again to choose which. -->
+				<button class="tool" data-tool="shape" aria-label="Lines and shapes" aria-pressed="false">
+					<svg viewBox="0 0 20 20">
+						<path d="M5 15.5L15 5" />
+						<circle cx="4.6" cy="15.9" r="1.5" />
+						<circle cx="15.4" cy="4.6" r="1.5" />
+					</svg>
+				</button>
+				<!-- Axes with ticks and numbers, and functions drawn on them. Tap again to set them. -->
+				<button class="tool" data-tool="graph" aria-label="Axes and graphs" aria-pressed="false">
+					<svg viewBox="0 0 20 20">
+						<path d="M4 3v13.5h13" />
+						<path d="M5.5 14.5c2.5 0 3.5-9 5.5-9s3 5 5 5" />
+					</svg>
+				</button>
 			</div>
 
 			<span class="divider" id="div-colours"></span>
@@ -127,6 +142,42 @@
 			<button data-pen="brush" role="menuitemradio" aria-checked="false"><canvas></canvas><span>Brush pen</span></button>
 		</div>
 
+		<!-- Opens when you tap the shapes button while shapes are already selected. -->
+		<div id="shape-menu" class="menu" role="menu" aria-label="Which shape" hidden>
+			<button data-shape="line" role="menuitemradio" aria-checked="true">
+				<span class="shape-icon"><svg viewBox="0 0 24 24"><path d="M3.5 20.5L20.5 3.5" /></svg></span><span>Straight line</span>
+			</button>
+			<button data-shape="arrow" role="menuitemradio" aria-checked="false">
+				<span class="shape-icon"><svg viewBox="0 0 24 24"><path d="M3.5 20.5L20.5 3.5" /><path d="M13.5 3.5h7v7" /></svg></span><span>Arrow</span>
+			</button>
+			<button data-shape="circle" role="menuitemradio" aria-checked="false">
+				<span class="shape-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /></svg></span><span>Circle</span>
+			</button>
+			<button data-shape="rect" role="menuitemradio" aria-checked="false">
+				<span class="shape-icon"><svg viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="1" /></svg></span><span>Box</span>
+			</button>
+		</div>
+
+		<!-- What a set of axes shows, and the functions drawn on it. -->
+		<dialog id="graph-dialog" aria-labelledby="graph-title">
+			<h2 id="graph-title">Axes and graphs</h2>
+			<p id="graph-note">One function to a line, as in <code>y = x^2</code> or <code>sin(x)/x</code>. Leave it empty for bare axes.</p>
+			<textarea id="graph-text" rows="4" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" placeholder="x^2 - 3"></textarea>
+			<div class="fields">
+				<label>x from <input id="graph-x0" type="number" step="any" inputmode="decimal" /></label>
+				<label>to <input id="graph-x1" type="number" step="any" inputmode="decimal" /></label>
+				<label>y from <input id="graph-y0" type="number" step="any" inputmode="decimal" /></label>
+				<label>to <input id="graph-y1" type="number" step="any" inputmode="decimal" /></label>
+				<label class="check"><input id="graph-grid" type="checkbox" /> Squares behind</label>
+				<label class="check"><input id="graph-labels" type="checkbox" /> Numbers</label>
+			</div>
+			<p id="graph-error" aria-live="polite"></p>
+			<div class="actions">
+				<button id="graph-cancel" type="button">Close</button>
+				<button id="graph-apply" class="primary" type="button">Draw it</button>
+			</div>
+		</dialog>
+
 		<!-- Copies the page as a picture, on a light or dark background, whatever the current theme. -->
 		<div id="copy-menu" class="menu" role="menu" aria-label="Copy as image" hidden>
 			<button data-copy="light" role="menuitem"><span class="chip light"><i></i></span><span>Copy as light</span></button>
@@ -154,6 +205,10 @@
 
 		<!-- Sits beside whatever the lasso has picked up. -->
 		<div id="sel-bar" role="toolbar" aria-label="Selection" hidden>
+			<!-- Only shows when what's held is a single set of axes. -->
+			<button data-sel="edit" id="sel-edit" aria-label="Change this graph" hidden>
+				<svg viewBox="0 0 20 20"><path d="M13.5 3.5l3 3L7 16H4v-3z" /><path d="M11.5 5.5l3 3" /></svg>
+			</button>
 			<button data-sel="flip-h" aria-label="Flip left to right">
 				<svg viewBox="0 0 20 20"><path d="M10 2.8v14.4" stroke-dasharray="2.2 2.2" /><path d="M7.6 6.4L4.2 10l3.4 3.6z" /><path d="M12.4 6.4L15.8 10l-3.4 3.6z" /></svg>
 			</button>
