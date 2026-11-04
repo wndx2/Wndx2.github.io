@@ -1,0 +1,15 @@
+SN Pro
+  Copyright 2024 The SN Pro Project Authors (https://github.com/supernotes/sn-pro)
+  Designer: Tobias Whetton, Supernotes
+  Licence: SIL Open Font License 1.1 - see OFL.txt
+  Served as latin / latin-ext variable woff2 subsets, weight axis 200-900.
+
+  This is the deck's typeface on every device. It is hosted here rather than
+  requested from the system so the design renders the same everywhere, and so
+  the page makes no third-party network request.
+
+Not here: SF Pro Rounded
+  Earlier drafts reached for SF Pro Rounded via the CSS `ui-rounded` keyword.
+  Apple's font licence restricts SF Pro to UI mock-ups for Apple-platform
+  software and forbids embedding it in a web page, so no SF file ships here
+  and the stylesheet no longer asks for it.

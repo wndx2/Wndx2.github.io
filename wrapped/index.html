@@ -1,0 +1,2221 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>NCEA Wrapped</title>
+		<link
+			rel="preload"
+			as="font"
+			type="font/woff2"
+			href="fonts/snpro-latin.woff2"
+			crossorigin
+		/>
+		<style>
+			/* ── the typeface ─────────────────────────────────────── */
+			/* SN Pro is the deck's font everywhere, served from fonts/ rather than
+   asked of the system, so it renders identically on every device instead
+   of only resolving on Apple hardware. One variable file per subset
+   covers the 200-900 axis, which spans every weight the deck uses.
+   SIL OFL 1.1 - see fonts/OFL.txt and NOTICE.txt.
+   latin-ext carries the te reo Maori macrons, which sit above U+00FF. */
+			@font-face {
+				font-family: "SN Pro";
+				font-style: normal;
+				font-weight: 200 900;
+				font-display: swap;
+				src: url("fonts/snpro-latin.woff2") format("woff2");
+				unicode-range:
+					U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+					U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+					U+FEFF, U+FFFD;
+			}
+
+			@font-face {
+				font-family: "SN Pro";
+				font-style: normal;
+				font-weight: 200 900;
+				font-display: swap;
+				src: url("fonts/snpro-latin-ext.woff2") format("woff2");
+				unicode-range:
+					U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308,
+					U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4,
+					U+2113, U+2C60-2C7F, U+A720-A7FF;
+			}
+
+			/* ── tokens ───────────────────────────────────────────── */
+			*,
+			*::before,
+			*::after {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+			}
+
+			:root {
+				/* grade colours, deepened to read as ink rather than UI-kit pastel */
+				--e: #e9bd3a; /* Excellence   — yellow */
+				--m: #5c94dd; /* Merit        — blue   */
+				--a: #4aa877; /* Achieved     — green  */
+				--n: #cf5048; /* Not Achieved — red    */
+
+				--ground: #0e0e11;
+				--ground-alt: #14141a;
+				--paper: #ece9e2;
+				--dim: #8b8781;
+				--rule: #2a2a31;
+
+				--field: #0a0a0d; /* input ground           */
+				--paper-hi: #ffffff; /* button hover           */
+				--progress: #9a9a9a; /* the scroll rule        */
+				--track: rgba(255, 255, 255, 0.06); /* empty part of a bar    */
+				--dim-on-light: rgba(14, 14, 17, 0.8); /* .8: at .62 the small   */
+				--rule-on-light: rgba(14, 14, 17, 0.22); /* print hit 3.4:1 on blue*/
+
+				/* SN Pro, served from fonts/, so the deck renders identically on every
+	   device. Only reached for if the woff2 fails to load. */
+				--sans: "SN Pro", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+				/* softened, but nowhere near a 99px pill */
+				--radius: 5px;
+
+				color-scheme: dark;
+			}
+
+			body {
+				background: var(--ground);
+				color: var(--paper);
+				font-family: var(--sans);
+			}
+			[hidden] {
+				display: none !important;
+			}
+			button {
+				font: inherit;
+				color: inherit;
+				cursor: pointer;
+			}
+
+			/* ── entry screen ─────────────────────────────────────── */
+			/* left-biased and top-weighted, not a centred full-bleed hero */
+			#entry {
+				min-height: 100dvh;
+				max-width: 40rem;
+				padding: 11vh 7vw 14vh;
+				display: flex;
+				flex-direction: column;
+				gap: 1.3rem;
+			}
+
+			#entry h1 {
+				font-size: clamp(2.4rem, 8.4vw, 4.2rem);
+				font-weight: 900;
+				line-height: 0.94;
+				letter-spacing: -0.03em;
+			}
+
+			#entry h1 span {
+				color: var(--e);
+			}
+
+			.lede {
+				font-size: 1.02rem;
+				line-height: 1.5;
+				max-width: 36ch;
+				color: var(--dim);
+			}
+
+			.field {
+				display: flex;
+				flex-direction: column;
+				gap: 0.4rem;
+			}
+			.field > label {
+				font-size: 0.78rem;
+				font-weight: 700;
+				color: var(--dim);
+			}
+
+			input,
+			textarea {
+				font: inherit;
+				color: var(--paper);
+				background: var(--field);
+				border: 1px solid var(--rule);
+				border-radius: var(--radius);
+				padding: 0.6rem 0.7rem;
+			}
+
+			input:focus,
+			textarea:focus {
+				outline: 2px solid var(--paper);
+				outline-offset: -1px;
+			}
+
+			textarea {
+				min-height: 13rem;
+				resize: vertical;
+				line-height: 1.5;
+				font-size: 0.8rem;
+				font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+				white-space: pre;
+				overflow-wrap: normal;
+				overflow-x: auto;
+			}
+
+			.steps {
+				font-size: 0.9rem;
+				line-height: 1.75;
+				color: var(--dim);
+				padding-left: 1.3rem;
+			}
+			.steps strong {
+				color: var(--paper);
+				font-weight: 700;
+			}
+
+			.go {
+				align-self: flex-start;
+				background: var(--paper);
+				color: var(--ground);
+				border: 0;
+				border-radius: var(--radius);
+				font-weight: 700;
+				font-size: 0.95rem;
+				padding: 0.65rem 1.3rem;
+			}
+
+			.go:hover {
+				background: var(--paper-hi);
+			}
+
+			.link {
+				background: none;
+				border: 0;
+				padding: 0;
+				color: var(--dim);
+				text-decoration: underline;
+				text-underline-offset: 3px;
+				font-size: 0.85rem;
+				align-self: flex-start;
+			}
+
+			.link:hover {
+				color: var(--paper);
+			}
+
+			#error {
+				color: var(--n);
+				font-size: 0.88rem;
+				line-height: 1.5;
+			}
+
+			/* ── the deck ─────────────────────────────────────────── */
+			#deck {
+				height: 100dvh;
+				overflow-y: scroll;
+				scroll-snap-type: y mandatory;
+			}
+
+			.card {
+				--bg: var(--ground);
+				--fg: var(--paper);
+
+				height: 100dvh;
+				scroll-snap-align: start;
+				display: flex;
+				flex-direction: column;
+				justify-content: flex-end; /* content sits low by default */
+				padding: 10vh 7vw 11vh;
+				position: relative;
+				background: var(--bg);
+				color: var(--fg);
+				overflow: hidden;
+			}
+
+			/* a quiet alternation between the two dark grounds */
+			.card:nth-of-type(odd) {
+				--bg: var(--ground-alt);
+			}
+
+			/* Full-bleed colour, but earned rather than rotated: a card is only
+			   coloured when it is ABOUT that thing, and it wears that grade's own
+			   colour. Cards carrying bars, tags or long lists stay dark so the
+			   grade colours inside them keep their meaning.
+
+			   These are classes on the cards, not nth-of-type positions, so
+			   reordering or inserting a card cannot shift the colours along. */
+			.card.tone-paper {
+				--bg: var(--paper);
+				--fg: var(--ground);
+			}
+			.card.tone-e {
+				--bg: var(--e);
+				--fg: var(--ground);
+			}
+			.card.tone-m {
+				--bg: var(--m);
+				--fg: var(--ground);
+			}
+			.card.tone-a {
+				--bg: var(--a);
+				--fg: var(--ground);
+			}
+
+			/* on a light ground the secondary ink has to darken too */
+			.card.tone-paper,
+			.card.tone-e,
+			.card.tone-m,
+			.card.tone-a {
+				--dim: var(--dim-on-light);
+				--rule: var(--rule-on-light);
+			}
+
+			/* the stamp cannot wear yellow on a yellow card */
+			.card.tone-e .stamp,
+			.card.tone-m .stamp,
+			.card.tone-a .stamp,
+			.card.tone-paper .stamp {
+				color: inherit;
+			}
+
+			/* Varied vertical anchoring, so the deck reads as composed pages
+			   rather than one centred template repeated over and over. */
+			.card.anchor-top {
+				justify-content: flex-start;
+			}
+
+			.card.anchor-mid {
+				justify-content: center;
+			}
+
+			/* A quiet document label with a rule under it — not an uppercase,
+   letterspaced eyebrow on every single section. */
+			.kicker {
+				font-size: 0.74rem;
+				font-weight: 700;
+				color: var(--dim);
+				align-self: flex-start;
+				min-width: 13rem;
+				padding-bottom: 0.7rem;
+				margin-bottom: 1.6rem;
+				border-bottom: 1px solid var(--rule);
+			}
+
+			.huge {
+				font-size: clamp(4.6rem, 21vw, 13rem);
+				font-weight: 900;
+				line-height: 0.85;
+				letter-spacing: -0.045em;
+				font-variant-numeric: tabular-nums;
+			}
+
+			.big {
+				font-size: clamp(1.8rem, 5.6vw, 3.2rem);
+				font-weight: 900;
+				line-height: 1.04;
+				letter-spacing: -0.025em;
+			}
+
+			.say {
+				font-size: clamp(1.05rem, 2.4vw, 1.45rem);
+				font-weight: 600;
+				line-height: 1.38;
+				max-width: 32ch;
+				margin-top: 1.1rem;
+			}
+
+			.foot {
+				font-size: 0.83rem;
+				color: var(--dim);
+				line-height: 1.55;
+				max-width: 44ch;
+				margin-top: 0.85rem;
+			}
+
+			.cue {
+				position: absolute;
+				left: 7vw;
+				bottom: 4.5vh;
+				font-size: 0.78rem;
+				color: var(--dim);
+			}
+
+			/* ── how far through the deck you are ─────────────────── */
+			#progress {
+				position: fixed;
+				top: 0;
+				left: 0;
+				right: 0;
+				height: 2px;
+				z-index: 10;
+				background: var(--progress);
+				transform: scaleX(0);
+				transform-origin: 0 50%;
+			}
+
+			/* No JS behind this: the bar is tied to the deck's scroll position. Where
+   scroll timelines are unsupported it stays at scaleX(0), i.e. invisible. */
+			@supports (animation-timeline: scroll()) {
+				#deck {
+					scroll-timeline-name: --deck;
+					scroll-timeline-axis: y;
+				}
+
+				#progress {
+					animation: progress 1s linear both;
+					animation-timeline: --deck;
+				}
+			}
+
+			@keyframes progress {
+				to {
+					transform: scaleX(1);
+				}
+			}
+
+			/* ── a value with a unit after it ─────────────────────── */
+			.outof {
+				display: flex;
+				align-items: baseline;
+				gap: 0.5rem;
+			}
+			.outof .unitlabel {
+				font-size: clamp(1.1rem, 3.4vw, 2rem);
+				font-weight: 700;
+				color: var(--dim);
+			}
+
+			/* ── grade bars ───────────────────────────────────────── */
+			.bars {
+				display: grid;
+				gap: 0.4rem;
+				max-width: 34rem;
+				margin-top: 0.3rem;
+			}
+
+			.bar {
+				display: grid;
+				grid-template-columns: 8rem 1fr auto;
+				align-items: center;
+				gap: 1rem;
+			}
+			.bar .name {
+				font-size: 0.8rem;
+				font-weight: 700;
+				color: var(--dim);
+			}
+			.bar .track {
+				height: 1.6rem;
+				border-radius: 3px;
+				background: var(--track);
+				overflow: hidden;
+			}
+			.bar .fill {
+				height: 100%;
+				width: calc(var(--p) * 100%);
+				background: var(--c);
+			}
+			.bar .num {
+				font-size: 0.92rem;
+				font-weight: 700;
+				font-variant-numeric: tabular-nums;
+				min-width: 4ch;
+				text-align: right;
+			}
+
+			/* ── ruled lists ──────────────────────────────────────── */
+			.list {
+				display: grid;
+				max-width: 34rem;
+				max-height: 58vh;
+				overflow-y: auto;
+				align-content: start;
+			}
+
+			.line {
+				display: flex;
+				justify-content: space-between;
+				align-items: baseline;
+				gap: 1rem;
+				padding: 0.5rem 0;
+				border-bottom: 1px solid var(--rule);
+				font-size: 0.95rem;
+			}
+
+			.line .code {
+				font-weight: 700;
+			}
+			.line .sub {
+				color: var(--dim);
+				font-weight: 400;
+				font-size: 0.85em;
+			}
+			.line b {
+				font-weight: 700;
+				font-variant-numeric: tabular-nums;
+				white-space: nowrap;
+			}
+
+			.podium {
+				display: grid;
+				max-width: 34rem;
+			}
+
+			.step {
+				display: grid;
+				grid-template-columns: 1.7rem 1fr auto;
+				align-items: baseline;
+				gap: 1rem;
+				padding: 0.65rem 0;
+				border-bottom: 1px solid var(--rule);
+			}
+
+			.step .rank {
+				font-size: 0.78rem;
+				color: var(--dim);
+				font-variant-numeric: tabular-nums;
+			}
+			.step .who {
+				font-size: 1.02rem;
+				font-weight: 700;
+			}
+			.step .who .sub {
+				display: block;
+				font-weight: 400;
+				font-size: 0.76rem;
+				color: var(--dim);
+			}
+			.step .what {
+				font-size: 0.78rem;
+				color: var(--dim);
+				font-variant-numeric: tabular-nums;
+				white-space: nowrap;
+			}
+			.step:first-child .who {
+				font-size: 1.4rem;
+			}
+
+			/* ── tags, coloured by the grade they name ────────────── */
+			.tag {
+				display: inline-block;
+				border-radius: 3px;
+				padding: 0.15em 0.5em;
+				font-size: 0.72rem;
+				font-weight: 700;
+				border: 1px solid currentColor;
+				white-space: nowrap;
+			}
+			.tag-e {
+				color: var(--e);
+			}
+			.tag-m {
+				color: var(--m);
+			}
+			.tag.none {
+				border: 0;
+				color: var(--dim);
+			}
+
+			/* ── course-by-course breakdown ───────────────────────── */
+			.breakdown {
+				display: grid;
+				gap: 1rem 2.6rem;
+				grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+				align-content: start;
+				max-height: 58vh;
+				overflow-y: auto;
+			}
+
+			.unit {
+				display: grid;
+				gap: 0.4rem;
+				padding-bottom: 0.65rem;
+				border-bottom: 1px solid var(--rule);
+			}
+			.unit .top {
+				display: flex;
+				justify-content: space-between;
+				align-items: baseline;
+				gap: 0.6rem;
+			}
+			.unit .ucode {
+				font-weight: 700;
+				font-size: 0.88rem;
+			}
+			.unit .ucr {
+				font-size: 0.8rem;
+				font-weight: 700;
+				color: var(--dim);
+				font-variant-numeric: tabular-nums;
+				white-space: nowrap;
+			}
+			.unit .uname {
+				font-size: 0.7rem;
+				color: var(--dim);
+				line-height: 1.35;
+			}
+
+			.stack {
+				display: flex;
+				height: 0.34rem;
+				border-radius: 2px;
+				overflow: hidden;
+			}
+			.stack span {
+				background: var(--c);
+			}
+
+			/* ── certificate stamp ────────────────────────────────── */
+			.stamp {
+				align-self: flex-start;
+				border: 2px solid currentColor;
+				border-radius: var(--radius);
+				padding: 0.4rem 1rem;
+				font-size: clamp(1.4rem, 4.6vw, 2.6rem);
+				font-weight: 700;
+				letter-spacing: -0.01em;
+			}
+
+			.stamp-e {
+				color: var(--e);
+			}
+			.stamp-m {
+				color: var(--m);
+			}
+			.stamp-none {
+				color: var(--dim);
+			}
+
+			/* ── exams still to come ──────────────────────────────── */
+			.exams {
+				display: grid;
+				max-width: 42rem;
+				max-height: 52vh;
+				overflow-y: auto;
+				align-content: start;
+			}
+
+			.exam {
+				display: flex;
+				gap: 1rem;
+				align-items: baseline;
+				padding: 0.4rem 0;
+				border-bottom: 1px solid var(--rule);
+				font-size: 0.86rem;
+			}
+			.exam b {
+				font-weight: 700;
+				white-space: nowrap;
+				min-width: 7.5rem;
+			}
+			.exam .etitle {
+				color: var(--dim);
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+
+			/* ── closing slide ────────────────────────────────────── */
+			.quoted {
+				display: grid;
+				gap: 1.5rem;
+			}
+
+			.quote {
+				font-size: clamp(1.7rem, 5.8vw, 3.4rem);
+				font-weight: 900;
+				line-height: 1.08;
+				letter-spacing: -0.028em;
+				max-width: 24ch;
+				text-wrap: balance;
+			}
+
+			/* emphasis by colour, not italics */
+			.quote em {
+				font-style: normal;
+				color: var(--e);
+			}
+
+			.attrib {
+				font-size: 0.9rem;
+				font-weight: 700;
+				color: var(--dim);
+			}
+
+			.actions {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 0.6rem;
+				margin-top: 1.6rem;
+			}
+
+			.again {
+				align-self: flex-start;
+				background: none;
+				border: 1px solid var(--rule);
+				border-radius: var(--radius);
+				font-size: 0.85rem;
+				font-weight: 700;
+				padding: 0.5rem 1rem;
+				color: var(--dim);
+			}
+
+			.again:hover {
+				border-color: var(--paper);
+				color: var(--paper);
+			}
+
+			.again:disabled {
+				opacity: 0.5;
+				cursor: default;
+			}
+
+			/* ── one entrance per card, on the headline figure only ─ */
+			@supports (animation-timeline: view()) {
+				@media (prefers-reduced-motion: no-preference) {
+					.card > .huge,
+					.card > .outof,
+					.bars .fill {
+						animation: rise 0.7s both;
+						animation-timeline: view();
+						animation-range: entry 12% cover 38%;
+					}
+
+					.bars .fill {
+						animation-name: grow;
+					}
+				}
+			}
+
+			@keyframes rise {
+				from {
+					opacity: 0;
+					transform: translateY(0.9rem);
+				}
+				to {
+					opacity: 1;
+					transform: none;
+				}
+			}
+
+			@keyframes grow {
+				from {
+					width: 0;
+				}
+				to {
+					width: calc(var(--p) * 100%);
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<!-- ── 1. paste your results ───────────────────────────── -->
+		<main id="entry">
+			<h1>Your <span id="y-entry"></span><br /><span>NCEA Wrapped</span></h1>
+
+			<ol class="steps">
+				<li>Sign in to <strong>KAMAR</strong>.</li>
+				<li>Open <strong>Results</strong> &rarr; <strong>This year</strong>.</li>
+				<li>Copy the entire table.</li>
+				<li>Paste it below, exactly as copied.</li>
+			</ol>
+
+			<div class="field">
+				<label for="name"
+					>Name
+					<span style="text-transform: none; letter-spacing: 0">(optional)</span></label
+				>
+				<input id="name" type="text" placeholder="Your name" autocomplete="name" />
+			</div>
+
+			<div class="field">
+				<label for="results">Your stored results</label>
+				<textarea
+					id="results"
+					spellcheck="false"
+					placeholder="Stored Results - Detailed
+NCEA Level: 3    10 credits earned
+L3CALC
+A Mathematics and Statistics 3.3 - Apply trigonometric methods...    4 credits    Excellence"
+				></textarea>
+			</div>
+
+			<p id="error" hidden></p>
+			<button class="go" id="build" type="button">Show my year</button>
+			<button class="link" id="demo" type="button">or fill it with an example</button>
+		</main>
+
+		<!-- ── 2. the deck ─────────────────────────────────────── -->
+		<main id="deck" hidden>
+			<div id="progress" aria-hidden="true"></div>
+
+			<section class="card">
+				<p class="kicker">NCEA Wrapped</p>
+				<h2 class="huge" id="y-card"></h2>
+				<p class="say" id="c-hello"></p>
+				<p class="foot" id="c-hello-foot"></p>
+				<p class="cue" id="c-cue">Plays by itself. Scroll any time to take over.</p>
+			</section>
+
+			<section class="card tone-paper">
+				<p class="kicker">Credits earned</p>
+				<p class="huge" id="c-credits">0</p>
+				<p class="say" id="c-credits-say"></p>
+			</section>
+
+			<section class="card anchor-top">
+				<p class="kicker">How they broke down</p>
+				<p class="big">Every credit, by grade</p>
+				<div class="bars" id="c-bars"></div>
+				<p class="foot" id="c-bars-foot"></p>
+			</section>
+
+			<section class="card tone-e">
+				<p class="kicker">Excellence rate</p>
+				<p class="huge" id="c-exc">0%</p>
+				<p class="say" id="c-exc-say"></p>
+				<p class="foot" id="c-exc-foot"></p>
+			</section>
+
+			<section class="card tone-m">
+				<p class="kicker">Your GPA</p>
+				<p class="outof">
+					<span class="huge" id="c-gpa">0.00</span>
+					<span class="unitlabel">/ 4.00</span>
+				</p>
+				<p class="say" id="c-gpa-say"></p>
+				<p class="foot">
+					Each credit scores 4 for Excellence, 3 for Merit, 2 for Achieved and 0 for Not
+					Achieved.
+				</p>
+			</section>
+
+			<section class="card tone-a">
+				<p class="kicker">Pass rate</p>
+				<p class="huge" id="c-rate">0%</p>
+				<p class="say" id="c-rate-say"></p>
+				<p class="foot" id="c-rate-foot"></p>
+			</section>
+
+			<section class="card anchor-top">
+				<p class="kicker">Subjects you took</p>
+				<p class="big" id="c-subject-count"></p>
+				<div class="list" id="c-subjects"></div>
+			</section>
+
+			<section class="card anchor-top">
+				<p class="kicker">Your strongest subjects</p>
+				<div class="podium" id="c-strongest"></div>
+				<p class="foot">Ranked by GPA across the credits you have results for.</p>
+			</section>
+
+			<section class="card anchor-top">
+				<p class="kicker">Course by course</p>
+				<p class="big" id="c-breakdown-head"></p>
+				<div class="breakdown" id="c-breakdown"></div>
+			</section>
+
+			<section class="card anchor-top">
+				<p class="kicker">Course endorsement</p>
+				<p class="big" id="c-course-head"></p>
+				<div class="list" id="c-course"></div>
+				<p class="foot" id="c-course-foot"></p>
+			</section>
+
+			<section class="card tone-e anchor-mid">
+				<p class="kicker">Certificate endorsement</p>
+				<p class="stamp" id="c-cert"></p>
+				<p class="say" id="c-cert-say"></p>
+				<p class="foot" id="c-cert-foot"></p>
+			</section>
+
+			<section class="card anchor-top">
+				<p class="kicker">Still to come</p>
+				<p class="big" id="c-exams-count"></p>
+				<div class="exams" id="c-exams"></div>
+			</section>
+
+			<section class="card anchor-mid">
+				<p class="kicker">And finally</p>
+				<figure class="quoted">
+					<blockquote class="quote">
+						&ldquo;The <em>main thing</em>, is that the <em>main thing</em> remains the
+						<em>main thing</em>.&rdquo;
+					</blockquote>
+					<figcaption class="attrib">&mdash; Mr Smith, 2026</figcaption>
+				</figure>
+				<div class="actions">
+					<button class="again" id="export" type="button">Save as image</button>
+					<button class="again" id="restart" type="button">Start again</button>
+				</div>
+			</section>
+		</main>
+
+		<script>
+			// ─────────────────────────────────────────────────────────
+			//  Reading the NZQA "Stored Results - Detailed" table
+			// ─────────────────────────────────────────────────────────
+			// The copied table has three kinds of line:
+			//
+			//   NCEA Level: 2 <tab> 92 credits earned      a level heading
+			//   L2PHYS                                     a course code on its own
+			//   A Physics 2.5 - Demonstrate ... <tab> 3 credits <tab> Excellence
+			//
+			// Standard lines start with "A " (achievement standard) or "U " (unit
+			// standard). A standard still awaiting an external result has an empty
+			// credits column and "External" as its status. Long titles sometimes wrap
+			// onto a second line, which carries the credits and grade instead.
+
+			// ── the numbers the rules turn on, each named once ──────
+			// The year this deck is for. The stored-results table carries no
+			// year, and the clock is no help: results land in January, so a
+			// student reading 2026's results in Jan 2027 would be shown 2027.
+			const YEAR = "2026";
+
+			const COURSE_ENDORSEMENT = 14; // credits at the grade or better, per course
+			const CERTIFICATE_ENDORSEMENT = 50; // credits at the grade or better, overall
+			const NEAR_MISS_WITHIN = 7; // how many credits short still counts as close
+			const TOP_COURSES = 5; // how many make the strongest list
+			const STRONG_GPA = 3.5; // above this the GPA card reads differently
+
+			const GRADES = ["E", "M", "A", "N"];
+
+			// The 20-credit literacy and numeracy co-requisite is sat as these three
+			// unit standards. A student who met it by an older pathway will not have
+			// them, so the card is hidden rather than reported as a failure.
+			const CO_REQUISITE = {
+				"US 32403": "Reading",
+				"US 32405": "Writing",
+				"US 32406": "Numeracy",
+			};
+			const GRADE_NAME = { E: "Excellence", M: "Merit", A: "Achieved", N: "Not Achieved" };
+			// An invented 4-point scale: NCEA has no official GPA. Stated on
+			// the GPA card so the reader knows what they are looking at.
+			const GRADE_POINTS = { E: 4, M: 3, A: 2, N: 0 };
+
+			// ── every result value the table can print ──────────────
+			// Declared in full so nothing is quietly assumed. A value outside
+			// these lists is handed back to the reader, never guessed at.
+			const GRADE_WORDS = {
+				excellence: "E", e: "E",
+				merit: "M", m: "M",
+				achieved: "A", a: "A",
+				"not achieved": "N", "n/a": "N", na: "N", n: "N",
+				fail: "N", failed: "N",
+			};
+
+			// Entered, result not back yet. The word also gives the type.
+			const PENDING_WORDS = { external: "external", internal: "internal" };
+
+			// Sat, but no result is coming. Excluded from every figure, and
+			// deliberately NOT counted among the results still to come.
+			const VOID_WORDS = [
+				"not assessed", "no result", "withdrawn", "absent",
+				"standard not attained", "sna", "credit declined",
+				"ungraded", "not completed", "exempt",
+			];
+
+			// "3 credits", "3 credit", or just "3" — the word is not required.
+			const CREDITS = /^(\d+)(?:\s*credits?)?$/i;
+
+			// Columns are tab separated when copied, but collapse to runs of spaces
+			// when pasted through something that strips tabs, so accept both.
+			function splitFields(line) {
+				return line
+					.split(/\t+| {2,}/)
+					.map(function (f) {
+						return f.trim();
+					})
+					.filter(Boolean);
+			}
+
+			// The result column. Returns null for anything unrecognised, which
+			// the caller reports rather than treating as "no result yet".
+			function readStatus(field) {
+				const word = field.toLowerCase();
+				if (GRADE_WORDS[word]) return { grade: GRADE_WORDS[word] };
+				if (PENDING_WORDS[word])
+					return { pending: true, kind: PENDING_WORDS[word] };
+				if (VOID_WORDS.indexOf(word) >= 0) return { voided: true, label: field };
+				if (word.indexOf("scholarship") >= 0) return { scholarship: field };
+				return null;
+			}
+
+			// "Mathematics and Statistics 3.15 - Apply systems..." splits into the
+			// subject, the standard number, and the title.
+			function splitDescriptor(descriptor, type) {
+				const dash = descriptor.indexOf(" - ");
+				const head = dash >= 0 ? descriptor.slice(0, dash).trim() : descriptor.trim();
+				const title = dash >= 0 ? descriptor.slice(dash + 3).trim() : "";
+
+				// unit standards have no subject, just "US 9681"
+				const unit = head.match(/^US\s+(\d+)$/i);
+				if (type === "U" || unit) {
+					return {
+						subject: "Unit standards",
+						number: unit ? "US " + unit[1] : head,
+						title: title,
+					};
+				}
+
+				// strip the trailing standard number off the subject name
+				const numbered = head.match(/^(.*?)\s+(\d+\.\d+)$/);
+				if (numbered)
+					return { subject: numbered[1].trim(), number: numbered[2], title: title };
+
+				return { subject: head, number: "", title: title };
+			}
+
+			function parseStoredResults(text) {
+				const standards = [];
+				const scholarships = [];
+				const declared = {};
+				const skipped = [];
+				const unknown = []; // result values the parser did not recognise
+
+				let level = "";
+				let course = "";
+				let seenLevel = false; // course codes only appear under a level
+				let previous = null; // the last standard, in case its title wraps
+
+				text.split("\n").forEach(function (raw, index) {
+					if (raw.trim() === "") return;
+
+					const fields = splitFields(raw);
+					if (fields.length === 0) return;
+					const first = fields[0];
+
+					// "NCEA Level: 2 <tab> 92 credits earned"
+					const heading = first.match(/^NCEA Level:\s*(\d)/i);
+					if (heading) {
+						level = heading[1];
+						seenLevel = true;
+						course = "";
+						previous = null;
+						const earned = (fields[1] || "").match(/(\d+)\s*credits?\s*earned/i);
+						declared[level] = earned ? parseInt(earned[1], 10) : null;
+						return;
+					}
+
+					// "A Physics 2.5 - ..." or "U US 9681 - ..."
+					const standard = first.match(/^([AU])\s+(.+)$/);
+					if (standard) {
+						const type = standard[1];
+						const parts = splitDescriptor(standard[2], type);
+						const entry = {
+							level: level,
+							// not "Other": that is a real course code in these exports,
+							// and a standard with no course must not merge into it
+							course: course || "(no course)",
+							type: type,
+							subject: parts.subject,
+							number: parts.number,
+							title: parts.title,
+							credits: null,
+							grade: "",
+							pending: false,
+							kind: "",
+							sawColumns: false,
+						};
+
+						readRest(entry, fields.slice(1), unknown);
+
+						// a Scholarship row is not a credit-bearing standard
+						if (/^scholarship$/i.test(parts.subject)) {
+							scholarships.push({
+								subject: parts.title || parts.subject,
+								result: entry.grade
+									? GRADE_NAME[entry.grade]
+									: entry.scholarshipResult || "Entered",
+								level: level,
+							});
+							previous = null;
+							return;
+						}
+
+						standards.push(entry);
+						previous = entry;
+						return;
+					}
+
+					// A line with columns that is not a standard continues the title of
+					// the standard above it, and carries that standard's result.
+					if (fields.length >= 2 && previous && !previous.sawColumns) {
+						previous.title = (previous.title + " " + first).trim();
+						readRest(previous, fields.slice(1), unknown);
+						previous = null;
+						return;
+					}
+
+					// A bare line is the course code the following standards sit under —
+					// but only once a level heading has been seen. Before that it is the
+					// table's own title, whose wording differs between NZQA and KAMAR,
+					// so it is recognised by position rather than by matching the text.
+					if (fields.length === 1) {
+						if (seenLevel) course = first;
+						previous = null;
+						return;
+					}
+
+					skipped.push(index + 1);
+				});
+
+				standards.forEach(settle);
+				return {
+					standards: standards,
+					scholarships: scholarships,
+					declared: declared,
+					skipped: skipped,
+					unknown: [...new Set(unknown)],
+					seenLevel: seenLevel,
+				};
+			}
+
+			// Fill in credits / grade / pending from whatever columns are present.
+			// Pending externals have an empty credits column, so the status can land
+			// in any position — look at each field rather than trusting the order.
+			function readRest(entry, rest, unknown) {
+				// Remember whether this line carried any result columns at all. A
+				// standard whose title wrapped has none, and its result arrives on the
+				// next line, so it must not be settled as pending yet.
+				if (rest.length > 0) entry.sawColumns = true;
+
+				let sawStatus = false;
+
+				for (const field of rest) {
+					const credits = field.match(CREDITS);
+					if (credits && entry.credits === null) {
+						entry.credits = parseInt(credits[1], 10);
+						continue;
+					}
+
+					const status = readStatus(field);
+					if (!status) continue;
+					sawStatus = true;
+
+					if (status.grade && !entry.grade) entry.grade = status.grade;
+					if (status.pending) {
+						entry.pending = true;
+						entry.kind = status.kind;
+					}
+					if (status.voided) {
+						entry.voided = true;
+						entry.voidLabel = status.label;
+					}
+					if (status.scholarship) entry.scholarshipResult = status.scholarship;
+				}
+
+				// This row had columns but none of them was a result we know. Rather
+				// than assume it is awaiting one, hand the value back to the reader.
+				if (rest.length > 0 && !sawStatus) {
+					const tail = rest[rest.length - 1];
+					if (!CREDITS.test(tail)) unknown.push(tail);
+				}
+			}
+
+			// Once a standard can take no more lines: no grade means the result is
+			// simply not in yet, and an empty credits column counts as zero.
+			function settle(entry) {
+				if (!entry.grade && !entry.voided) entry.pending = true;
+				if (entry.credits === null) entry.credits = 0;
+			}
+
+			// ─────────────────────────────────────────────────────────
+			//  Working out the numbers
+			// ─────────────────────────────────────────────────────────
+			// A subject IS the course code the student was enrolled in (L2PHYS, L1SPAN),
+			// which is also what NZQA endorses. The subject name on each standard
+			// descriptor is kept only as a readable hint beside the code, because one
+			// course can draw on several of them (L2ACCM carries Accounting and
+			// Agribusiness) and one subject can be split across courses (10MATHS, L2MAEL).
+			function summarise(standards) {
+				const byGrade = { E: 0, M: 0, A: 0, N: 0 };
+				const courses = new Map();
+
+				const pending = []; // standards whose result is not in yet
+				const voided = []; // sat, but no result is coming
+				let sat = 0; // credits on standards that have a result
+				let earned = 0; // credits at Achieved or better
+				let graded = 0; // standards with a result
+				let passed = 0; // standards at Achieved or better
+				let points = 0; // grade points, for the GPA
+
+				for (const s of standards) {
+					// Every standard puts its course on the list, whatever its result.
+					// A course sat entirely as externals has nothing back yet, and
+					// must still appear — in November that is most of a Year 13.
+					const group = register(courses, s.course, s);
+
+					if (s.voided) {
+						voided.push(s);
+						group.voided += 1;
+						continue;
+					}
+
+					if (!s.grade) {
+						pending.push(s);
+						group.waiting += 1;
+						continue;
+					}
+
+					byGrade[s.grade] += s.credits;
+					sat += s.credits;
+					graded += 1;
+					points += GRADE_POINTS[s.grade] * s.credits;
+					if (s.grade !== "N") {
+						earned += s.credits;
+						passed += 1;
+					}
+
+					addGrade(group, s);
+				}
+
+				const courseList = [...courses.values()];
+				for (const course of courseList) {
+					course.average = course.sat > 0 ? course.points / course.sat : 0;
+					course.endorsement = courseEndorsement(course);
+					// the subject name that contributed the most credits, as a hint
+					course.label = [...course.subjects.entries()].sort(function (a, b) {
+						return b[1] - a[1];
+					})[0][0];
+				}
+
+				// levels this year's results sit at — one year can span more than one
+				const levels = [
+					...new Set(
+						standards.map(function (s) {
+							return s.level;
+						}),
+					),
+				]
+					.filter(Boolean)
+					.sort();
+
+				// credits earned at each level, since one year can span several
+				const byLevel = levels.map(function (level) {
+					let earnedHere = 0;
+					for (const s of standards) {
+						if (s.level === level && s.grade && s.grade !== "N")
+							earnedHere += s.credits;
+					}
+					return { level: level, credits: earnedHere };
+				});
+
+				// courses where every credit with a result came back at Excellence
+				const perfect = courseList
+					.filter(function (c) {
+						return c.sat > 0 && c.byGrade.E === c.sat;
+					})
+					.sort(function (a, b) {
+						return b.sat - a.sat;
+					});
+
+				// courses that fell short of an endorsement, nearest miss first
+				const nearMisses = [];
+				for (const c of courseList) {
+					const meritOrBetter = c.byGrade.M + c.byGrade.E;
+					const shortOfMerit = COURSE_ENDORSEMENT - meritOrBetter;
+					const shortOfExcellence = COURSE_ENDORSEMENT - c.byGrade.E;
+
+					if (!c.endorsement && shortOfMerit <= NEAR_MISS_WITHIN) {
+						nearMisses.push({ course: c, want: "Merit", short: shortOfMerit });
+					} else if (c.endorsement === "M" && shortOfExcellence <= NEAR_MISS_WITHIN) {
+						nearMisses.push({
+							course: c,
+							want: "Excellence",
+							short: shortOfExcellence,
+						});
+					}
+				}
+				nearMisses.sort(function (a, b) {
+					return a.short - b.short;
+				});
+
+				// the 20-credit literacy and numeracy co-requisite
+				const corequisite = [];
+				for (const number of Object.keys(CO_REQUISITE)) {
+					const sat = standards.filter(function (s) {
+						return s.number === number;
+					});
+					if (sat.length === 0) continue;
+					const met = sat.find(function (s) {
+						return s.grade && s.grade !== "N";
+					});
+					corequisite.push({
+						name: CO_REQUISITE[number],
+						number: number,
+						met: Boolean(met),
+						credits: met ? met.credits : 0,
+					});
+				}
+
+				return {
+					byGrade: byGrade,
+					sat: sat,
+					earned: earned,
+					graded: graded,
+					passed: passed,
+					pending: pending,
+					waiting: pending.length,
+					voided: voided,
+					levels: levels,
+					passRate: graded > 0 ? passed / graded : 0,
+					gpa: sat > 0 ? points / sat : 0,
+					excellenceRate: sat > 0 ? byGrade.E / sat : 0,
+					courses: courseList,
+					byLevel: byLevel,
+					perfect: perfect,
+					nearMisses: nearMisses,
+					corequisite: corequisite,
+				};
+			}
+
+			// Puts the course on the list and records its subject name, whatever
+			// the standard's result was.
+			function register(map, key, s) {
+				if (!map.has(key)) {
+					map.set(key, {
+						name: key,
+						sat: 0,
+						earned: 0,
+						points: 0,
+						waiting: 0,
+						voided: 0,
+						byGrade: { E: 0, M: 0, A: 0, N: 0 },
+						subjects: new Map(),
+					});
+				}
+
+				const group = map.get(key);
+				group.subjects.set(
+					s.subject,
+					(group.subjects.get(s.subject) || 0) + s.credits,
+				);
+				return group;
+			}
+
+			// Only standards with a grade move the numbers.
+			function addGrade(group, s) {
+				group.sat += s.credits;
+				group.byGrade[s.grade] += s.credits;
+				group.points += GRADE_POINTS[s.grade] * s.credits;
+				if (s.grade !== "N") group.earned += s.credits;
+			}
+
+			// A course is endorsed at 14+ credits at Merit or better (Excellence for an
+			// Excellence endorsement). The real rule also wants 3+ internal and 3+
+			// external credits, but the stored-results table does not say which
+			// standards were internal, so that part cannot be checked here.
+			function courseEndorsement(course) {
+				if (course.byGrade.E >= COURSE_ENDORSEMENT) return "E";
+				if (course.byGrade.M + course.byGrade.E >= COURSE_ENDORSEMENT) return "M";
+				return "";
+			}
+
+			// 50+ credits at Merit or better, at Excellence for an Excellence endorsement.
+			function certificateEndorsement(summary) {
+				if (summary.byGrade.E >= CERTIFICATE_ENDORSEMENT) return "E";
+				if (summary.byGrade.M + summary.byGrade.E >= CERTIFICATE_ENDORSEMENT) return "M";
+				return "";
+			}
+
+			// ─────────────────────────────────────────────────────────
+			//  Filling in the cards
+			// ─────────────────────────────────────────────────────────
+			function text(id, value) {
+				document.getElementById(id).textContent = value;
+			}
+
+			function element(tag, className, content) {
+				const node = document.createElement(tag);
+				if (className) node.className = className;
+				if (content !== undefined) node.textContent = content;
+				return node;
+			}
+
+			function plural(n, word) {
+				return n + " " + word + (n === 1 ? "" : "s");
+			}
+
+			// "L2PHYS Physics" — the course code leads, the subject name is a hint.
+			function courseLabel(course) {
+				const wrap = element("span", "");
+				wrap.append(element("b", "code", course.name));
+				if (course.label && course.label !== course.name) {
+					wrap.append(element("span", "sub", " " + course.label));
+				}
+				return wrap;
+			}
+
+			function render(summary, name) {
+				text("c-hello", name ? name + ", here is your year." : "Here is your year.");
+				text(
+					"c-hello-foot",
+					summary.courses.length +
+						" courses · " +
+						plural(summary.graded, "standard") +
+						" with results" +
+						(summary.levels.length > 0
+							? " · NCEA Level " + summary.levels.join(", ")
+							: ""),
+				);
+
+				// ── total credits
+				text("c-credits", summary.earned);
+				text(
+					"c-credits-say",
+					"You earned " +
+						plural(summary.earned, "credit") +
+						" from the " +
+						summary.sat +
+						" you have results for, across " +
+						plural(summary.graded, "standard") +
+						".",
+				);
+
+				// ── grade split
+				const bars = document.getElementById("c-bars");
+				const biggest = Math.max(
+					1,
+					...GRADES.map(function (g) {
+						return summary.byGrade[g];
+					}),
+				);
+				bars.replaceChildren();
+
+				for (const grade of GRADES) {
+					const credits = summary.byGrade[grade];
+					const bar = element("div", "bar");
+					bar.append(element("span", "name", GRADE_NAME[grade]));
+
+					const track = element("div", "track");
+					const fill = element("div", "fill");
+					fill.style.setProperty("--p", credits / biggest);
+					fill.style.setProperty("--c", "var(--" + grade.toLowerCase() + ")");
+					track.append(fill);
+
+					bar.append(track, element("span", "num", credits));
+					bars.append(bar);
+				}
+
+				const top = GRADES.find(function (g) {
+					return summary.byGrade[g] === biggest;
+				});
+				text(
+					"c-bars-foot",
+					summary.sat > 0
+						? "Most of your credits landed at " + GRADE_NAME[top] + "."
+						: "No results in yet.",
+				);
+
+				// ── excellence rate
+				text("c-exc", Math.round(summary.excellenceRate * 100) + "%");
+				text(
+					"c-exc-say",
+					summary.byGrade.E +
+						" of your " +
+						summary.sat +
+						" credits came back at Excellence.",
+				);
+				text(
+					"c-exc-foot",
+					"Merit or better: " +
+						Math.round(
+							((summary.byGrade.M + summary.byGrade.E) / Math.max(1, summary.sat)) *
+								100,
+						) +
+						"%.",
+				);
+
+				// ── GPA
+				text("c-gpa", summary.gpa.toFixed(2));
+				text(
+					"c-gpa-say",
+					summary.gpa >= STRONG_GPA
+						? "Weighted across every credit you sat."
+						: "Weighted by credits, so the big standards count for more.",
+				);
+
+				// ── pass rate
+				text("c-rate", Math.round(summary.passRate * 100) + "%");
+				text(
+					"c-rate-say",
+					"You passed " +
+						summary.passed +
+						" of the " +
+						plural(summary.graded, "standard") +
+						" you have results for.",
+				);
+				text(
+					"c-rate-foot",
+					summary.waiting > 0
+						? plural(summary.waiting, "standard") +
+								" still awaiting a result, so they are not counted here."
+						: "Every standard you entered has a result.",
+				);
+
+				// ── subjects taken
+				const ordered = [...summary.courses].sort(function (a, b) {
+					return b.earned - a.earned;
+				});
+				text("c-subject-count", plural(summary.courses.length, "subject"));
+
+				const subjectList = document.getElementById("c-subjects");
+				subjectList.replaceChildren();
+				for (const course of ordered) {
+					const line = element("div", "line");
+					line.append(
+						courseLabel(course),
+						element(
+							"b",
+							"",
+							course.sat > 0 ? course.earned + " cr" : "awaiting",
+						),
+					);
+					subjectList.append(line);
+				}
+
+				// ── strongest subjects
+				const strongest = [...summary.courses]
+					.filter(function (c) {
+						return c.sat > 0; // nothing to rank until a result is in
+					})
+					.sort(function (a, b) {
+						return b.average - a.average || b.earned - a.earned;
+					})
+					.slice(0, TOP_COURSES);
+
+				const podium = document.getElementById("c-strongest");
+				podium.replaceChildren();
+				strongest.forEach(function (course, i) {
+					const step = element("div", "step");
+					const who = element("span", "who", course.name);
+					if (course.label && course.label !== course.name) {
+						who.append(element("span", "sub", course.label));
+					}
+					step.append(
+						element("span", "rank", i + 1),
+						who,
+						element(
+							"span",
+							"what",
+							course.byGrade.E +
+								"E · " +
+								course.byGrade.M +
+								"M · " +
+								course.byGrade.A +
+								"A",
+						),
+					);
+					podium.append(step);
+				});
+
+				// ── course by course
+				text("c-breakdown-head", plural(summary.courses.length, "course"));
+
+				const breakdown = document.getElementById("c-breakdown");
+				breakdown.replaceChildren();
+				for (const course of ordered) {
+					const unit = element("div", "unit");
+
+					const top = element("div", "top");
+					top.append(element("span", "ucode", course.name));
+					top.append(
+						element(
+							"span",
+							"ucr",
+							course.sat > 0
+								? course.earned +
+										" cr" +
+										(course.endorsement ? " · " + course.endorsement : "")
+								: plural(course.waiting, "result") + " to come",
+						),
+					);
+					unit.append(top);
+
+					// A thin stacked bar of this course's credits, in grade order.
+					// Skipped entirely when nothing is back yet, which also keeps the
+					// width arithmetic away from a zero denominator.
+					const stack = element("div", "stack");
+					for (const grade of course.sat > 0 ? GRADES : []) {
+						if (course.byGrade[grade] === 0) continue;
+						const segment = element("span", "");
+						segment.style.width = (course.byGrade[grade] / course.sat) * 100 + "%";
+						segment.style.setProperty("--c", "var(--" + grade.toLowerCase() + ")");
+						segment.title = course.byGrade[grade] + " cr at " + GRADE_NAME[grade];
+						stack.append(segment);
+					}
+					unit.append(stack);
+					unit.append(element("div", "uname", course.label));
+					breakdown.append(unit);
+				}
+
+				// ── course endorsement
+				const courses = ordered;
+				const endorsed = courses.filter(function (c) {
+					return c.endorsement;
+				});
+				text(
+					"c-course-head",
+					endorsed.length > 0
+						? plural(endorsed.length, "course") + " endorsed"
+						: "No course endorsements",
+				);
+
+				const courseList = document.getElementById("c-course");
+				courseList.replaceChildren();
+				for (const course of courses) {
+					const line = element("div", "line");
+					line.append(
+						courseLabel(course),
+						course.endorsement
+							? element(
+									"span",
+									"tag tag-" + course.endorsement.toLowerCase(),
+									GRADE_NAME[course.endorsement],
+								)
+							: element("span", "tag none", "—"),
+					);
+					courseList.append(line);
+				}
+
+				text(
+					"c-course-foot",
+					"Endorsed at " +
+						COURSE_ENDORSEMENT +
+						"+ credits at that grade or better. " +
+						"The stored-results table does not say which standards were internal, " +
+						"so the 3 internal + 3 external part of the rule is not checked.",
+				);
+
+				// ── certificate endorsement
+				const cert = certificateEndorsement(summary);
+				const meritOrBetter = summary.byGrade.M + summary.byGrade.E;
+				const stamp = document.getElementById("c-cert");
+				stamp.className = "stamp " + (cert ? "stamp-" + cert.toLowerCase() : "stamp-none");
+				stamp.textContent = cert ? GRADE_NAME[cert] : "Not endorsed";
+				text(
+					"c-cert-say",
+					cert
+						? "Your certificate is endorsed with " + GRADE_NAME[cert] + "."
+						: "You need " +
+								CERTIFICATE_ENDORSEMENT +
+								" credits at Merit or better to endorse your certificate.",
+				);
+				text(
+					"c-cert-foot",
+					"You have " +
+						meritOrBetter +
+						" credits at Merit or better, " +
+						summary.byGrade.E +
+						" of them at Excellence.",
+				);
+
+				// ── exams still to come
+				text(
+					"c-exams-count",
+					summary.waiting > 0
+						? plural(summary.waiting, "result") + " still to come"
+						: "Every result is in",
+				);
+
+				const exams = document.getElementById("c-exams");
+				exams.replaceChildren();
+				for (const s of summary.pending) {
+					const row = element("div", "exam");
+					row.append(element("b", "", s.course + " " + (s.number || "")));
+					row.append(element("span", "etitle", s.title || s.subject));
+					exams.append(row);
+				}
+			}
+
+			// ─────────────────────────────────────────────────────────
+			//  Wiring
+			// ─────────────────────────────────────────────────────────
+			// the year is written in from the one constant, never typed twice
+			document.title = "NCEA Wrapped " + YEAR;
+			document.getElementById("y-entry").textContent = YEAR;
+			document.getElementById("y-card").textContent = YEAR;
+
+			const entry = document.getElementById("entry");
+			const deck = document.getElementById("deck");
+			const error = document.getElementById("error");
+
+			let parsed = null;
+			let lastSummary = null; // what the poster draws
+			let lastName = "";
+
+			document.getElementById("build").addEventListener("click", function () {
+				parsed = parseStoredResults(document.getElementById("results").value);
+
+				if (parsed.standards.length === 0) {
+					error.textContent =
+						"Could not find any standards in that. Paste the whole " +
+						'Stored Results \u2013 Detailed table, including the "NCEA Level:" headings.';
+					error.hidden = false;
+					return;
+				}
+
+				const notes = [];
+				if (parsed.skipped.length > 0) {
+					notes.push(
+						"Skipped " +
+							plural(parsed.skipped.length, "line") +
+							" that could not be read (line " +
+							parsed.skipped.join(", ") +
+							").",
+					);
+				}
+
+				// Result values the parser did not recognise. Reported rather than
+				// treated as "awaiting a result", which would have quietly removed
+				// the standard from every figure on the deck.
+				if (parsed.unknown.length > 0) {
+					notes.push(
+						"Did not recognise " +
+							plural(parsed.unknown.length, "result value") +
+							": " +
+							parsed.unknown.map(function (u) {
+								return '"' + u + '"';
+							}).join(", ") +
+							". Those standards are left out of the totals.",
+					);
+				}
+
+				// No level headings means course codes cannot be told apart from the
+				// table's title line, so every standard lands under "(no course)".
+				if (!parsed.seenLevel) {
+					notes.push(
+						'No "NCEA Level:" heading found, so courses could not be ' +
+							"identified. Paste the whole table, headings included.",
+					);
+				}
+
+				// cross-check against the totals the table prints for itself
+				const totals = summariseByLevel();
+				for (const level of Object.keys(parsed.declared)) {
+					const says = parsed.declared[level];
+					if (says !== null && totals[level] !== undefined && totals[level] !== says) {
+						notes.push(
+							"Level " +
+								level +
+								": counted " +
+								totals[level] +
+								" credits but the table says " +
+								says +
+								".",
+						);
+					}
+				}
+
+				error.textContent = notes.join(" ");
+				error.hidden = notes.length === 0;
+
+				// Everything pasted in is this year's work, which can span more than one
+				// NCEA level, so the whole paste is summarised as a single year.
+				lastName = document.getElementById("name").value.trim();
+				lastSummary = summarise(parsed.standards);
+				render(lastSummary, lastName);
+
+				entry.hidden = true;
+				deck.hidden = false;
+				deck.scrollTop = 0;
+				startAutoscroll();
+			});
+
+			// credits earned per level, for the cross-check above
+			function summariseByLevel() {
+				const totals = {};
+				for (const s of parsed.standards) {
+					if (!s.grade || s.grade === "N") continue;
+					totals[s.level] = (totals[s.level] || 0) + s.credits;
+				}
+				return totals;
+			}
+
+			document.getElementById("demo").addEventListener("click", function () {
+				document.getElementById("name").value = "Sam";
+				document.getElementById("results").value = [
+					"Stored Results - Detailed",
+					"NCEA Level: 3\t10 credits earned",
+					"Other\t",
+					"A Scholarship - English\t\tExternal",
+					"L1COMM\t",
+					"U US 9681 - Contribute within a team or group which has an objective\t3 credits\tAchieved",
+					"L3CALC\t",
+					"A Mathematics and Statistics 3.15 - Apply systems of simultaneous equations in solving problems\t3 credits\tExcellence",
+					"A Mathematics and Statistics 3.3 - Apply trigonometric methods in solving problems\t4 credits\tExcellence",
+					"A Mathematics and Statistics 3.5 - Apply the algebra of complex numbers in solving problems\t\tExternal",
+					"A Mathematics and Statistics 3.6 - Apply differentiation methods in solving problems\t\tExternal",
+					"A Mathematics and Statistics 3.7 - Apply integration methods in solving problems\t\tExternal",
+					"A Scholarship - Calculus\t\tScholarship",
+					"NCEA Level: 2\t92 credits earned",
+					"10MATHS\t",
+					"A Mathematics and Statistics 2.5 - Apply network methods in solving problems\t2 credits\tExcellence",
+					"L2ACCM\t",
+					"A Accounting 2.3 - Prepare financial information for an entity that operates accounting subsystems\t\tExternal",
+					"A Accounting 2.5 - Demonstrate understanding of a contemporary accounting issue for decision-making\t4 credits\tExcellence",
+					"A Accounting 2.7 - Demonstrate understanding of an inventory subsystem for an entity\t3 credits\tExcellence",
+					"A Agribusiness 2.10 - Demonstrate understanding of cash flow forecasting for a business\t4 credits\tExcellence",
+					"L2CHEM\t",
+					"A Chemistry 2.2 - Carry out an investigation into chemical species present in a sample\t3 credits\tExcellence",
+					"A Chemistry 2.4 - Demonstrate understanding of bonding, structure, properties and energy changes\t\tExternal",
+					"A Chemistry 2.7 - Demonstrate understanding of oxidation-reduction\t3 credits\tExcellence",
+					"L2DTSD\t",
+					"A Digital Technologies and Hangarau Matihiko 2.1 - Conduct an inquiry to propose a digital technologies outcome\t6 credits\tExcellence",
+					"A Digital Technologies and Hangarau Matihiko 2.3 - Use advanced techniques to develop a database\t4 credits\tMerit",
+					"A Digital Technologies and Hangarau Matihiko 2.7 - Use advanced programming techniques to develop a computer program\t6 credits\tExcellence",
+					"A Digital Technologies and Hangarau Matihiko 2.8 - Use advanced processes to develop a digital technologies outcome\t6 credits\tMerit",
+					"L2ENGB\t",
+					"A English 2.4 - Produce a selection of crafted and controlled writing\t6 credits\tExcellence",
+					"A English 2.8 - Use information literacy skills to form developed conclusion(s)\t4 credits\tExcellence",
+					"L2MAEL\t",
+					"A Mathematics and Statistics 2.2 - Apply graphical methods in solving problems\t4 credits\tExcellence",
+					"A Mathematics and Statistics 2.7 - Apply calculus methods in solving problems\t5 credits\tExcellence",
+					"L2PHYS\t",
+					"A Physics 2.1 - Carry out a practical physics investigation\t4 credits\tExcellence",
+					"A Physics 2.2 - Demonstrate understanding of physics relevant to a selected context",
+					"Discription\t3 credits\tExcellence",
+					"A Physics 2.4 - Demonstrate understanding of mechanics\t\tExternal",
+				].join("\n");
+			});
+
+			document.getElementById("restart").addEventListener("click", function () {
+				stopAutoscroll();
+				deck.hidden = true;
+				entry.hidden = false;
+				window.scrollTo(0, 0);
+			});
+
+			// ─────────────────────────────────────────────────────────
+			//  Autoscroll
+			// ─────────────────────────────────────────────────────────
+			// The deck plays itself like a story: hold each card, then scroll on to
+			// the next, stopping at the last one. Any real input — a wheel, a touch,
+			// a key, a click — hands control over for good, because an autoscroll
+			// that fights someone who has started scrolling is worse than none.
+
+			const HOLD = 5500; // ms each card is held before advancing
+			const cue = document.getElementById("c-cue");
+
+			let timer = null;
+			let at = 0;
+
+			// Auto-advancing is motion nobody asked for, so honour the system setting.
+			const stillness = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+			function startAutoscroll() {
+				at = 0;
+				if (stillness.matches) {
+					cue.textContent = "Scroll \u2193";
+					return;
+				}
+
+				cue.textContent = "Plays by itself. Scroll any time to take over.";
+				queueNext();
+
+				for (const event of ["wheel", "touchstart", "keydown", "pointerdown"]) {
+					window.addEventListener(event, stopAutoscroll, { once: true, passive: true });
+				}
+			}
+
+			function queueNext() {
+				clearTimeout(timer);
+				timer = setTimeout(function () {
+					const cards = deck.querySelectorAll(".card");
+					if (at >= cards.length - 1) {
+						stopAutoscroll();
+						return;
+					}
+
+					at += 1;
+					cards[at].scrollIntoView({ behavior: "smooth", block: "start" });
+					queueNext();
+				}, HOLD);
+			}
+
+			function stopAutoscroll() {
+				clearTimeout(timer);
+				timer = null;
+				cue.textContent = "Scroll \u2193";
+			}
+
+			// ─────────────────────────────────────────────────────────
+			//  Save as an image
+			// ─────────────────────────────────────────────────────────
+			// Drawn by hand onto a canvas. A DOM-to-image library would be the
+			// quick route, but it would mean shipping a dependency and this page
+			// makes no outside requests. Canvas can use a font the document has
+			// already loaded, so the poster is set in the same SN Pro as the deck,
+			// and every colour is read back out of the CSS tokens rather than
+			// written down a second time.
+
+			const POSTER_WIDTH = 1080; // layout units; drawn at 2x for sharpness
+			const POSTER_SCALE = 2;
+			const PAD = 88;
+
+			function token(name) {
+				return getComputedStyle(document.documentElement)
+					.getPropertyValue(name)
+					.trim();
+			}
+
+			// size/weight/colour/alignment in one call, with optional tracking
+			function write(ctx, string, x, y, weight, size, fill, align, tracking) {
+				ctx.font = weight + ' ' + size + 'px "SN Pro", system-ui, sans-serif';
+				ctx.fillStyle = fill;
+				ctx.textAlign = align || "left";
+				ctx.textBaseline = "alphabetic";
+				if ("letterSpacing" in ctx) ctx.letterSpacing = (tracking || 0) + "px";
+				ctx.fillText(string, x, y);
+				if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
+			}
+
+			function measure(ctx, string, weight, size, tracking) {
+				ctx.font = weight + ' ' + size + 'px "SN Pro", system-ui, sans-serif';
+				if ("letterSpacing" in ctx) ctx.letterSpacing = (tracking || 0) + "px";
+				const w = ctx.measureText(string).width;
+				if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
+				return w;
+			}
+
+			function hairline(ctx, y, fill, from, to) {
+				ctx.fillStyle = fill;
+				ctx.fillRect(from || PAD, y, (to || POSTER_WIDTH - PAD) - (from || PAD), 1);
+			}
+
+			function panel(ctx, x, y, w, h, radius) {
+				ctx.beginPath();
+				if (ctx.roundRect) ctx.roundRect(x, y, w, h, radius || 0);
+				else ctx.rect(x, y, w, h);
+			}
+
+			// One bar carrying the whole grade mix, used for the hero ribbon and
+			// again, much smaller, under each course.
+			function stackBar(ctx, x, y, w, h, counts, total, tone, radius) {
+				ctx.save();
+				panel(ctx, x, y, w, h, radius);
+				ctx.clip();
+
+				ctx.fillStyle = token("--track");
+				ctx.fillRect(x, y, w, h);
+
+				if (total > 0) {
+					let cursor = x;
+					for (const grade of GRADES) {
+						const credits = counts[grade];
+						if (credits <= 0) continue;
+						const span = (credits / total) * w;
+						ctx.fillStyle = tone[grade];
+						ctx.fillRect(cursor, y, span + 0.5, h);
+						cursor += span;
+					}
+				}
+
+				ctx.restore();
+			}
+
+			// Little registration marks in the corners, the way a printed card
+			// would carry them. Decorative, but it is the kind of decoration that
+			// belongs on something meant to be kept.
+			function cropMarks(ctx, height, fill) {
+				const arm = 26;
+				const off = 34;
+				ctx.strokeStyle = fill;
+				ctx.lineWidth = 1;
+				const corners = [
+					[off, off, 1, 1],
+					[POSTER_WIDTH - off, off, -1, 1],
+					[off, height - off, 1, -1],
+					[POSTER_WIDTH - off, height - off, -1, -1],
+				];
+				for (const [x, y, dx, dy] of corners) {
+					ctx.beginPath();
+					ctx.moveTo(x + dx * arm, y);
+					ctx.lineTo(x, y);
+					ctx.lineTo(x, y + dy * arm);
+					ctx.stroke();
+				}
+			}
+
+			// Lays the poster out top to bottom and returns where it ended, so the
+			// canvas can be cropped to the content instead of guessing a height.
+			function drawPoster(ctx, summary, name) {
+				const ink = token("--paper");
+				const dim = token("--dim");
+				const line = token("--rule");
+				const ground = token("--ground");
+				const tone = {
+					E: token("--e"),
+					M: token("--m"),
+					A: token("--a"),
+					N: token("--n"),
+				};
+
+				const right = POSTER_WIDTH - PAD;
+				const inner = right - PAD;
+				let y = 0;
+
+				// ── a spine of the grade mix across the very top
+				stackBar(ctx, 0, 0, POSTER_WIDTH, 14, summary.byGrade, summary.sat, tone, 0);
+				y = 14;
+
+				// ── masthead
+				y += 94;
+				write(ctx, "NCEA WRAPPED", PAD, y, 700, 24, dim, "left", 3.4);
+				write(ctx, YEAR, right, y, 900, 24, dim, "right", 3.4);
+				y += 22;
+				hairline(ctx, y, line);
+
+				// ── the headline figure, over a ghosted year
+				y += 96;
+				ctx.save();
+				ctx.globalAlpha = 0.055;
+				write(ctx, YEAR, right + 26, y + 196, 900, 300, ink, "right");
+				ctx.restore();
+
+				if (name) {
+					write(ctx, name, PAD, y + 4, 900, 72, ink, "left", -1.5);
+					y += 92;
+				}
+
+				const figure = String(summary.earned);
+				write(ctx, figure, PAD, y + 168, 900, 232, ink, "left", -11);
+				const figureW = measure(ctx, figure, 900, 232, -11);
+				write(ctx, "credits", PAD + figureW + 26, y + 168, 900, 44, tone.E, "left", -1);
+				y += 168;
+
+				write(
+					ctx,
+					"earned from " + summary.sat + " sat, across " +
+						plural(summary.graded, "standard"),
+					PAD,
+					y + 50,
+					700,
+					27,
+					dim,
+				);
+				y += 124;
+
+				// ── every credit, by grade
+				write(ctx, "EVERY CREDIT, BY GRADE", PAD, y, 700, 22, dim, "left", 3);
+				y += 30;
+				stackBar(ctx, PAD, y, inner, 62, summary.byGrade, summary.sat, tone, 5);
+				y += 92;
+
+				// legend, four across
+				const legendW = inner / 4;
+				GRADES.forEach(function (grade, i) {
+					const x = PAD + legendW * i;
+					ctx.fillStyle = tone[grade];
+					panel(ctx, x, y - 30, 22, 22, 3);
+					ctx.fill();
+					write(ctx, String(summary.byGrade[grade]), x + 34, y - 12, 900, 30, ink);
+					write(ctx, GRADE_NAME[grade], x, y + 22, 700, 21, dim);
+				});
+				y += 70;
+
+				hairline(ctx, y, line);
+
+				// ── three figures, divided by hairlines
+				y += 76;
+				const tiles = [
+					{ value: summary.gpa.toFixed(2), label: "GPA OUT OF 4.00", fill: tone.M },
+					{
+						value: Math.round(summary.excellenceRate * 100) + "%",
+						label: "AT EXCELLENCE",
+						fill: tone.E,
+					},
+					{
+						value: Math.round(summary.passRate * 100) + "%",
+						label: "PASS RATE",
+						fill: tone.A,
+					},
+				];
+
+				const tileW = inner / 3;
+				tiles.forEach(function (tile, i) {
+					const x = PAD + tileW * i;
+					write(ctx, tile.value, x, y, 900, 74, tile.fill, "left", -2.5);
+					write(ctx, tile.label, x, y + 36, 700, 21, dim, "left", 2.2);
+					if (i > 0) {
+						ctx.fillStyle = line;
+						ctx.fillRect(x - 26, y - 62, 1, 92);
+					}
+				});
+				y += 78;
+
+				hairline(ctx, y, line);
+
+				// ── courses, two across, each with its own grade mix
+				const ranked = [...summary.courses]
+					.filter(function (c) {
+						return c.sat > 0;
+					})
+					.sort(function (a, b) {
+						return b.average - a.average || b.earned - a.earned;
+					})
+					.slice(0, 6);
+
+				if (ranked.length > 0) {
+					y += 62;
+					write(ctx, "STRONGEST COURSES", PAD, y, 700, 22, dim, "left", 3);
+					y += 44;
+
+					const colW = (inner - 44) / 2;
+					ranked.forEach(function (course, i) {
+						const x = PAD + (i % 2) * (colW + 44);
+						const row = y + Math.floor(i / 2) * 104;
+
+						write(ctx, course.name, x, row, 900, 34, ink, "left", -0.8);
+						write(ctx, course.earned + " cr", x + colW, row, 900, 26, ink, "right");
+						write(ctx, course.label, x, row + 28, 700, 20, dim);
+						stackBar(ctx, x, row + 44, colW, 8, course.byGrade, course.sat, tone, 3);
+					});
+
+					y += Math.ceil(ranked.length / 2) * 104 + 18;
+				}
+
+				// ── certificate endorsement, as a filled stamp
+				const cert = certificateEndorsement(summary);
+				const stampFill = cert ? tone[cert] : line;
+				const stampInk = cert ? ground : dim;
+				const stampText = cert ? GRADE_NAME[cert] : "Not endorsed";
+				const stampW = measure(ctx, stampText, 900, 50, -1.5) + 76;
+
+				y += 58;
+				ctx.fillStyle = stampFill;
+				panel(ctx, PAD, y, stampW, 96, 6);
+				ctx.fill();
+				write(ctx, stampText, PAD + 38, y + 63, 900, 50, stampInk, "left", -1.5);
+
+				write(ctx, "CERTIFICATE", PAD + stampW + 30, y + 46, 700, 21, dim, "left", 2.6);
+				write(ctx, "ENDORSEMENT", PAD + stampW + 30, y + 74, 700, 21, dim, "left", 2.6);
+				y += 96;
+
+				// ── footer
+				y += 60;
+				hairline(ctx, y, line);
+				y += 44;
+				write(
+					ctx,
+					plural(summary.courses.length, "course") +
+						"   ·   NCEA Level " +
+						summary.levels.join(", "),
+					PAD,
+					y,
+					700,
+					24,
+					dim,
+				);
+
+				if (summary.waiting > 0) {
+					write(
+						ctx,
+						plural(summary.waiting, "result") + " to come",
+						right,
+						y,
+						700,
+						24,
+						dim,
+						"right",
+					);
+				}
+
+				y += 56;
+
+				cropMarks(ctx, y, line);
+				return y;
+			}
+
+			async function savePoster() {
+				const button = document.getElementById("export");
+				const was = button.textContent;
+				button.textContent = "Drawing…";
+				button.disabled = true;
+
+				try {
+					// canvas falls back to a system font unless the face is ready
+					if (document.fonts && document.fonts.load) {
+						await document.fonts.load('900 232px "SN Pro"');
+						await document.fonts.load('700 24px "SN Pro"');
+						await document.fonts.ready;
+					}
+
+					// Lay out on a tall scratch canvas, then copy just the used part
+					// across, so the poster is always exactly as tall as its content.
+					const scratch = document.createElement("canvas");
+					scratch.width = POSTER_WIDTH * POSTER_SCALE;
+					scratch.height = 2800 * POSTER_SCALE;
+					const sctx = scratch.getContext("2d");
+					sctx.scale(POSTER_SCALE, POSTER_SCALE);
+
+					// left transparent on purpose: the ground and its vignette are
+					// laid down on the output canvas, and an opaque scratch would
+					// paint straight over them
+					const used = Math.round(drawPoster(sctx, lastSummary, lastName));
+
+					const out = document.createElement("canvas");
+					out.width = POSTER_WIDTH * POSTER_SCALE;
+					out.height = used * POSTER_SCALE;
+					const octx = out.getContext("2d");
+					octx.fillStyle = token("--ground");
+					octx.fillRect(0, 0, out.width, out.height);
+
+					// a faint vignette, so the ground is not a flat slab of one value
+					const vignette = octx.createRadialGradient(
+						out.width / 2,
+						out.height * 0.32,
+						0,
+						out.width / 2,
+						out.height * 0.32,
+						out.height * 0.78,
+					);
+					vignette.addColorStop(0, "rgba(255,255,255,0.035)");
+					vignette.addColorStop(1, "rgba(0,0,0,0.22)");
+					octx.fillStyle = vignette;
+					octx.fillRect(0, 0, out.width, out.height);
+
+					octx.drawImage(scratch, 0, 0);
+
+					const stem =
+						"ncea-wrapped-" +
+						YEAR +
+						(lastName
+							? "-" + lastName.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+							: "");
+
+					out.toBlob(function (blob) {
+						const url = URL.createObjectURL(blob);
+						const link = document.createElement("a");
+						link.href = url;
+						link.download = stem + ".png";
+						link.click();
+
+						// revoked on a later tick: some browsers cancel the download if
+						// the blob url disappears in the same one
+						setTimeout(function () {
+							URL.revokeObjectURL(url);
+						}, 10000);
+
+						button.textContent = "Saved";
+						button.disabled = false;
+						setTimeout(function () {
+							button.textContent = was;
+						}, 2500);
+					}, "image/png");
+				} catch (err) {
+					button.textContent = "Could not save";
+					button.disabled = false;
+					setTimeout(function () {
+						button.textContent = was;
+					}, 2500);
+				}
+			}
+
+			document.getElementById("export").addEventListener("click", savePoster);
+
+		</script>
+	</body>
+</html>
