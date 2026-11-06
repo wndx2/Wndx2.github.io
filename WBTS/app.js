@@ -2733,10 +2733,9 @@
 	function addImage(img) {
 		var iw = img.naturalWidth || img.width;
 		var ih = img.naturalHeight || img.height;
-		if (!iw || !ih) {
-			toast("That picture couldn't be read");
-			return;
-		}
+		// A drawing with no size of its own (an SVG without width and height) still
+		// draws at whatever size it's given, so it's given one rather than turned away.
+		if (!iw || !ih) iw = ih = 512;
 		// One picture pixel per screen pixel, but never more than three quarters of the screen.
 		var k = Math.min(1 / view.s, (width * 0.75) / view.s / iw, (height * 0.75) / view.s / ih);
 		var a = {
@@ -2772,12 +2771,173 @@
 		});
 	}
 
-	function imageFromItems(items) {
-		for (var i = 0; i < items.length; i++) {
-			var type = items[i].type || "";
-			if (type.indexOf("image/") === 0) return items[i].getAsFile ? items[i].getAsFile() : items[i];
+	// A picture from another site has to be fetched and brought here before it's used.
+	// Pointing an <img> straight at it would draw on the page, but a copied page is made
+	// by drawing everything into a canvas and reading the pixels back, and a browser
+	// won't hand back the pixels of a canvas that has another site's picture on it unless
+	// that site said it was allowed. Fetching the bytes, or asking for the picture with
+	// cross-origin set, is that permission; without it the picture is turned away with a
+	// word, rather than taken and quietly breaking Copy.
+	function loadImageUrl(url) {
+		return fetch(url, { mode: "cors", credentials: "omit" })
+			.then(function (r) {
+				if (!r.ok) throw new Error("fetch");
+				return r.blob();
+			})
+			.then(loadImageBlob)
+			.catch(function () {
+				return new Promise(function (resolve, reject) {
+					var img = new Image();
+					img.crossOrigin = "anonymous";
+					img.onload = function () {
+						resolve(img);
+					};
+					img.onerror = function () {
+						reject(new Error("That site won't share its pictures. Copy the picture itself."));
+					};
+					img.src = url;
+				});
+			});
+	}
+
+	// Picture bytes sitting on the clipboard or in a drop, best first. There can be
+	// several: a Mac often offers the same picture in a few forms, and not every form is
+	// one a browser draws, so they're all kept and tried in turn.
+	function imageBlobs(data) {
+		var out = [];
+		var i, f;
+		var items = data.items;
+		if (items && items.length) {
+			for (i = 0; i < items.length; i++) {
+				if ((items[i].type || "").indexOf("image/") !== 0) continue;
+				f = items[i].getAsFile ? items[i].getAsFile() : items[i];
+				if (f) out.push(f);
+			}
+			if (out.length) return out;
 		}
-		return null;
+		var files = data.files;
+		if (files) {
+			for (i = 0; i < files.length; i++) {
+				if ((files[i].type || "").indexOf("image/") === 0) out.push(files[i]);
+			}
+		}
+		return out;
+	}
+
+	// The first picture named in copied markup. Copying part of a web page or a document,
+	// and dragging a picture in from another tab, puts that page's own markup on the
+	// clipboard: the picture itself stays where it was, named by an <img src>. The markup
+	// is parsed on its own, away from the page, so nothing in it runs or loads.
+	function urlFromHtml(html) {
+		if (!html) return null;
+		var doc;
+		try {
+			doc = new DOMParser().parseFromString(html, "text/html");
+		} catch (e) {
+			return null;
+		}
+		var el = doc.querySelector("img");
+		if (!el) return null;
+		var raw = el.getAttribute("src") || el.getAttribute("data-src") || "";
+		if (/^data:image\//i.test(raw)) return raw;
+		var baseEl = doc.querySelector("base[href]");
+		var u = absoluteUrl(raw, (baseEl && baseEl.getAttribute("href")) || location.href);
+		return u;
+	}
+
+	function absoluteUrl(raw, base) {
+		var u;
+		try {
+			u = new URL(raw, base);
+		} catch (e) {
+			return null;
+		}
+		if (u.protocol !== "http:" && u.protocol !== "https:" && u.protocol !== "blob:") return null;
+		return u.href;
+	}
+
+	// A link is only followed when it plainly names a picture. Writing that happens to
+	// have a link in it is pasted as nothing, rather than sending the page off to fetch
+	// whatever was linked.
+	var PICTURE_NAME = /\.(png|jpe?g|gif|webp|avif|bmp|svg|ico|heic|heif|tiff?)$/i;
+
+	function imageUrl(s) {
+		if (!s) return null;
+		if (/^data:image\//i.test(s)) return s;
+		var u;
+		try {
+			u = new URL(s, location.href);
+		} catch (e) {
+			return null;
+		}
+		if (!PICTURE_NAME.test(u.pathname)) return null;
+		return absoluteUrl(u.href, location.href);
+	}
+
+	// Links to pictures held as text, in the order they're worth trying.
+	function urlsFromText(type, text) {
+		var out = [];
+		if (!text) return out;
+		if (type === "text/html") {
+			var u = urlFromHtml(text);
+			if (u) out.push(u);
+			return out;
+		}
+		text.split(/[\r\n]+/).forEach(function (line) {
+			var v = imageUrl(line.trim());
+			if (v && out.indexOf(v) < 0) out.push(v);
+		});
+		return out;
+	}
+
+	var TEXT_TYPES = ["text/html", "text/uri-list", "text/plain"];
+
+	// Everything a paste or a drop offered that might be a picture, each as something to
+	// try: the bytes first, then the markup, then a bare link.
+	function imageSources(data) {
+		var out = [];
+		imageBlobs(data).forEach(function (blob) {
+			out.push(function () {
+				return loadImageBlob(blob);
+			});
+		});
+		var urls = [];
+		TEXT_TYPES.forEach(function (type) {
+			var text = "";
+			try {
+				text = data.getData(type) || "";
+			} catch (e) {
+				text = "";
+			}
+			urlsFromText(type, text).forEach(function (u) {
+				if (urls.indexOf(u) < 0) urls.push(u);
+			});
+		});
+		urls.forEach(function (u) {
+			out.push(function () {
+				return loadImageUrl(u);
+			});
+		});
+		return out;
+	}
+
+	// Tries each one in turn and places the first that loads, so a form no browser draws
+	// doesn't hide the same picture offered another way behind it. The first thing to go
+	// wrong is what gets said, since that's the one the clipboard meant.
+	function placeFirst(sources) {
+		var i = -1;
+		var firstErr = null;
+		function next() {
+			i++;
+			if (i >= sources.length) throw firstErr || new Error("No picture on the clipboard");
+			return sources[i]().then(null, function (err) {
+				if (!firstErr) firstErr = err;
+				return next();
+			});
+		}
+		return Promise.resolve()
+			.then(next)
+			.then(addImage);
 	}
 
 	// ⌘V, and the paste menu on an iPad with a keyboard attached.
@@ -2785,36 +2945,72 @@
 		// Inside the code box, paste belongs to the text.
 		if (codeDialog.open) return;
 		var data = e.clipboardData;
-		var blob = data && ((data.items && imageFromItems(data.items)) || (data.files && imageFromItems(data.files)));
-		if (!blob) return;
+		if (!data) return;
+		var sources = imageSources(data);
+		if (!sources.length) return;
 		e.preventDefault();
-		loadImageBlob(blob).then(addImage, function (err) {
+		placeFirst(sources).catch(function (err) {
 			toast(err.message);
 		});
 	});
 
 	// The paste button, for when there's no keyboard. Safari asks before it hands the
-	// clipboard over, which is why this only runs straight from a tap.
+	// clipboard over, which is why this only runs straight from a tap. What it hands over
+	// is tidied up first, so a picture copied from a web page arrives as markup naming it
+	// rather than as the picture; that's followed up the same way a ⌘V would.
 	function pasteFromClipboard() {
 		if (!navigator.clipboard || !navigator.clipboard.read) {
 			toast("Press ⌘V to paste a picture");
 			return;
 		}
 		navigator.clipboard.read().then(function (items) {
-			for (var i = 0; i < items.length; i++) {
-				var types = items[i].types || [];
-				for (var j = 0; j < types.length; j++) {
-					if (types[j].indexOf("image/") !== 0) continue;
-					return items[i]
-						.getType(types[j])
-						.then(loadImageBlob)
-						.then(addImage)
-						.catch(function (err) {
-							toast(err.message);
+			var sources = [];
+			var texts = [];
+			items.forEach(function (item) {
+				(item.types || []).forEach(function (type) {
+					if (type.indexOf("image/") === 0) {
+						sources.push(function () {
+							return item.getType(type).then(loadImageBlob);
 						});
+					} else if (TEXT_TYPES.indexOf(type) >= 0) {
+						texts.push(
+							item
+								.getType(type)
+								.then(function (b) {
+									return b.text();
+								})
+								.then(function (text) {
+									return { type: type, text: text };
+								}, function () {
+									return null;
+								})
+						);
+					}
+				});
+			});
+			return Promise.all(texts).then(function (parts) {
+				var urls = [];
+				TEXT_TYPES.forEach(function (type) {
+					parts.forEach(function (p) {
+						if (!p || p.type !== type) return;
+						urlsFromText(p.type, p.text).forEach(function (u) {
+							if (urls.indexOf(u) < 0) urls.push(u);
+						});
+					});
+				});
+				urls.forEach(function (u) {
+					sources.push(function () {
+						return loadImageUrl(u);
+					});
+				});
+				if (!sources.length) {
+					toast("No picture on the clipboard");
+					return;
 				}
-			}
-			toast("No picture on the clipboard");
+				return placeFirst(sources).catch(function (err) {
+					toast(err.message);
+				});
+			});
 		}, function () {
 			toast("Nothing was pasted");
 		});
@@ -2822,18 +3018,20 @@
 
 	document.getElementById("paste").addEventListener("click", pasteFromClipboard);
 
-	// A picture dragged onto the page from elsewhere lands where everything else does.
-	// Anything else dropped is turned away: letting the browser open it would throw the
-	// page, and everything on it, away.
+	// A picture dragged onto the page from elsewhere lands where everything else does,
+	// whether it comes as a file off the desktop or as a picture dragged out of another
+	// tab. Anything else dropped is turned away: letting the browser open it would throw
+	// the page, and everything on it, away.
 	document.addEventListener("dragover", function (e) {
 		e.preventDefault();
 	});
 	document.addEventListener("drop", function (e) {
 		e.preventDefault();
-		var files = e.dataTransfer && e.dataTransfer.files;
-		var blob = files && files.length ? imageFromItems(files) : null;
-		if (!blob) return;
-		loadImageBlob(blob).then(addImage, function (err) {
+		var data = e.dataTransfer;
+		if (!data) return;
+		var sources = imageSources(data);
+		if (!sources.length) return;
+		placeFirst(sources).catch(function (err) {
 			toast(err.message);
 		});
 	});
