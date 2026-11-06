@@ -6,7 +6,7 @@
 	--icon: #2a2a2e;
 	--icon-off: #b9b9bf;
 	--active: rgba(0, 0, 0, 0.07);
-	--dot: rgba(0, 0, 0, 0.13);
+	--grid: rgba(0, 0, 0, 0.09);
 	color-scheme: light;
 }
 
@@ -18,7 +18,7 @@
 	--icon: #ececf0;
 	--icon-off: #5c5c63;
 	--active: rgba(255, 255, 255, 0.12);
-	--dot: rgba(255, 255, 255, 0.14);
+	--grid: rgba(255, 255, 255, 0.1);
 	color-scheme: dark;
 }
 
@@ -53,7 +53,7 @@ body {
 	overflow: hidden;
 }
 
-/* Dot grid that moves with the page, so panning and zooming can be seen. app.js sets its
+/* Squared paper that moves with the page, so panning and zooming can be seen. app.js sets its
    size and moves it with a transform, so panning never repaints it. */
 #grid {
 	position: absolute;
@@ -62,7 +62,10 @@ body {
 	transform-origin: 0 0;
 	will-change: transform;
 	pointer-events: none;
-	background-image: radial-gradient(circle, var(--dot) 1px, transparent 1.3px);
+	/* Squared paper: a hairline down the left edge and along the top edge of every
+	   square, so the lines cross where app.js snaps ends to. */
+	background-image: linear-gradient(to right, var(--grid) 1px, transparent 1px),
+		linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
 	background-size: 24px 24px;
 }
 

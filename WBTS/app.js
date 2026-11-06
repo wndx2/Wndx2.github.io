@@ -112,7 +112,7 @@
 	var dirty = true;
 	var liveDirty = true;
 	var shownZoom = "";
-	// The dot spacing the grid was last painted at, in CSS pixels, and its transform.
+	// The square size the grid was last painted at, in CSS pixels, and its transform.
 	var gridPainted = 0;
 	var shownGrid = "";
 
@@ -168,7 +168,7 @@
 		var step = GRID * view.s;
 		while (step < 14) step *= 2;
 		while (step > 56) step /= 2;
-		// The dots are painted once and then only moved and stretched, which costs nothing.
+		// The lines are painted once and then only moved and stretched, which costs nothing.
 		// They're painted again only once stretched by more than a quarter.
 		if (!gridPainted || step / gridPainted > 1.25 || gridPainted / step > 1.25) {
 			gridPainted = step;
@@ -176,10 +176,11 @@
 		}
 		var ox = ((view.x % step) + step) % step;
 		var oy = ((view.y % step) + step) % step;
-		// A dot is painted in the middle of each square, and the layer starts a square
-		// and a half up and left so it always covers the screen.
+		// A line is painted down the left edge and along the top edge of each square, and
+		// the layer starts two squares up and left so it always covers the screen. Whole
+		// squares, so the crossings land on the page's own grid, which is where ends snap to.
 		var grid =
-			"translate3d(" + (ox - step * 1.5) + "px," + (oy - step * 1.5) + "px,0) scale(" + step / gridPainted + ")";
+			"translate3d(" + (ox - step * 2) + "px," + (oy - step * 2) + "px,0) scale(" + step / gridPainted + ")";
 		if (grid !== shownGrid) gridEl.style.transform = shownGrid = grid;
 		// Only touch the toolbar when the number changes, so it isn't re-laid-out every frame.
 		var z = Math.round(view.s * 100) + "%";
@@ -210,9 +211,10 @@
 		live.lineCap = "round";
 		live.lineJoin = "round";
 		liveDrawn = true;
-		// Big enough to cover the screen at the least stretch (1 / 1.25) plus a square and a half.
-		gridEl.style.width = Math.ceil((width + 84) * 1.25) + "px";
-		gridEl.style.height = Math.ceil((height + 84) * 1.25) + "px";
+		// Big enough to cover the screen at the least stretch (1 / 1.25) plus two squares,
+		// at the largest a square is ever painted (56px).
+		gridEl.style.width = Math.ceil((width + 112) * 1.25) + "px";
+		gridEl.style.height = Math.ceil((height + 112) * 1.25) + "px";
 		// Tiles are laid out in CSS pixels, so a new pixel density needs new tiles.
 		if (dpr !== oldDpr) dropAllTiles();
 		// Room for the tiles on screen, the ring around them, and some from other zooms.
@@ -3044,14 +3046,14 @@
 	// an arrow is three, all laid down as one step, so one Undo takes the whole thing back.
 	//
 	// Nothing on an iPad can hold Shift, so the snapping happens on its own: near one of
-	// the grid dots an end lands on it, and near a sixth of a turn a line straightens to it.
+	// a grid crossing an end lands on it, and near a sixth of a turn a line straightens to it.
 
 	var SHAPE = "shape";
 	var shapeKind = "line";
 	// The drag in progress: where it started, where it is now.
 	var shaping = null;
 
-	// How far apart the dots on the page are, in page units. They're drawn every GRID
+	// How far apart the lines on the page are, in page units. They're drawn every GRID
 	// units, doubled or halved to stay a comfortable distance apart on screen.
 	function gridSpacing() {
 		var step = GRID * view.s;
@@ -3060,9 +3062,10 @@
 		return step / view.s;
 	}
 
-	// Lands on a dot if it's close enough to one, within the smaller of a quarter of the
-	// gap and ten screen pixels.
-	function snapToDots(p) {
+	// Lands on a grid line if it's close enough to one, within the smaller of a quarter of
+	// the gap and ten screen pixels. Each way is taken on its own, so an end can sit on a
+	// vertical line without being pulled along it.
+	function snapToGrid(p) {
 		var gap = gridSpacing();
 		var reach = Math.min(gap * 0.25, 10 / view.s);
 		var x = Math.round(p.x / gap) * gap;
@@ -3175,8 +3178,8 @@
 
 	// Where a drag has got to, with the snapping applied.
 	function shapeEnds(g) {
-		var from = snapToDots(g.from);
-		var to = snapToDots(g.to);
+		var from = snapToGrid(g.from);
+		var to = snapToGrid(g.to);
 		if (g.kind === "line" || g.kind === "arrow") to = snapToAngle(from, to);
 		return { from: from, to: to };
 	}
