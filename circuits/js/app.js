@@ -858,7 +858,10 @@ function fieldFor(part, field) {
 	input.setAttribute("autocapitalize", "off");
 	box.append(input);
 	wrap.append(Object.assign(document.createElement("span"), { textContent: field.label }), box);
-	const shown = () => quantity(p[field.key], field.unit).trim();
+	// A field can stand for something worked out from the settings (a variable resistor's
+	// resistance), with its own way of reading and writing it.
+	const read = () => (field.get ? field.get(p) : p[field.key]);
+	const shown = () => quantity(read(), field.unit).trim();
 	const sync = () => {
 		if (document.activeElement !== input) input.value = shown();
 	};
@@ -869,7 +872,7 @@ function fieldFor(part, field) {
 			input.value = shown();
 			return;
 		}
-		if (value !== p[field.key]) edit(() => (p[field.key] = value));
+		if (value !== read()) edit(() => (field.set ? field.set(p, value) : (p[field.key] = value)));
 		input.value = shown();
 	};
 	input.addEventListener("change", commit);

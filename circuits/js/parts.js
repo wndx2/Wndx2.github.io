@@ -95,7 +95,15 @@ export const PARTS = {
 		pins: TWO,
 		props: { max: 100, setting: 50 },
 		fields: [
-			{ kind: "range", key: "setting", label: "Setting", min: 0, max: 100, step: 1, show: (p) => quantity((p.max * p.setting) / 100, "Ω") },
+			// The resistance can be typed straight in; one above the maximum raises the maximum.
+			number("R", "Resistance", "Ω", {
+				get: (p) => (p.max * p.setting) / 100,
+				set: (p, ohms) => {
+					if (ohms > p.max) p.max = ohms;
+					p.setting = p.max ? (100 * ohms) / p.max : 0;
+				},
+			}),
+			{ kind: "range", key: "setting", label: "Setting", min: 0, max: 100, step: "any", show: (p) => quantity((p.max * p.setting) / 100, "Ω") },
 			number("max", "Maximum", "Ω"),
 		],
 		label: (p) => quantity((p.max * p.setting) / 100, "Ω"),
