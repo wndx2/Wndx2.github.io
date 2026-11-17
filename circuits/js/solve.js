@@ -10,6 +10,8 @@ import { UNKNOWNS, GIVENS } from "./parts.js";
 
 const positive = (key) => key === "R" || key === "r";
 
+// Every unknown has the parts it applies to (several, for identical parts) and the value
+// that's unknown in each.
 function read(part, key) {
 	const p = part.props;
 	if (part.type === "varres" && key === "R") return (p.max * p.setting) / 100;
@@ -47,9 +49,19 @@ function measure(sim, part, key) {
 export function problem(circuit) {
 	const unknowns = [];
 	const givens = [];
+	const shared = new Map();
 	for (const part of circuit.parts) {
 		const p = part.props;
-		if (p.unknown && (UNKNOWNS[part.type] || []).some(([k]) => k === p.unknown)) unknowns.push({ part, key: p.unknown });
+		if (p.unknown && (UNKNOWNS[part.type] || []).some(([k]) => k === p.unknown)) {
+			if (p.unknown === "Rsame") {
+				// Identical parts of one kind are a single unknown between them.
+				let u = shared.get(part.type);
+				if (!u) shared.set(part.type, (u = { part, parts: [], key: "R", mark: "Rsame" })) && unknowns.push(u);
+				u.parts.push(part);
+			} else {
+				unknowns.push({ part, parts: [part], key: p.unknown, mark: p.unknown });
+			}
+		}
 		for (const [key] of GIVENS) if (typeof p[key] === "number" && Number.isFinite(p[key])) givens.push({ part, key, value: p[key] });
 	}
 	return { unknowns, givens };
@@ -73,7 +85,8 @@ export function solve(circuit) {
 		// An EMF of zero gives no current to steer by; start from a volt.
 		return v || 1;
 	};
-	const apply = (z) => unknowns.forEach((u, k) => write(u.part, u.key, positive(u.key) ? Math.exp(z[k]) : z[k]));
+	const set = (u, value) => u.parts.forEach((part) => write(part, u.key, value));
+	const apply = (z) => unknowns.forEach((u, k) => set(u, positive(u.key) ? Math.exp(z[k]) : z[k]));
 	const residual = (z) => {
 		apply(z);
 		const sim = steady(circuit);
@@ -113,7 +126,7 @@ export function solve(circuit) {
 		if (!moved) break;
 	}
 	if (!(size(r) < 1e-6)) {
-		unknowns.forEach((u, k) => write(u.part, u.key, start[k]));
+		unknowns.forEach((u, k) => set(u, start[k]));
 		return { ...out, status: "fail" };
 	}
 	apply(z);

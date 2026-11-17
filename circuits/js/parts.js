@@ -137,6 +137,7 @@ export const PARTS = {
 				},
 			}),
 			number("R", "Resistance", "Ω"),
+			{ kind: "note", text: "The rating is what's printed on the lamp. To say what current flows through it, use Given current below." },
 			{ kind: "switch", key: "broken", label: "Blown" },
 		],
 		label: () => "",
@@ -237,8 +238,16 @@ export const UNKNOWNS = {
 		["emf", "EMF"],
 		["r", "Internal resistance"],
 	],
-	resistor: [["R", "Resistance"]],
-	lamp: [["R", "Resistance"]],
+	// "Identical" parts share one unknown resistance: every lamp marked so is the same lamp,
+	// as in "three identical lamps".
+	resistor: [
+		["R", "Resistance"],
+		["Rsame", "Resistance (identical resistors)"],
+	],
+	lamp: [
+		["R", "Resistance"],
+		["Rsame", "Resistance (identical lamps)"],
+	],
 	varres: [["R", "Resistance"]],
 };
 export const GIVENS = [

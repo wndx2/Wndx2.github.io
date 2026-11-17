@@ -208,8 +208,10 @@ function open(year, q) {
 }
 {
 	const t = open(2024, "Q2");
-	check(`${t.tag} 1.4 A in lamp D`, t.I(t.named("D")), 1.4, 0.01);
-	check(`${t.tag} 0.70 A in lamp B`, t.I(t.named("B")), 0.7, 0.01);
+	check(`${t.tag} 1.4 A in lamp D`, t.I(t.named("D")), 1.4);
+	check(`${t.tag} 0.70 A in lamp B, half lamp D's`, t.I(t.named("B")), 0.7);
+	check(`${t.tag} each identical lamp works out at 3.3 Ω`, t.named("B").props.R, 3.3, 0.01);
+	check(`${t.tag} …and they're all the same`, t.named("D").props.R, t.named("B").props.R);
 	const before = t.P(t.named("D"));
 	t.named("B").props.broken = true;
 	t.rerun();

@@ -377,9 +377,15 @@ export const PAPERS = [
 		year: 2024,
 		q: "Q2",
 		name: "Harvester warning lamps",
-		note: "Lamps 3.3 Ω, ratings assumed 12 W. Slide the dimmer, or blow lamp B",
+		note: "The identical lamps' resistance is worked out from lamp D's 1.4 A. Ratings assumed 12 W",
 		build: () =>
-			circuit([battery(12), S(part("varres", { max: 7, setting: 50 }, "Dimmer", true), P(S(lamp(3.3, 12, "B"), lamp(3.3, 12, "C")), lamp(3.3, 12, "D")))]),
+			circuit([
+				battery(12),
+				S(
+					part("varres", { max: 7, setting: 50 }, "Dimmer", true),
+					P(S(unknown(lamp(3, 12, "B"), "Rsame"), unknown(lamp(3, 12, "C"), "Rsame")), given(unknown(lamp(3, 12, "D"), "Rsame"), { I: 1.4 })),
+				),
+			]),
 	},
 	{
 		year: 2024,

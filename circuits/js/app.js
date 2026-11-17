@@ -811,6 +811,7 @@ function acFrequency() {
 
 function fieldFor(part, field) {
 	const p = part.props;
+	if (field.kind === "note") return Object.assign(document.createElement("p"), { className: "hint", textContent: field.text });
 	if (field.kind === "switch") {
 		const button = document.createElement("button");
 		button.type = "button";
@@ -950,7 +951,7 @@ function statusText() {
 	const many = (n, one, more) => `${n} ${n === 1 ? one : more}`;
 	switch (status) {
 		case "ok":
-			return "Worked out from what's given: " + unknowns.map((u) => `${describe(u.part)} ${unknownLabel(u)} ${unknownValue(u)}`).join(", ") + ".";
+			return "Worked out from what's given: " + unknowns.map((u) => `${u.parts.length > 1 ? "each " : ""}${describe(u.part)} ${unknownLabel(u)} ${unknownValue(u)}`).join(", ") + ".";
 		case "count":
 			return `${many(unknowns.length, "value", "values")} to work out and ${many(givens.length, "given", "givens")}: these have to be the same number.`;
 		case "fail":
@@ -961,7 +962,7 @@ function statusText() {
 }
 
 const describe = (part) => [PARTS[part.type].name, part.name].filter(Boolean).join(" ");
-const unknownLabel = (u) => UNKNOWNS[u.part.type].find(([k]) => k === u.key)[1].toLowerCase();
+const unknownLabel = (u) => UNKNOWNS[u.part.type].find(([k]) => k === u.mark)[1].toLowerCase();
 function unknownValue(u) {
 	const p = u.part.props;
 	if (u.key === "emf") return quantity(p.emf, "V");
