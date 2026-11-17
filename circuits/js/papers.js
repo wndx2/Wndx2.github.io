@@ -1,7 +1,8 @@
 // The circuits from the NCEA Level 2 Physics electricity papers (91173), 2012 onwards, one
-// for each circuit diagram, with the values the papers give. Where a paper leaves a value out
-// (a supply voltage, or a lamp's rating), the one used here is said in the note, and chosen to
-// match the other numbers in the question.
+// for each circuit diagram, with the values the papers give. Where the paper gives a reading
+// instead of a value ("the ammeter reads 6.0 A"), the reading is entered as given and the
+// missing value is worked out from it, as the question intends (see solve.js). Where a paper
+// leaves something out entirely (a lamp's rating, say), the note says what's used.
 //
 // Questions about induced voltages and charged plates have no circuit to run and aren't here.
 // Electromagnetism questions that are really a supply and a resistance are, so their current
@@ -10,6 +11,7 @@
 // Most circuits are written as blocks in series and parallel (S and P below) and laid out the
 // way the papers draw them: the supply along the top, the rest underneath.
 import { emptyCircuit, newPart, newWire, normalize } from "./circuit.js";
+import { solve } from "./solve.js";
 
 // A part, with its settings and the name the paper gives it. sel marks the part to select
 // when the circuit is opened.
@@ -19,6 +21,13 @@ const R = (ohms, name, sel) => part("resistor", { R: ohms }, name, sel);
 const lamp = (ohms, watts, name, sel) => part("lamp", { R: ohms, P: watts }, name, sel);
 const A = (name) => part("ammeter", {}, name);
 const V = (name) => part("voltmeter", {}, name);
+// A part whose value is to be worked out (its resistance, unless another key is named)...
+const unknown = (node, key = "R") => ({ ...node, p: { ...node.p, unknown: key } });
+// ...and a part with a current, voltage or power the question gives.
+const given = (node, { I, V: volts, P: watts }) => ({
+	...node,
+	p: { ...node.p, ...(I !== undefined && { givenI: I }), ...(volts !== undefined && { givenV: volts }), ...(watts !== undefined && { givenP: watts }) },
+});
 const S = (...items) => ({ series: items });
 const P = (...items) => ({ parallel: items });
 
@@ -87,13 +96,15 @@ function circuit(...loops) {
 		x0 += W + 8;
 	}
 	normalize(c);
+	solve(c);
 	c.select = chosen[0];
 	return c;
 }
 
 // 2025's air fryer has its switches on the right-hand rail, between the branches, so it's laid
-// out by hand. The rheostat is the heating element; the two resistors are the fans. Set to
-// 32 Ω, the element makes 1800 W. The ammeter isn't in the paper: it reads the supply current.
+// out by hand. The rheostat is the heating element; the two resistors are the fans. The element
+// is worked out from the 1800 W it's set to make (32 Ω). The ammeter isn't in the paper: it
+// reads the supply current.
 function airFryer() {
 	const c = emptyCircuit();
 	const path = (...pts) => pts.slice(1).forEach((p, k) => newWire(c, ...pts[k], ...p));
@@ -101,7 +112,7 @@ function airFryer() {
 	newPart(c, "switch", 16, 0, 1, { closed: true, name: "A" });
 	newPart(c, "switch", 16, 10, 1, { name: "B" });
 	newPart(c, "lamp", 6, 6, 0, { R: 1000, P: 57.6 });
-	newPart(c, "varres", 6, 10, 0, { max: 64, setting: 50, name: "Element" });
+	newPart(c, "varres", 6, 10, 0, { max: 64, setting: 25, name: "Element", unknown: "R", givenP: 1800 });
 	newPart(c, "resistor", 2, 16, 0, { R: 480, name: "Fan" });
 	newPart(c, "resistor", 8, 16, 0, { R: 480, name: "Fan" });
 	newPart(c, "ammeter", 10, 0, 0);
@@ -115,6 +126,7 @@ function airFryer() {
 	path([6, 16], [8, 16]);
 	path([12, 16], [16, 16], [16, 14]);
 	normalize(c);
+	solve(c);
 	c.select = 4;
 	return c;
 }
@@ -155,22 +167,22 @@ export const PAPERS = [
 		year: 2013,
 		q: "Q2(a)",
 		name: "3 Ω and 6 Ω, with 12 Ω across both",
-		note: "The supply isn't given: 27 V makes the voltmeter read 18.0 V",
-		build: () => circuit([battery(27), P(S(R(3), P(R(6, "", true), V()), ), R(12))]),
+		note: "The supply is worked out from the voltmeter's 18.0 V",
+		build: () => circuit([unknown(battery(12), "emf"), P(S(R(3), P(R(6, "", true), given(V(), { V: 18 }))), R(12))]),
 	},
 	{
 		year: 2013,
 		q: "Q2(c)",
 		name: "3 Ω, then 6 Ω and 12 Ω in parallel",
-		note: "The supply isn't given: 21 V puts 2.0 A through the 6 Ω",
-		build: () => circuit([battery(21), S(R(3, "", true), P(R(6), R(12), V()))]),
+		note: "The supply is worked out from the 2.0 A in the 6.0 Ω",
+		build: () => circuit([unknown(battery(12), "emf"), S(R(3, "", true), P(given(R(6), { I: 2 }), R(12), V()))]),
 	},
 	{
 		year: 2014,
 		q: "Q2",
 		name: "Resistors drawing 6.0 A",
-		note: "The supply isn't given: 31.9 V draws the 6.0 A",
-		build: () => circuit([battery(31.86), S(A(), R(3), P(S(R(4.6), R(2.2)), R(3.5, "", true)))]),
+		note: "The supply is worked out from the 6.0 A drawn",
+		build: () => circuit([unknown(battery(12), "emf"), S(given(A(), { I: 6 }), R(3), P(S(R(4.6), R(2.2)), R(3.5, "", true)))]),
 	},
 	{
 		year: 2014,
@@ -190,8 +202,8 @@ export const PAPERS = [
 		year: 2014,
 		q: "Q3(c)",
 		name: "0.5 Ω in series, R alongside 2 Ω and 4 Ω",
-		note: "R works out at 2.0 Ω for the 6.0 A",
-		build: () => circuit([battery(12), S(A(), R(0.5, "", true), P(R(2, "R"), S(R(2), R(4))))]),
+		note: "R is worked out from the 6.0 A",
+		build: () => circuit([battery(12), S(given(A(), { I: 6 }), R(0.5), P(unknown(R(1, "R", true)), S(R(2), R(4))))]),
 	},
 	{
 		year: 2015,
@@ -204,8 +216,8 @@ export const PAPERS = [
 		year: 2015,
 		q: "Q4(a)",
 		name: "Two 6 V 2 W lamps and a resistor",
-		note: "4.5 Ω drops the extra 3 V. Blow one lamp and watch the resistor's current",
-		build: () => circuit([battery(9), S(P(lamp(18, 2, "6 V 2 W", true), lamp(18, 2, "6 V 2 W")), R(4.5))]),
+		note: "The resistor is worked out so the lamps get their 6 V. Blow one lamp and watch the resistor's current",
+		build: () => circuit([battery(9), S(P(given(lamp(18, 2, "6 V 2 W", true), { V: 6 }), lamp(18, 2, "6 V 2 W")), unknown(R(1)))]),
 	},
 	{
 		year: 2015,
@@ -218,8 +230,8 @@ export const PAPERS = [
 		year: 2016,
 		q: "Q1",
 		name: "Car radio and speakers",
-		note: "Speaker B works out at 48 Ω for the 0.300 A",
-		build: () => circuit([battery(12), S(A(), R(10, "Receiver"), P(R(80, "Speaker A", true), R(48, "Speaker B")))]),
+		note: "Speaker B is worked out from the 0.300 A",
+		build: () => circuit([battery(12), S(given(A(), { I: 0.3 }), R(10, "Receiver"), P(R(80, "Speaker A", true), unknown(R(100, "Speaker B"))))]),
 	},
 	{
 		year: 2016,
@@ -232,8 +244,9 @@ export const PAPERS = [
 		year: 2017,
 		q: "Q2(b)",
 		name: "Rheostat and two 9 V 12 W bulbs",
-		note: "At 1.13 Ω each bulb gets 9.00 V. Slide the rheostat",
-		build: () => circuit([battery(12), S(part("varres", { max: 2.26, setting: 50 }, "Rheostat", true), P(lamp(6.75, 12, "9 V 12 W"), lamp(6.75, 12, "9 V 12 W")))]),
+		note: "The rheostat is worked out so each bulb gets 9.00 V (1.13 Ω)",
+		build: () =>
+			circuit([battery(12), S(unknown(part("varres", { max: 2.26, setting: 25 }, "Rheostat", true)), P(given(lamp(6.75, 12, "9 V 12 W"), { V: 9 }), lamp(6.75, 12, "9 V 12 W")))]),
 	},
 	{
 		year: 2017,
@@ -268,8 +281,8 @@ export const PAPERS = [
 		year: 2019,
 		q: "Q1(a)",
 		name: "Bicycle lamp",
-		note: "R works out at 13.75 Ω for the voltmeter's 4.0 V",
-		build: () => circuit([battery(15), S(P(R(5, "", true), V()), R(13.75, "R"))]),
+		note: "R is worked out from the voltmeter's 4.0 V",
+		build: () => circuit([battery(15), S(P(R(5, "", true), given(V(), { V: 4 })), unknown(R(10, "R")))]),
 	},
 	{
 		year: 2019,
@@ -370,6 +383,17 @@ export const PAPERS = [
 	},
 	{
 		year: 2024,
+		q: "Q2(d)",
+		name: "Dimmer set for lamp D's 530 J a minute",
+		note: "The dimmer is worked out from lamp D's 8.83 W (530 J ÷ 60 s)",
+		build: () =>
+			circuit([
+				battery(12),
+				S(unknown(part("varres", { max: 7, setting: 50 }, "Dimmer", true)), A(), P(S(lamp(3.3, 12, "B"), lamp(3.3, 12, "C")), given(lamp(3.3, 12, "D"), { P: 530 / 60 }))),
+			]),
+	},
+	{
+		year: 2024,
 		q: "Q3(d)",
 		name: "Sprayer boom lamps",
 		note: "Two 6 V 3 W lamps in series on 12 V",
@@ -379,7 +403,7 @@ export const PAPERS = [
 		year: 2025,
 		q: "Q2",
 		name: "Air fryer",
-		note: "Close switch B for the fans; blow the lamp for part (d)",
+		note: "The element is worked out from its 1800 W. Close switch B for the fans; blow the lamp for part (d)",
 		build: airFryer,
 	},
 ];

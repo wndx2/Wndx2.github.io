@@ -225,7 +225,9 @@ function sanitize(type, props) {
 	const defaults = PARTS[type].props;
 	const out = {};
 	for (const [k, v] of Object.entries(props || {})) {
-		if (k in defaults && typeof v === typeof defaults[k] && (typeof v !== "number" || Number.isFinite(v))) out[k] = v;
+		// A setting that's null when unset (a given value) takes a number.
+		const kind = defaults[k] === null ? "number" : typeof defaults[k];
+		if (k in defaults && (typeof v === kind || v === null) && (typeof v !== "number" || Number.isFinite(v))) out[k] = v;
 	}
 	return out;
 }

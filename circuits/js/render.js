@@ -1,7 +1,8 @@
 // Draws the page: squared paper, then the wires and symbols in ink, and the values and meter
 // readings written beside the parts.
 import { key, pins, turn, centre } from "./circuit.js";
-import { PARTS } from "./parts.js";
+import { PARTS, GIVENS } from "./parts.js";
+import { quantity } from "./units.js";
 import { symbol, bodyOf } from "./symbols.js";
 import { reading } from "./units.js";
 
@@ -262,11 +263,14 @@ export function draw(ctx, scene) {
 	// the zoom but never gets too small to read.
 	for (const part of circuit.parts) {
 		const colour = isSel("part", part.id) ? colours.accent : colours.ink;
-		// The name is always written; the value only while values are shown.
+		// The name is always written, and anything the question gives; the value only while
+		// values are shown. A value that was worked out is written in the reading colour.
 		const value = scene.values ? PARTS[part.type].label(part.props) : "";
-		const text = [part.name, value].filter(Boolean).join("   ");
+		const givens = GIVENS.filter(([key]) => typeof part.props[key] === "number").map(([key, , unit]) => quantity(part.props[key], unit));
+		const text = [part.name, value, ...givens].filter(Boolean).join("   ");
 		const side = sideOf(part, "label");
-		if (text && side) texts.push(placed(part, side, text, colour, 0.62, 400));
+		const found = part.props.unknown && !isSel("part", part.id);
+		if (text && side) texts.push(placed(part, side, text, found ? colours.reading : colour, 0.62, found ? 600 : 400));
 		const at = sideOf(part, "reading");
 		if (at && (part.type === "ammeter" || part.type === "voltmeter")) {
 			const m = measure(sim, part);

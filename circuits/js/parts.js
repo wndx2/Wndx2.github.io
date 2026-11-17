@@ -114,7 +114,31 @@ export const PARTS = {
 		// broken is a lamp that has died, set by hand; one also burns out on its own if it's run
 		// well over its rated power (see sim.js).
 		props: { R: 12, P: 3, broken: false },
-		fields: [number("R", "Resistance", "Ω"), number("P", "Rated power", "W", { min: 1e-6 }), { kind: "switch", key: "broken", label: "Blown" }],
+		// A lamp is stored as its resistance and rated power, but can be entered the way it's
+		// labelled: any two of rated voltage, power and current. Changing one keeps the rated
+		// voltage where it can, so "12 V" then "5 W", in either order, makes a 12 V 5 W lamp.
+		fields: [
+			number("V", "Rated voltage", "V", { min: 1e-6, get: (p) => Math.sqrt(p.P * p.R), set: (p, v) => (p.R = (v * v) / p.P) }),
+			number("P", "Rated power", "W", {
+				min: 1e-6,
+				set: (p, w) => {
+					const v2 = p.P * p.R;
+					p.P = w;
+					p.R = v2 / w;
+				},
+			}),
+			number("I", "Rated current", "A", {
+				min: 1e-9,
+				get: (p) => Math.sqrt(p.P / p.R),
+				set: (p, i) => {
+					const v = Math.sqrt(p.P * p.R);
+					p.R = v / i;
+					p.P = v * i;
+				},
+			}),
+			number("R", "Resistance", "Ω"),
+			{ kind: "switch", key: "broken", label: "Blown" },
+		],
 		label: () => "",
 	},
 	ldr: {
@@ -199,6 +223,32 @@ export const PARTS = {
 		label: (p) => `${Number(p.np.toPrecision(3))} : ${Number(p.ns.toPrecision(3))}`,
 	},
 };
+
+// Exam questions give facts about a circuit ("the current in lamp D is 1.4 A") and ask for
+// something missing. Any two-ended part can carry a given current, voltage or power (null when
+// not given), and some can have one of their values marked unknown, to be worked out so the
+// givens hold (see solve.js). These are the values that can be unknown, for each kind of part.
+export const UNKNOWNS = {
+	cell: [
+		["emf", "EMF"],
+		["r", "Internal resistance"],
+	],
+	battery: [
+		["emf", "EMF"],
+		["r", "Internal resistance"],
+	],
+	resistor: [["R", "Resistance"]],
+	lamp: [["R", "Resistance"]],
+	varres: [["R", "Resistance"]],
+};
+export const GIVENS = [
+	["givenI", "Current", "A"],
+	["givenV", "Voltage", "V"],
+	["givenP", "Power", "W"],
+];
+for (const def of Object.values(PARTS)) {
+	if (def.pins.length === 2) def.props = { ...def.props, givenI: null, givenV: null, givenP: null, unknown: "" };
+}
 
 // The order of the palette, in groups.
 export const PALETTE = [

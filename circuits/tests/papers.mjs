@@ -3,6 +3,7 @@
 import { PAPERS } from "../js/papers.js";
 import { Sim } from "../js/sim.js";
 import { resistanceOf } from "../js/parts.js";
+import { solve } from "../js/solve.js";
 
 let failed = 0;
 function check(name, got, want, tolerance = 0.01) {
@@ -215,6 +216,13 @@ function open(year, q) {
 	check(`${t.tag} lamp B out: lamp D brighter`, t.P(t.named("D")) > before ? 1 : 0, 1);
 }
 {
+	const t = open(2024, "Q2(d)");
+	const D = t.named("D");
+	check(`${t.tag} lamp D converts 530 J a minute`, t.P(D) * 60, 530);
+	const I = Math.sqrt(530 / 60 / 3.3) * 1.5;
+	check(`${t.tag} total current, 1.5 × lamp D's`, t.I(t.by("ammeter")), I);
+}
+{
 	const t = open(2024, "Q3(d)");
 	check(`${t.tag} each lamp at 6 V`, t.V(t.by("lamp")), 6);
 	check(`${t.tag} 0.50 A along the boom`, t.I(t.by("battery")), 0.5);
@@ -239,9 +247,11 @@ for (const paper of PAPERS) {
 	sim.load(c);
 	for (let k = 0; k < 60; k++) sim.advance(1 / 60, 1);
 	const blown = c.parts.filter((p) => sim.states.get(p.id).blown);
-	const ok = !blown.length && c.select !== undefined;
+	// Anything left to work out has to come out exactly from what's given.
+	const { status } = solve(c);
+	const ok = !blown.length && c.select !== undefined && (status === "ok" || status === "none");
 	if (!ok) failed++;
-	if (!ok) console.log(`FAIL ${paper.year} ${paper.q} ${blown.length ? "burns out a lamp" : "has nothing selected"}`);
+	if (!ok) console.log(`FAIL ${paper.year} ${paper.q} ${blown.length ? "burns out a lamp" : status !== "ok" && status !== "none" ? "can't be solved: " + status : "has nothing selected"}`);
 }
 console.log(failed ? `\n${failed} failed` : `\nall ${PAPERS.length} circuits check out`);
 process.exit(failed ? 1 : 0);

@@ -1,4 +1,5 @@
-import { PARTS, PALETTE, resistanceOf } from "./parts.js";
+import { PARTS, PALETTE, UNKNOWNS, GIVENS, resistanceOf } from "./parts.js";
+import { solve } from "./solve.js";
 import { emptyCircuit, newPart, newWire, normalize, splice, pins, toLocal, anchorFor, centre, key, meetings, bounds, pack, unpack, snapshot, restore } from "./circuit.js";
 import { Sim } from "./sim.js";
 import { draw, flows, measure } from "./render.js";
@@ -86,8 +87,12 @@ function save() {
 
 // Editing. Every change goes through edit(), which keeps a copy for Undo first.
 
+// The last attempt to work out the circuit's unknowns from its givens (see solve.js).
+let solved = { status: "none", unknowns: [], givens: [] };
+
 function changed() {
 	normalize(circuit);
+	solved = solve(circuit);
 	meet = meetings(circuit);
 	sim.load(circuit);
 	if (!prefs.playing) sim.settle();
@@ -128,6 +133,7 @@ let liveBefore = null;
 function editLive(change) {
 	if (liveBefore === null) liveBefore = snapshot(circuit);
 	change();
+	solved = solve(circuit);
 	sim.load(circuit);
 	if (!prefs.playing) sim.settle();
 	wireFlows = flows(circuit, sim);
@@ -695,6 +701,7 @@ function inspect() {
 	$("inspect-title").textContent = part.name ? `${def.name} ${part.name}` : def.name;
 	body.append(nameField(part));
 	for (const field of def.fields) body.append(fieldFor(part, field));
+	if (def.pins.length === 2) body.append(questionFields(part));
 	if (part.type !== "transformer") body.append(graphFor(part));
 	actions(body, part);
 	present(panel, true);
@@ -886,6 +893,80 @@ function fieldFor(part, field) {
 	fieldSyncs.push(sync);
 	sync();
 	return wrap;
+}
+
+// What the question says about this part: a current, voltage or power it's given, and which of
+// its values (if any) is to be worked out from the givens.
+function questionFields(part) {
+	const p = part.props;
+	const group = Object.assign(document.createElement("div"), { className: "group" });
+	group.append(Object.assign(document.createElement("h3"), { className: "section-title", textContent: "From the question" }));
+	for (const [key, label, unit] of GIVENS) {
+		const wrap = Object.assign(document.createElement("label"), { className: "prop" });
+		const box = Object.assign(document.createElement("div"), { className: "field" });
+		const input = Object.assign(document.createElement("input"), { type: "text", inputMode: "decimal", placeholder: "Not given", spellcheck: false, autocomplete: "off" });
+		box.append(input);
+		wrap.append(Object.assign(document.createElement("span"), { textContent: `Given ${label.toLowerCase()}` }), box);
+		const shown = () => (p[key] === null ? "" : quantity(p[key], unit, 6).trim());
+		const sync = () => {
+			if (document.activeElement !== input) input.value = shown();
+		};
+		input.addEventListener("change", () => {
+			const text = input.value.trim();
+			const value = text ? parseValue(text) : null;
+			if (value !== null && !(value >= 0)) {
+				notice("Type a number, like 1.4 or 250m");
+				input.value = shown();
+				return;
+			}
+			if (value !== p[key]) edit(() => (p[key] = value));
+		});
+		input.addEventListener("keydown", (e) => {
+			if (e.key === "Enter") input.blur();
+		});
+		fieldSyncs.push(sync);
+		sync();
+		group.append(wrap);
+	}
+	const options = UNKNOWNS[part.type];
+	if (options) {
+		const wrap = Object.assign(document.createElement("label"), { className: "prop" });
+		const select = document.createElement("select");
+		select.append(new Option("Nothing", ""));
+		for (const [key, label] of options) select.append(new Option(label, key));
+		select.value = p.unknown;
+		select.addEventListener("change", () => edit(() => (p.unknown = select.value)));
+		wrap.append(Object.assign(document.createElement("span"), { textContent: "Work out" }), select);
+		group.append(wrap);
+	}
+	const status = statusText();
+	if (status) group.append(Object.assign(document.createElement("p"), { className: "hint", textContent: status }));
+	return group;
+}
+
+// How the working-out went, in a sentence, or nothing if there's nothing to work out.
+function statusText() {
+	const { status, unknowns, givens } = solved;
+	const many = (n, one, more) => `${n} ${n === 1 ? one : more}`;
+	switch (status) {
+		case "ok":
+			return "Worked out from what's given: " + unknowns.map((u) => `${describe(u.part)} ${unknownLabel(u)} ${unknownValue(u)}`).join(", ") + ".";
+		case "count":
+			return `${many(unknowns.length, "value", "values")} to work out and ${many(givens.length, "given", "givens")}: these have to be the same number.`;
+		case "fail":
+			return "No values fit everything that's given. Check the givens, or what's set to be worked out.";
+		default:
+			return givens.length ? "Set a value to Work out, and it will be found from what's given." : "";
+	}
+}
+
+const describe = (part) => [PARTS[part.type].name, part.name].filter(Boolean).join(" ");
+const unknownLabel = (u) => UNKNOWNS[u.part.type].find(([k]) => k === u.key)[1].toLowerCase();
+function unknownValue(u) {
+	const p = u.part.props;
+	if (u.key === "emf") return quantity(p.emf, "V");
+	if (u.key === "r") return quantity(p.r, "Ω");
+	return quantity(resistanceOf(u.part), "Ω");
 }
 
 // A label for the part, like "A" or "Bulb 2", written beside it on the page.
