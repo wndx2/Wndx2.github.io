@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<meta name="theme-color" content="#ffffff" />
+		<meta
+			name="description"
+			content="Build and run circuits with every part from NCEA Level 2 and 3 Physics: cells, resistors, lamps, meters, diodes, capacitors, inductors, AC supplies and transformers."
+		/>
+		<!-- Sets the theme before the first paint: the saved choice, or else the system's. -->
+		<script>
+			(function () {
+				var saved = null;
+				try {
+					saved = localStorage.getItem("circuits:theme");
+				} catch (e) {}
+				var dark = saved === "dark" || (saved !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+				document.documentElement.dataset.theme = dark ? "dark" : "light";
+			})();
+		</script>
+		<link
+			rel="icon"
+			href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232929c8'/%3E%3Cpath d='M5 16h8.5M18.5 16H27M13.5 9.5v13M18.5 9.5v13' fill='none' stroke='%23fff' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E"
+		/>
+		<meta name="apple-mobile-web-app-title" content="Circuits" />
+		<title>Circuits</title>
+		<link rel="stylesheet" href="style.css" />
+	</head>
+	<body>
+		<!-- Icons are drawn like Arki's: 20px, a 1.6px round stroke, no fill. -->
+		<svg hidden>
+			<defs>
+				<symbol id="i-help" viewBox="0 0 20 20">
+					<circle cx="10" cy="10" r="7.25" />
+					<path d="M8.1 8.1a2 2 0 0 1 3.85.65c0 1.35-1.95 1.75-1.95 3" />
+					<path d="M10 14.25h.01" />
+				</symbol>
+				<symbol id="i-sun" viewBox="0 0 20 20">
+					<circle cx="10" cy="10" r="3.25" />
+					<path d="M10 2.75v1.5M10 15.75v1.5M2.75 10h1.5M15.75 10h1.5M4.9 4.9l1.05 1.05M14.05 14.05l1.05 1.05M4.9 15.1l1.05-1.05M14.05 5.95l1.05-1.05" />
+				</symbol>
+				<symbol id="i-moon" viewBox="0 0 20 20">
+					<path d="M16 11.6A6.5 6.5 0 0 1 8.4 4a6.5 6.5 0 1 0 7.6 7.6z" />
+				</symbol>
+				<symbol id="i-sidebar" viewBox="0 0 20 20">
+					<rect x="3" y="4" width="14" height="12" rx="3" />
+					<path d="M8 4v12" />
+				</symbol>
+				<symbol id="i-close" viewBox="0 0 20 20">
+					<path d="M5.5 5.5l9 9M14.5 5.5l-9 9" />
+				</symbol>
+				<symbol id="i-undo" viewBox="0 0 20 20">
+					<path d="M7.5 5L4 8.5 7.5 12" />
+					<path d="M4.5 8.5h7.25a4.25 4.25 0 0 1 0 8.5H9" />
+				</symbol>
+				<symbol id="i-redo" viewBox="0 0 20 20">
+					<path d="M12.5 5L16 8.5 12.5 12" />
+					<path d="M15.5 8.5H8.25a4.25 4.25 0 0 0 0 8.5H11" />
+				</symbol>
+				<symbol id="i-link" viewBox="0 0 20 20">
+					<path d="M8.5 11.5a3.25 3.25 0 0 0 4.6 0l2.4-2.4a3.25 3.25 0 0 0-4.6-4.6l-.9.9" />
+					<path d="M11.5 8.5a3.25 3.25 0 0 0-4.6 0l-2.4 2.4a3.25 3.25 0 0 0 4.6 4.6l.9-.9" />
+				</symbol>
+				<symbol id="i-fit" viewBox="0 0 20 20">
+					<path d="M3.5 7.25V5.5a2 2 0 0 1 2-2h1.75M12.75 3.5h1.75a2 2 0 0 1 2 2v1.75M16.5 12.75v1.75a2 2 0 0 1-2 2h-1.75M7.25 16.5H5.5a2 2 0 0 1-2-2v-1.75" />
+				</symbol>
+				<symbol id="i-trash" viewBox="0 0 20 20">
+					<path d="M3.75 5.75h12.5M8 5.75V4.5A1.25 1.25 0 0 1 9.25 3.25h1.5A1.25 1.25 0 0 1 12 4.5v1.25" />
+					<path d="M5.25 5.75l.7 9.6a1.5 1.5 0 0 0 1.5 1.4h5.1a1.5 1.5 0 0 0 1.5-1.4l.7-9.6" />
+				</symbol>
+				<symbol id="i-rotate" viewBox="0 0 20 20">
+					<path d="M15.75 10a5.75 5.75 0 1 1-1.7-4.07" />
+					<path d="M15.25 3.25v3.5h-3.5" />
+				</symbol>
+				<symbol id="i-play" viewBox="0 0 20 20">
+					<path d="M6.5 4.5v11l9-5.5z" />
+				</symbol>
+				<symbol id="i-pause" viewBox="0 0 20 20">
+					<path d="M7 4.75v10.5M13 4.75v10.5" />
+				</symbol>
+				<symbol id="i-reset" viewBox="0 0 20 20">
+					<path d="M4.25 10a5.75 5.75 0 1 0 1.7-4.07" />
+					<path d="M4.75 3.25v3.5h3.5" />
+				</symbol>
+			</defs>
+		</svg>
+
+		<div id="app" class="app" data-panel="open">
+			<!-- The page has the whole window; everything else floats over it. -->
+			<main class="stage">
+				<canvas id="board" class="board" aria-label="Circuit" tabindex="0"></canvas>
+			</main>
+
+			<nav class="navbar" aria-label="Site">
+				<h1 aria-label="Circuits" aria-describedby="fullname" tabindex="0">
+					Circuits
+					<span id="fullname" role="tooltip" class="navbar-tip">for NCEA Level 2 and 3 Physics</span>
+				</h1>
+				<div class="navbar-actions">
+					<button id="undo" class="icon-button" type="button" aria-label="Undo" title="Undo (⌘Z)">
+						<svg class="icon"><use href="#i-undo" /></svg>
+					</button>
+					<button id="redo" class="icon-button" type="button" aria-label="Redo" title="Redo (⇧⌘Z)">
+						<svg class="icon"><use href="#i-redo" /></svg>
+					</button>
+					<button id="fit" class="icon-button" type="button" aria-label="Fit the circuit on screen" title="Fit on screen">
+						<svg class="icon"><use href="#i-fit" /></svg>
+					</button>
+					<button id="share" class="icon-button" type="button" aria-label="Copy a link to this circuit" title="Copy link">
+						<svg class="icon"><use href="#i-link" /></svg>
+					</button>
+					<button id="clear" class="icon-button" type="button" aria-label="Clear the page" title="Clear">
+						<svg class="icon"><use href="#i-trash" /></svg>
+					</button>
+					<button id="help-open" class="icon-button" type="button" aria-label="Help" aria-expanded="false">
+						<svg class="icon"><use href="#i-help" /></svg>
+					</button>
+					<button id="theme" class="icon-button" type="button" aria-label="Switch between light and dark mode">
+						<svg class="icon theme-sun"><use href="#i-sun" /></svg>
+						<svg class="icon theme-moon"><use href="#i-moon" /></svg>
+					</button>
+				</div>
+			</nav>
+
+			<aside id="panel" class="panel" aria-label="Parts">
+				<header class="panel-header">
+					<h2>Parts</h2>
+					<button id="panel-hide" class="icon-button" type="button" aria-label="Hide parts">
+						<svg class="icon"><use href="#i-sidebar" /></svg>
+					</button>
+				</header>
+				<div class="panel-list">
+					<div id="palette" class="palette"></div>
+					<p class="hint">Click a part, then click the page to put it down — or drag it on. Drag from the end of a part to draw a wire.</p>
+
+					<div class="group">
+						<button id="values" class="switch-row" type="button" role="switch">Show values <span class="switch"></span></button>
+					</div>
+
+					<h3 class="section-title">Examples</h3>
+					<div id="examples" class="chips"></div>
+				</div>
+			</aside>
+
+			<button id="panel-show" class="icon-button glass panel-reopen" type="button" aria-label="Show parts" inert>
+				<svg class="icon"><use href="#i-sidebar" /></svg>
+			</button>
+
+			<aside id="inspector" class="panel inspector" aria-labelledby="inspect-title" hidden>
+				<header class="panel-header">
+					<h2 id="inspect-title"></h2>
+					<button id="inspect-close" class="icon-button" type="button" aria-label="Deselect">
+						<svg class="icon"><use href="#i-close" /></svg>
+					</button>
+				</header>
+				<div id="inspect-body" class="panel-list"></div>
+			</aside>
+
+			<div class="dock" role="toolbar" aria-label="Time">
+				<button id="play" class="dock-item" type="button" title="Play or pause (Space)">
+					<svg class="icon pause-icon"><use href="#i-pause" /></svg>
+					<svg class="icon play-icon"><use href="#i-play" /></svg>
+					<span id="play-label" class="dock-label">Pause</span>
+				</button>
+				<button id="reset" class="dock-item" type="button" title="Back to the start: capacitors empty, fuses mended">
+					<svg class="icon reset-icon"><use href="#i-reset" /></svg>
+					<span class="dock-label">Reset</span>
+				</button>
+				<select id="speed" aria-label="Speed" title="How much of the circuit's time passes each second">
+					<option value="10">10 s per second</option>
+					<option value="1">Real time</option>
+					<option value="0.1">0.1 s per second</option>
+					<option value="0.02">20 ms per second</option>
+					<option value="0.001">1 ms per second</option>
+					<option value="0.0001">0.1 ms per second</option>
+				</select>
+				<span id="clock" class="dock-time" aria-live="off">t = 0 s</span>
+			</div>
+
+			<div id="tip" class="tip" role="tooltip" hidden>
+				<strong id="tip-title"></strong>
+				<dl id="tip-rows" class="readouts"></dl>
+			</div>
+
+			<div id="help" class="help-backdrop" hidden>
+				<section class="help" role="dialog" aria-modal="true" aria-labelledby="help-title">
+					<header class="help-header">
+						<h2 id="help-title">How it works</h2>
+						<button id="help-close" class="icon-button" type="button" aria-label="Close help">
+							<svg class="icon"><use href="#i-close" /></svg>
+						</button>
+					</header>
+					<div class="help-body">
+						<section>
+							<h3>Building</h3>
+							<dl>
+								<div class="help-feature">
+									<dt>Parts</dt>
+									<dd>
+										Click one in the panel and click the page to put it down, or drag it straight on.
+										Drag a part to move it; its wires follow.
+									</dd>
+								</div>
+								<div class="help-feature">
+									<dt>Wires</dt>
+									<dd>
+										Drag from the end of a part, the end of a wire, or anywhere along a wire. Wires join
+										where their ends meet, and a junction gets a dot. Wires that only cross don't join,
+										as on paper.
+									</dd>
+								</div>
+								<div class="help-feature">
+									<dt>Turning and deleting</dt>
+									<dd>
+										Select a part and press R to turn it, or Delete to remove it. Turning a cell or diode
+										twice reverses it.
+										<code class="help-example">R</code>
+										<code class="help-example">Delete</code>
+										<code class="help-example">⌘Z</code>
+									</dd>
+								</div>
+								<div class="help-feature">
+									<dt>Moving around</dt>
+									<dd>Drag the empty page to pan. Pinch, or scroll with Ctrl held, to zoom.</dd>
+								</div>
+							</dl>
+						</section>
+						<section>
+							<h3>Running</h3>
+							<dl>
+								<div class="help-feature">
+									<dt>Readings</dt>
+									<dd>
+										Meters show their reading beside them. Hover over any part to see the voltage across
+										it, the current through it, its power and resistance; select it for a graph of
+										voltage and current against time.
+									</dd>
+								</div>
+								<div class="help-feature">
+									<dt>AC</dt>
+									<dd>
+										With an AC supply in the circuit, meters read rms values, worked out over each cycle.
+										The graph shows the instantaneous values, so the phase between voltage and current
+										can be seen.
+									</dd>
+								</div>
+								<div class="help-feature">
+									<dt>Speed</dt>
+									<dd>
+										Real time suits most DC circuits. Slow it down to watch a 50 Hz supply cycle, or a
+										fast capacitor charge; speed it up for slow ones. Reset empties the capacitors and
+										mends blown fuses.
+									</dd>
+								</div>
+							</dl>
+						</section>
+						<section>
+							<h3>Parts</h3>
+							<dl>
+								<div class="help-feature">
+									<dt>Cells and batteries</dt>
+									<dd>The long plate is positive. Give one an internal resistance to see the terminal voltage drop under load.</dd>
+								</div>
+								<div class="help-feature">
+									<dt>Meters</dt>
+									<dd>Ideal: an ammeter has no resistance and a voltmeter takes no current.</dd>
+								</div>
+								<div class="help-feature">
+									<dt>Lamps</dt>
+									<dd>Ohmic, with a rated power: they shine at full brightness when they take it, and blow if run at well over it. Switch on Blown in a lamp's panel to break it by hand.</dd>
+								</div>
+								<div class="help-feature">
+									<dt>LDR and thermistor</dt>
+									<dd>The LDR runs from 1 MΩ in the dark to 100 Ω in full light. The thermistor is an NTC one, 10 kΩ at 25 °C.</dd>
+								</div>
+								<div class="help-feature">
+									<dt>Diodes and LEDs</dt>
+									<dd>Conduct when the arrow points the way of the current, once the forward voltage is reached.</dd>
+								</div>
+								<div class="help-feature">
+									<dt>Capacitors and inductors</dt>
+									<dd>
+										Time constants are RC and L/R. Give an inductor a coil resistance to model a real one.
+										In AC circuits they have reactances 1/(2πfC) and 2πfL.
+									</dd>
+								</div>
+								<div class="help-feature">
+									<dt>Transformer</dt>
+									<dd>Vs/Vp = Ns/Np. It only transforms a changing current; on DC its primary acts as a coil.</dd>
+								</div>
+								<div class="help-feature">
+									<dt>Fuse</dt>
+									<dd>Blows as soon as the current goes over its rating. Reset, or Replace in its panel, mends it.</dd>
+								</div>
+							</dl>
+						</section>
+					</div>
+				</section>
+			</div>
+
+			<div id="notice" class="notice" role="status" hidden></div>
+		</div>
+		<script type="module" src="js/app.js"></script>
+	</body>
+</html>
