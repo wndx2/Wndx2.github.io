@@ -861,7 +861,7 @@ function fieldFor(part, field) {
 	// A field can stand for something worked out from the settings (a variable resistor's
 	// resistance), with its own way of reading and writing it.
 	const read = () => (field.get ? field.get(p) : p[field.key]);
-	const shown = () => quantity(read(), field.unit).trim();
+	const shown = () => quantity(read(), field.unit, 6).trim();
 	const sync = () => {
 		if (document.activeElement !== input) input.value = shown();
 	};
