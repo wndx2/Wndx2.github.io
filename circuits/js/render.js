@@ -103,7 +103,8 @@ export function flows(circuit, sim) {
 function sideOf(part, which) {
 	if (part.type === "transformer") return which === "label" ? [2, -0.8] : null;
 	if (part.type === "ldr") return which === "label" ? [2, 1.4] : null;
-	if (part.type === "ammeter" || part.type === "voltmeter") return which === "reading" ? [2, -1.4] : null;
+	// A meter's reading goes above it, and its name, if it has one, below.
+	if (part.type === "ammeter" || part.type === "voltmeter") return which === "reading" ? [2, -1.4] : [2, 1.4];
 	return which === "label" ? [2, -1.4] : [2, 1.4];
 }
 
@@ -261,11 +262,11 @@ export function draw(ctx, scene) {
 	// the zoom but never gets too small to read.
 	for (const part of circuit.parts) {
 		const colour = isSel("part", part.id) ? colours.accent : colours.ink;
-		if (scene.values) {
-			const text = PARTS[part.type].label(part.props);
-			const at = sideOf(part, "label");
-			if (text && at) texts.push(placed(part, at, text, colour, 0.62, 400));
-		}
+		// The name is always written; the value only while values are shown.
+		const value = scene.values ? PARTS[part.type].label(part.props) : "";
+		const text = [part.name, value].filter(Boolean).join("   ");
+		const side = sideOf(part, "label");
+		if (text && side) texts.push(placed(part, side, text, colour, 0.62, 400));
 		const at = sideOf(part, "reading");
 		if (at && (part.type === "ammeter" || part.type === "voltmeter")) {
 			const m = measure(sim, part);

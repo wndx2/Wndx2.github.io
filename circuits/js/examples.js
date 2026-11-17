@@ -168,35 +168,4 @@ export const EXAMPLES = [
 			return normalize(c);
 		},
 	},
-	{
-		// NCEA Level 2 Physics 2025 (91173), Question Two: an air fryer. The rheostat is the
-		// heating element and the two resistors are its fans. Switch A is the upper switch on the
-		// right, B the lower; set to 32 Ω the element makes 1800 W. The ammeter isn't in the
-		// paper: it sits in series beside the supply, so it reads the supply's current.
-		name: "2025 L2: air fryer",
-		note: "Top switch is A, lower is B. The ammeter reads the supply current",
-		speed: 1,
-		select: 4,
-		build() {
-			const c = emptyCircuit();
-			newPart(c, "battery", 6, 0, 0, { emf: 240 });
-			newPart(c, "switch", 16, 0, 1, { closed: true });
-			newPart(c, "switch", 16, 10, 1);
-			newPart(c, "lamp", 6, 6, 0, { R: 1000, P: 57.6 });
-			newPart(c, "varres", 6, 10, 0, { max: 64, setting: 50 });
-			newPart(c, "resistor", 2, 16, 0, { R: 480 });
-			newPart(c, "resistor", 8, 16, 0, { R: 480 });
-			newPart(c, "ammeter", 10, 0, 0);
-			path(c, [6, 0], [0, 0], [0, 6], [0, 10], [0, 16], [2, 16]);
-			path(c, [14, 0], [16, 0]);
-			path(c, [16, 4], [16, 6], [16, 10]);
-			path(c, [0, 6], [6, 6]);
-			path(c, [10, 6], [16, 6]);
-			path(c, [0, 10], [6, 10]);
-			path(c, [10, 10], [16, 10]);
-			path(c, [6, 16], [8, 16]);
-			path(c, [12, 16], [16, 16], [16, 14]);
-			return normalize(c);
-		},
-	},
 ];

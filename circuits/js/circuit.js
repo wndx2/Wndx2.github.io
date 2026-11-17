@@ -2,7 +2,8 @@
 // in whole squares. Wires join where their ends meet, as they would on paper; two wires that
 // only cross don't.
 //
-//   part: { id, type, x, y, rot, props }   (x, y) is its first end; rot is quarter turns
+//   part: { id, type, x, y, rot, props, name }   (x, y) is its first end; rot is quarter turns;
+//                                                 name is an optional label, like "A" or "Bulb 2"
 //   wire: { id, x1, y1, x2, y2 }
 import { PARTS, centreOf } from "./parts.js";
 
@@ -51,8 +52,11 @@ export function emptyCircuit() {
 	return { parts: [], wires: [], next: 1 };
 }
 
+// props may carry a name, which is kept on the part rather than among its settings.
 export function newPart(circuit, type, x, y, rot = 0, props = {}) {
-	const part = { id: "p" + circuit.next++, type, x, y, rot, props: { ...PARTS[type].props, ...props } };
+	const { name, ...settings } = props;
+	const part = { id: "p" + circuit.next++, type, x, y, rot, props: { ...PARTS[type].props, ...settings } };
+	if (name) part.name = String(name).slice(0, 24);
 	circuit.parts.push(part);
 	return part;
 }
@@ -198,6 +202,7 @@ export function pack(circuit) {
 		const defaults = PARTS[p.type].props;
 		const changed = Object.fromEntries(Object.entries(p.props).filter(([k, v]) => defaults[k] !== v));
 		const row = [p.type, p.x, p.y, p.rot];
+		if (p.name) changed.name = p.name;
 		if (Object.keys(changed).length) row.push(changed);
 		return row;
 	});
@@ -207,7 +212,9 @@ export function pack(circuit) {
 export function unpack(data) {
 	const circuit = emptyCircuit();
 	for (const [type, x, y, rot, props] of data.p || []) {
-		if (PARTS[type]) newPart(circuit, type, x | 0, y | 0, rot & 3, sanitize(type, props));
+		if (!PARTS[type]) continue;
+		const name = props && typeof props.name === "string" ? props.name : "";
+		newPart(circuit, type, x | 0, y | 0, rot & 3, { ...sanitize(type, props), name });
 	}
 	for (const [x1, y1, x2, y2] of data.w || []) newWire(circuit, x1 | 0, y1 | 0, x2 | 0, y2 | 0);
 	return normalize(circuit);
@@ -232,7 +239,9 @@ export function restore(text) {
 	circuit.next = data.next | 0 || 1;
 	for (const p of data.parts || []) {
 		if (!PARTS[p.type]) continue;
-		circuit.parts.push({ id: String(p.id), type: p.type, x: p.x | 0, y: p.y | 0, rot: p.rot & 3, props: { ...PARTS[p.type].props, ...sanitize(p.type, p.props) } });
+		const part = { id: String(p.id), type: p.type, x: p.x | 0, y: p.y | 0, rot: p.rot & 3, props: { ...PARTS[p.type].props, ...sanitize(p.type, p.props) } };
+		if (typeof p.name === "string" && p.name) part.name = p.name.slice(0, 24);
+		circuit.parts.push(part);
 	}
 	for (const w of data.wires || []) circuit.wires.push({ id: String(w.id), x1: w.x1 | 0, y1: w.y1 | 0, x2: w.x2 | 0, y2: w.y2 | 0 });
 	return circuit;

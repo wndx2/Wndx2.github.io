@@ -735,6 +735,12 @@ select:disabled {
 	font-family: var(--ui-font);
 }
 
+.papers {
+	width: 100%;
+	height: 2.25rem;
+	margin-top: 8px;
+}
+
 /* The inspector: the selected part's readings and settings, floating on the right. */
 
 .inspector {

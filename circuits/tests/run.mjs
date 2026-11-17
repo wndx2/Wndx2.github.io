@@ -3,6 +3,7 @@
 import { emptyCircuit, newPart, newWire, normalize, nets, splice } from "../js/circuit.js";
 import { Sim } from "../js/sim.js";
 import { EXAMPLES } from "../js/examples.js";
+import { PAPERS } from "../js/papers.js";
 
 let failed = 0;
 function check(name, got, want, tolerance = 0.01) {
@@ -115,7 +116,7 @@ function run(c, seconds, dt) {
 {
 	// 2025 L2 (91173) Q2(d): the air fryer's lamp stops working. The lamp is in parallel, so
 	// the supply loses the lamp's 0.24 A and the element still gets 240 V and makes 1800 W.
-	const ex = EXAMPLES.find((e) => e.name.startsWith("2025 L2"));
+	const ex = PAPERS.find((p) => p.year === 2025);
 	const c = ex.build();
 	const [battery, , switchB, lamp, element] = c.parts;
 	switchB.props.closed = true;
@@ -153,7 +154,7 @@ function run(c, seconds, dt) {
 }
 {
 	// The example's own ammeter, in series beside the supply, reads the supply current.
-	const ex = EXAMPLES.find((e) => e.name.startsWith("2025 L2"));
+	const ex = PAPERS.find((p) => p.year === 2025);
 	const c = ex.build();
 	const [, , switchB, lamp] = c.parts;
 	const meter = c.parts.find((p) => p.type === "ammeter");

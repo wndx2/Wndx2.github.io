@@ -4,6 +4,7 @@ import { Sim } from "./sim.js";
 import { draw, flows, measure } from "./render.js";
 import { iconSVG, bodyOf } from "./symbols.js";
 import { EXAMPLES } from "./examples.js";
+import { PAPERS } from "./papers.js";
 import { parseValue, quantity, reading } from "./units.js";
 
 const STORE = "circuits:circuit";
@@ -624,10 +625,10 @@ function updateTip() {
 	}
 	// Rebuilt when the pointer moves to something else, or an AC supply comes or goes (which
 	// changes the labels).
-	const k = hover.kind + item.id + sim.ac;
+	const k = hover.kind + item.id + sim.ac + (item.name || "");
 	if (k !== tipKey) {
 		tipKey = k;
-		$("tip-title").textContent = hover.kind === "wire" ? "Wire" : PARTS[item.type].name;
+		$("tip-title").textContent = hover.kind === "wire" ? "Wire" : [PARTS[item.type].name, item.name].filter(Boolean).join(" ");
 		const dl = $("tip-rows");
 		dl.textContent = "";
 		tipRows = readingsOf(item, hover.kind).map(([label, value]) => {
@@ -691,7 +692,8 @@ function inspect() {
 
 	const part = item;
 	const def = PARTS[part.type];
-	$("inspect-title").textContent = def.name;
+	$("inspect-title").textContent = part.name ? `${def.name} ${part.name}` : def.name;
+	body.append(nameField(part));
 	for (const field of def.fields) body.append(fieldFor(part, field));
 	if (part.type !== "transformer") body.append(graphFor(part));
 	actions(body, part);
@@ -877,6 +879,32 @@ function fieldFor(part, field) {
 			input.value = shown();
 			input.blur();
 		}
+	});
+	fieldSyncs.push(sync);
+	sync();
+	return wrap;
+}
+
+// A label for the part, like "A" or "Bulb 2", written beside it on the page.
+function nameField(part) {
+	const wrap = Object.assign(document.createElement("label"), { className: "prop" });
+	const box = Object.assign(document.createElement("div"), { className: "field" });
+	const input = Object.assign(document.createElement("input"), { type: "text", placeholder: "None", spellcheck: false, autocomplete: "off", maxLength: 24 });
+	box.append(input);
+	wrap.append(Object.assign(document.createElement("span"), { textContent: "Name" }), box);
+	const sync = () => {
+		if (document.activeElement !== input) input.value = part.name || "";
+	};
+	input.addEventListener("change", () => {
+		const name = input.value.trim();
+		if (name === (part.name || "")) return;
+		edit(() => {
+			if (name) part.name = name;
+			else delete part.name;
+		});
+	});
+	input.addEventListener("keydown", (e) => {
+		if (e.key === "Enter") input.blur();
 	});
 	fieldSyncs.push(sync);
 	sync();
@@ -1243,6 +1271,22 @@ function bind() {
 		chip.addEventListener("click", () => loadCircuit(ex.build(), { speed: ex.speed, chosen: ex.select, note: ex.note }));
 		$("examples").append(chip);
 	}
+	// The past papers, newest first, grouped by year.
+	const years = [...new Set(PAPERS.map((p) => p.year))].sort((a, b) => b - a);
+	for (const year of years) {
+		const group = Object.assign(document.createElement("optgroup"), { label: String(year) });
+		PAPERS.forEach((p, k) => {
+			if (p.year === year) group.append(new Option(`${p.q} · ${p.name}`, String(k)));
+		});
+		$("papers").append(group);
+	}
+	$("papers").addEventListener("change", () => {
+		const paper = PAPERS[Number($("papers").value)];
+		$("papers").value = "";
+		if (!paper) return;
+		const c = paper.build();
+		loadCircuit(c, { speed: 1, chosen: c.select, note: `${paper.year} ${paper.q}: ${paper.note}` });
+	});
 
 	$("undo").addEventListener("click", undo);
 	$("redo").addEventListener("click", redo);
