@@ -22,6 +22,29 @@
 	color-scheme: dark;
 }
 
+/* Chalkboard: a dark green board with chalk-coloured ink. */
+:root[data-theme="chalk"] {
+	--paper: #06200f;
+	--bar: #04170a;
+	--bar-line: rgba(255, 255, 255, 0.13);
+	--icon: #eeefe6;
+	--icon-off: #6f8a7c;
+	--active: rgba(255, 255, 255, 0.13);
+	--grid: rgba(255, 255, 255, 0.045);
+	color-scheme: dark;
+}
+
+/* The board itself: a few faint smudges of old chalk and a fine grain. It stays put
+   behind the page, like the board behind writing, so panning never repaints it. */
+:root[data-theme="chalk"] body {
+	background-color: var(--paper);
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+		radial-gradient(ellipse 60% 40% at 25% 30%, rgba(255, 255, 255, 0.045), transparent 70%),
+		radial-gradient(ellipse 50% 35% at 75% 70%, rgba(255, 255, 255, 0.035), transparent 70%),
+		radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.22));
+	background-size: 160px 160px, auto, auto, auto;
+}
+
 * {
 	box-sizing: border-box;
 }
@@ -154,11 +177,13 @@ body {
 	font-variant-numeric: tabular-nums;
 }
 
-#theme .sun,
-:root[data-theme="dark"] #theme .moon {
+/* The theme button shows the page in use. */
+#theme svg {
 	display: none;
 }
-:root[data-theme="dark"] #theme .sun {
+:root[data-theme="light"] #theme .sun,
+:root[data-theme="dark"] #theme .moon,
+:root[data-theme="chalk"] #theme .board {
 	display: block;
 }
 
@@ -287,6 +312,12 @@ body {
 .chip.dark i {
 	background: #f2f2f4;
 }
+.chip.chalk {
+	background: #06200f;
+}
+.chip.chalk i {
+	background: #ffffff;
+}
 
 /* The bar beside a lasso selection. app.js moves it to follow what's selected. */
 #sel-bar {
@@ -335,6 +366,10 @@ body {
 
 :root[data-theme="dark"] #sel-bar .danger {
 	color: #ff6a5f;
+}
+
+:root[data-theme="chalk"] #sel-bar .danger {
+	color: #ff6b6b;
 }
 
 /* A short message at the bottom, such as "Copied". */

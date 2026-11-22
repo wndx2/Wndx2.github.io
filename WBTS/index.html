@@ -5,16 +5,17 @@
 		<!-- No zooming: pinches and double taps belong to the page, not the browser. -->
 		<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 		<meta name="theme-color" content="#fbfaf7" />
-		<!-- Sets the theme before the first paint: the saved choice, or else the iPad's. -->
+		<!-- Sets the theme before the first paint: the saved choice (light, dark or chalkboard), or else the iPad's. -->
 		<script>
 			(function () {
 				var saved = null;
 				try {
 					saved = localStorage.getItem("wbts:theme");
 				} catch (e) {}
-				var dark = saved === "dark" || (saved !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
-				document.documentElement.dataset.theme = dark ? "dark" : "light";
-				document.querySelector('meta[name="theme-color"]').content = dark ? "#000000" : "#fbfaf7";
+				var colours = { light: "#fbfaf7", dark: "#000000", chalk: "#06200f" };
+				var name = colours[saved] ? saved : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+				document.documentElement.dataset.theme = name;
+				document.querySelector('meta[name="theme-color"]').content = colours[name];
 			})();
 		</script>
 		<meta name="description" content="WBTS is a scribble pad for iPad and Apple Pencil." />
@@ -124,10 +125,11 @@
 			<span class="divider"></span>
 
 			<button id="zoom" aria-label="Reset zoom to 100%">100%</button>
-			<button id="theme" class="secondary" aria-label="Switch light or dark">
-				<!-- Moon shows in light mode, sun in dark mode. -->
-				<svg class="moon" viewBox="0 0 20 20"><path d="M16 12.5A6.5 6.5 0 017.5 4a6.5 6.5 0 108.5 8.5z" /></svg>
+			<button id="theme" class="secondary" aria-label="Page colour" aria-haspopup="menu">
+				<!-- Shows the page in use: sun for light, moon for dark, a little board for chalk. -->
 				<svg class="sun" viewBox="0 0 20 20"><circle cx="10" cy="10" r="3.5" /><path d="M10 2.5v1.5M10 16v1.5M2.5 10H4M16 10h1.5M4.7 4.7l1 1M14.3 14.3l1 1M4.7 15.3l1-1M14.3 5.7l1-1" /></svg>
+				<svg class="moon" viewBox="0 0 20 20"><path d="M16 12.5A6.5 6.5 0 017.5 4a6.5 6.5 0 108.5 8.5z" /></svg>
+				<svg class="board" viewBox="0 0 20 20"><rect x="2.5" y="3.5" width="15" height="10.5" rx="1.2" /><path d="M5.5 10.5c1.2-2.4 2.4-2.4 3.4 0s2.2 2.4 3.4 0" /><path d="M6.5 14v2.5M13.5 14v2.5" /></svg>
 			</button>
 			<!-- In a narrow window (such as Split View) the less-used buttons move in here. -->
 			<button id="more" aria-label="More" aria-haspopup="menu">
@@ -182,6 +184,14 @@
 		<div id="copy-menu" class="menu" role="menu" aria-label="Copy as image" hidden>
 			<button data-copy="light" role="menuitem"><span class="chip light"><i></i></span><span>Copy as light</span></button>
 			<button data-copy="dark" role="menuitem"><span class="chip dark"><i></i></span><span>Copy as dark</span></button>
+			<button data-copy="chalk" role="menuitem"><span class="chip chalk"><i></i></span><span>Copy as chalkboard</span></button>
+		</div>
+
+		<!-- Which page to write on. -->
+		<div id="theme-menu" class="menu" role="menu" aria-label="Page colour" hidden>
+			<button data-theme-pick="light" role="menuitemradio" aria-checked="false"><span class="chip light"><i></i></span><span>Light</span></button>
+			<button data-theme-pick="dark" role="menuitemradio" aria-checked="false"><span class="chip dark"><i></i></span><span>Dark</span></button>
+			<button data-theme-pick="chalk" role="menuitemradio" aria-checked="false"><span class="chip chalk"><i></i></span><span>Chalkboard</span></button>
 		</div>
 
 		<!-- Save notes as a code, or open notes from one. -->
@@ -231,9 +241,12 @@
 			<button data-more="paste" role="menuitem"><span>Paste picture</span></button>
 			<button data-more="copy-light" role="menuitem"><span class="chip light"><i></i></span><span>Copy as light</span></button>
 			<button data-more="copy-dark" role="menuitem"><span class="chip dark"><i></i></span><span>Copy as dark</span></button>
+			<button data-more="copy-chalk" role="menuitem"><span class="chip chalk"><i></i></span><span>Copy as chalkboard</span></button>
 			<button data-more="save" role="menuitem"><span>Save notes as code</span></button>
 			<button data-more="open" role="menuitem"><span>Open notes from code</span></button>
-			<button data-more="theme" role="menuitem"><span>Switch to dark</span></button>
+			<button data-theme-pick="light" role="menuitemradio" aria-checked="false"><span class="chip light"><i></i></span><span>Light page</span></button>
+			<button data-theme-pick="dark" role="menuitemradio" aria-checked="false"><span class="chip dark"><i></i></span><span>Dark page</span></button>
+			<button data-theme-pick="chalk" role="menuitemradio" aria-checked="false"><span class="chip chalk"><i></i></span><span>Chalkboard</span></button>
 		</div>
 
 		<div id="toast" role="status" aria-live="polite"></div>

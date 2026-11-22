@@ -80,9 +80,35 @@
 			"hl-blue": "#4fb8ff",
 			"hl-green": "#5fd77f",
 		},
+		// A dark green board and chalk. Each slot holds the chalk nearest the colour it holds
+		// in the other themes, so the swatches line up and a notes code means much the same
+		// in any of them: white, blue, red, then yellow where green is, pink where purple is,
+		// and orange. The swatches are named to match.
+		chalk: {
+			paper: "#06200f",
+			ink: "#ffffff",
+			blue: "#38c2ff",
+			red: "#ff6b6b",
+			green: "#fff67a",
+			purple: "#ff4ff0",
+			orange: "#ffa53d",
+			"hl-yellow": "#fff67a",
+			"hl-orange": "#ffb37a",
+			"hl-pink": "#ff4ff0",
+			"hl-purple": "#c8a8ff",
+			"hl-blue": "#38c2ff",
+			"hl-green": "#a8e6a0",
+		},
 	};
 	// Highlighter ink is see-through, so writing underneath still shows.
-	var HIGHLIGHT_ALPHA = { light: 0.45, dark: 0.42 };
+	var HIGHLIGHT_ALPHA = { light: 0.45, dark: 0.42, chalk: 0.36 };
+	// What the pen swatches are called on each page, for VoiceOver.
+	var SWATCH_NAMES = {
+		chalk: { ink: "White chalk", blue: "Blue chalk", red: "Red chalk", green: "Yellow chalk", purple: "Pink chalk", orange: "Orange chalk" },
+		other: { ink: "Black or white", red: "Red", orange: "Orange", blue: "Blue", green: "Green", purple: "Purple" },
+	};
+	// The colour of the browser's own bar on each page.
+	var THEME_BAR = { light: "#fbfaf7", dark: "#000000", chalk: "#06200f" };
 
 	// Where the page sits on screen: screen = page * s + (x, y).
 	// The board fills the window, so screen and client coordinates are the same.
@@ -190,14 +216,23 @@
 	// ---------- Setup ----------
 
 	function themeName() {
-		return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+		var t = document.documentElement.dataset.theme;
+		return THEMES[t] ? t : "light";
 	}
 
 	function readPalette() {
 		theme = themeName();
 		palette = THEMES[theme];
+		var names = SWATCH_NAMES[theme] || SWATCH_NAMES.other;
 		document.querySelectorAll(".swatch span").forEach(function (span) {
 			span.style.background = palette[span.parentNode.dataset.color];
+		});
+		document.querySelectorAll('.swatches[data-for="pen"] .swatch').forEach(function (b) {
+			var n = names[b.dataset.color] || SWATCH_NAMES.other[b.dataset.color];
+			if (n) b.setAttribute("aria-label", n);
+		});
+		document.querySelectorAll("[data-theme-pick]").forEach(function (b) {
+			b.setAttribute("aria-checked", String(b.dataset.themePick === theme));
 		});
 	}
 
@@ -569,7 +604,8 @@
 	var spare = document.createElement("canvas");
 	var spareCtx = spare.getContext("2d");
 
-	function drawHighlight(ctx, s, path, colors, theme) {
+	// cuts: bits rubbed out of this highlight that it carries with it (see cutsOf).
+	function drawHighlight(ctx, s, path, colors, theme, cuts) {
 		// The stroke's box in the target canvas's pixels. The view is only ever a zoom
 		// and a shift, so the corners map straight across.
 		var m = ctx.getTransform();
@@ -595,12 +631,77 @@
 		spareCtx.setTransform(m.a, m.b, m.c, m.d, m.e - x0, m.f - y0);
 		spareCtx.fillStyle = colors[s.color];
 		spareCtx.fill(path);
+		applyCuts(spareCtx, cuts);
 
 		ctx.save();
 		ctx.setTransform(1, 0, 0, 1, 0, 0);
-		ctx.globalCompositeOperation = theme === "dark" ? "screen" : "multiply";
+		ctx.globalCompositeOperation = darkPage(theme) ? "screen" : "multiply";
 		ctx.globalAlpha = HIGHLIGHT_ALPHA[theme];
 		ctx.drawImage(spare, 0, 0, w, h, x0, y0, w, h);
+		ctx.restore();
+	}
+
+	// A dark page (black, or the chalkboard's green) takes light ink, and highlights lighten it.
+	function darkPage(name) {
+		return name === "dark" || name === "chalk";
+	}
+
+	// Rubs a thing's own cuts out of whatever has just been drawn on ctx.
+	function applyCuts(ctx, cuts) {
+		if (!cuts || !cuts.length) return;
+		ctx.lineCap = "round";
+		ctx.lineJoin = "round";
+		for (var i = 0; i < cuts.length; i++) {
+			var c = cuts[i];
+			eraseShape(ctx, c, c.shape || (c.shape = eraserShape(c)));
+		}
+		ctx.globalCompositeOperation = "source-over";
+	}
+
+	// Something with bits rubbed out of it of its own can't just be drawn onto the page
+	// and then cut, or the cut would go through whatever is underneath it too. So it's
+	// drawn alone on a spare canvas, cut there, and then laid on the page. paint(c) draws
+	// it onto the canvas it's handed. Without cuts it's drawn straight on, as ever.
+	var cutCanvas = document.createElement("canvas");
+	var cutCtx = cutCanvas.getContext("2d");
+
+	function drawCut(ctx, a, cuts, paint) {
+		if (!cuts || !cuts.length) {
+			paint(ctx);
+			return;
+		}
+		// Its box in the target canvas's pixels; the view is only a zoom and a shift.
+		var m = ctx.getTransform();
+		var b = a.box;
+		var x0 = Math.max(0, Math.floor(b.x0 * m.a + m.e));
+		var y0 = Math.max(0, Math.floor(b.y0 * m.d + m.f));
+		var x1 = Math.min(ctx.canvas.width, Math.ceil(b.x1 * m.a + m.e));
+		var y1 = Math.min(ctx.canvas.height, Math.ceil(b.y1 * m.d + m.f));
+		var w = x1 - x0;
+		var h = y1 - y0;
+		if (w <= 0 || h <= 0) return;
+		if (cutCanvas.width < w || cutCanvas.height < h) {
+			cutCanvas.width = Math.max(cutCanvas.width, w);
+			cutCanvas.height = Math.max(cutCanvas.height, h);
+		}
+		cutCtx.setTransform(1, 0, 0, 1, 0, 0);
+		cutCtx.globalAlpha = 1;
+		cutCtx.globalCompositeOperation = "source-over";
+		cutCtx.clearRect(0, 0, w, h);
+		cutCtx.setTransform(m.a, m.b, m.c, m.d, m.e - x0, m.f - y0);
+		cutCtx.lineCap = "round";
+		cutCtx.lineJoin = "round";
+		// A copied picture draws a graph in its own theme's colours.
+		cutCtx.__colors = ctx.__colors || null;
+		paint(cutCtx);
+		cutCtx.__colors = null;
+		applyCuts(cutCtx, cuts);
+
+		ctx.save();
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.globalCompositeOperation = "source-over";
+		ctx.globalAlpha = 1;
+		ctx.drawImage(cutCanvas, 0, 0, w, h, x0, y0, w, h);
 		ctx.restore();
 	}
 
@@ -655,32 +756,28 @@
 
 	// zoom: the zoom the canvas is drawn at, as in view.s.
 	function drawAction(ctx, a, zoom) {
-		if (a.tool === "image") {
-			drawImageAction(ctx, a);
-			return;
-		}
-		if (a.tool === "graph") {
-			drawGraph(ctx, a, zoom);
-			return;
-		}
 		if (a.tool === "eraser") {
 			eraseShape(ctx, a, a.shape || (a.shape = eraserShape(a)));
 			return;
 		}
 		var detail = Math.max(zoom, 1);
 		if (a.tool === "highlighter") {
-			if (needsRebuild(a, zoom)) {
+			if (!a.shape || needsRebuild(a, zoom)) {
 				a.shape = highlighterShape(a, detail);
 				a.detail = detail;
 			}
-			drawHighlight(ctx, a, a.shape, palette, theme);
+			drawHighlight(ctx, a, a.shape, palette, theme, a.cuts);
 			return;
 		}
-		if (needsRebuild(a, zoom)) {
+		if (a.tool === "pen" && (!a.shape || needsRebuild(a, zoom))) {
 			a.shape = penShape(a, null, true, detail);
 			a.detail = detail;
 		}
-		fillShape(ctx, a, a.shape);
+		drawCut(ctx, a, a.cuts, function (c) {
+			if (a.tool === "image") drawImageAction(c, a);
+			else if (a.tool === "graph") drawGraph(c, a, zoom);
+			else fillShape(c, a, a.shape);
+		});
 	}
 
 	function bounds(points, pad) {
@@ -1429,7 +1526,7 @@
 		if (e.pointerType === "mouse" && e.button !== 0) return;
 		e.preventDefault();
 		// A tap on the page while a menu is open only closes the menu.
-		if (!penMenu.hidden || !shapeMenu.hidden || !copyMenu.hidden || !notesMenu.hidden || !moreMenu.hidden) {
+		if (!penMenu.hidden || !shapeMenu.hidden || !copyMenu.hidden || !notesMenu.hidden || !moreMenu.hidden || !themeMenu.hidden) {
 			closeMenus();
 			return;
 		}
@@ -1604,8 +1701,8 @@
 		e.preventDefault();
 	});
 	document.addEventListener("contextmenu", function (e) {
-		// The code box needs its menu for Paste.
-		if (e.target.closest && e.target.closest("#code-dialog")) return;
+		// The text boxes in the dialogs need their menu for Paste.
+		if (e.target.closest && e.target.closest("dialog")) return;
 		e.preventDefault();
 	});
 
@@ -1665,8 +1762,13 @@
 		});
 	}
 
+	// Not partway through a gesture: the step it's about to make would land on top.
+	function busy() {
+		return !!(current || grab || lasso || shaping);
+	}
+
 	function undo() {
-		if (current || !undoStack.length) return;
+		if (busy() || !undoStack.length) return;
 		clearSelection();
 		var op = undoStack.pop();
 		op.undo();
@@ -1675,7 +1777,7 @@
 	}
 
 	function redo() {
-		if (current || !redoStack.length) return;
+		if (busy() || !redoStack.length) return;
 		clearSelection();
 		var op = redoStack.pop();
 		op.redo();
@@ -1684,7 +1786,7 @@
 	}
 
 	function clearPage() {
-		if (current || pageIsEmpty()) return;
+		if (busy() || pageIsEmpty()) return;
 		clearSelection();
 		// Clearing is just another step, so Undo brings the page back.
 		addActions([{ type: "clear" }]);
@@ -1754,6 +1856,7 @@
 	// ---------- Tool menus ----------
 
 	var penMenu = document.getElementById("pen-menu");
+	var themeMenu = document.getElementById("theme-menu");
 	var shapeMenu = document.getElementById("shape-menu");
 
 	// Shuts every menu that's open.
@@ -1763,6 +1866,7 @@
 		copyMenu.hidden = true;
 		notesMenu.hidden = true;
 		moreMenu.hidden = true;
+		themeMenu.hidden = true;
 	}
 
 	// Draws a sample stroke for a pen type, light at both ends and heavy in the middle.
@@ -1835,6 +1939,7 @@
 			[copyMenu, "#copy"],
 			[notesMenu, "#notes"],
 			[moreMenu, "#more"],
+			[themeMenu, "#theme"],
 		].forEach(function (m) {
 			if (m[0].hidden || m[0].contains(t)) return;
 			if (t.closest && t.closest(m[1])) return;
@@ -2039,14 +2144,67 @@
 		return out;
 	}
 
-	// Is this spot on the page covered by one of the swipes?
-	function underErasers(x, y, erasers) {
+	// A swipe's own copy of the part of an eraser swipe that reaches box: the runs of it
+	// that come near, so a long swipe across the page isn't carried whole by every word
+	// it crossed.
+	function cutCopies(e, box) {
+		var r = e.size / 2;
+		var pts = e.points;
+		function near(p, q) {
+			return (
+				Math.min(p.x, q.x) - r <= box.x1 &&
+				box.x0 <= Math.max(p.x, q.x) + r &&
+				Math.min(p.y, q.y) - r <= box.y1 &&
+				box.y0 <= Math.max(p.y, q.y) + r
+			);
+		}
+		var out = [];
+		if (pts.length === 1) {
+			if (near(pts[0], pts[0])) out.push(makeCut(pts, e.size, e.scale));
+			return out;
+		}
+		var run = null;
+		for (var i = 1; i < pts.length; i++) {
+			if (near(pts[i - 1], pts[i])) {
+				if (!run) run = [pts[i - 1]];
+				run.push(pts[i]);
+			} else if (run) {
+				out.push(makeCut(run, e.size, e.scale));
+				run = null;
+			}
+		}
+		if (run) out.push(makeCut(run, e.size, e.scale));
+		return out;
+	}
+
+	function makeCut(pts, size, scale) {
+		var points = pts.map(function (p) {
+			return { x: p.x, y: p.y, p: p.p, v: p.v, d: p.d };
+		});
+		return { tool: "eraser", size: size, scale: scale, points: points, box: bounds(points, size * 1.5), shape: null };
+	}
+
+	// Everything rubbed out of this: the cuts it already carries, and the eraser swipes
+	// over the top of it on the page. When it's moved these go with it, so the parts that
+	// were rubbed out stay rubbed out, and swipes where it lands can't touch it.
+	function cutsOf(a) {
+		var own = a.cuts || [];
+		var over = erasersOver(a);
+		if (!over.length) return own;
+		var out = own.slice();
+		for (var i = 0; i < over.length; i++) out.push.apply(out, cutCopies(over[i], a.box));
+		return out;
+	}
+
+	// Is this spot on the page covered by one of the swipes? slack: how near the edge of a
+	// swipe still counts as under it, since a sliver too thin to see isn't "showing".
+	function underErasers(x, y, erasers, slack) {
 		for (var i = 0; i < erasers.length; i++) {
 			var e = erasers[i];
 			var b = e.box;
 			// The box is drawn wider than the swipe, so anything outside it is clear.
 			if (x < b.x0 || x > b.x1 || y < b.y0 || y > b.y1) continue;
-			var r = e.size / 2;
+			var r = e.size / 2 + (slack || 0);
 			var pts = e.points;
 			if (pts.length === 1) {
 				if (len2(x - pts[0].x, y - pts[0].y) <= r) return true;
@@ -2064,10 +2222,15 @@
 	// can't slip between two of them unnoticed.
 	function walkStroke(a, step, fn) {
 		var pts = a.points;
-		var r = a.size / 2;
+		var total = pts.length ? pts[pts.length - 1].d : 0;
 		for (var i = 0; i < pts.length; i++) {
 			var p = pts[i];
 			var q = pts[i + 1];
+			// How far out the ink really reaches here. A pen's width answers to pressure
+			// and speed, and is often well under its named size, so checking at the named
+			// size would test bare page beside the line and call a line that's been rubbed
+			// out completely "still showing".
+			var r = halfWidth(a, p, total);
 			// Square across the way the line is heading, to reach its two edges.
 			var ref = q || pts[i - 1];
 			var nx = 0;
@@ -2095,16 +2258,31 @@
 		return false;
 	}
 
+	// Half the width of the ink at one point along a stroke, a touch inside its edge so
+	// the soft fringe the edge is drawn with doesn't count.
+	function halfWidth(a, p, total) {
+		if (a.tool !== "pen") return (a.size / 2) * 0.85;
+		var d = p.d == null ? Infinity : p.d;
+		var w = strokeWidth(a, { p: p.p == null ? 0.5 : p.p, v: p.v || 0, d: d }, total || null);
+		return (isFinite(w) && w > 0 ? w : a.size) * 0.42;
+	}
+
+	// How near a swipe's edge counts as under it: about half a screen pixel.
+	function eraseSlack() {
+		return 0.5 / view.s;
+	}
+
 	// Is any of this still showing? Only once every last bit of it is under an eraser is
 	// it counted as gone, so a stroke the eraser only nicked still gets picked up.
 	function stillShowing(a) {
-		var erasers = erasersOver(a);
+		var erasers = cutsOf(a);
 		if (!erasers.length) return true;
 		var step = Infinity;
 		for (var i = 0; i < erasers.length; i++) step = Math.min(step, erasers[i].size / 2);
 		step = Math.max(2, step);
+		var slack = eraseSlack();
 		var clear = function (x, y) {
-			return !underErasers(x, y, erasers);
+			return !underErasers(x, y, erasers, slack);
 		};
 		if (isFramed(a)) {
 			// A picture or a graph: a grid of spots across it, turned as it is.
@@ -2139,6 +2317,19 @@
 			var step = Math.max(1, Math.floor(a.points.length / 48));
 			for (var i = 0; i < a.points.length; i += step) pts.push(a.points[i]);
 			pts.push(a.points[a.points.length - 1]);
+		}
+		// Only what can still be seen counts. Otherwise a long line rubbed out down to
+		// one end would be picked up by a loop drawn round the blank where the rest of it
+		// used to be.
+		var cuts = cutsOf(a);
+		if (cuts.length) {
+			var slack = eraseSlack();
+			var seen = pts.filter(function (p) {
+				return !underErasers(p.x, p.y, cuts, slack);
+			});
+			// What's left may be only the edges of the line, with its middle rubbed out;
+			// then go by the whole of it.
+			if (seen.length) pts = seen;
 		}
 		var inside = 0;
 		for (var j = 0; j < pts.length; j++) {
@@ -2187,31 +2378,30 @@
 		});
 	}
 
+	// Drawn with its rubbed-out parts still rubbed out, or picking it up would bring them back.
 	function drawFloating(ctx, a) {
-		if (a.tool === "image") {
-			drawImageAction(ctx, a);
-			return;
-		}
-		if (a.tool === "graph") {
-			drawGraph(ctx, a, sel ? sel.res || view.s : view.s);
-			return;
-		}
-		if (a.tool === "highlighter") {
-			// A flat see-through fill. It's drawn into the page properly, blending with
-			// what's under it, as soon as the selection is put down.
-			ctx.globalCompositeOperation = "source-over";
-			ctx.globalAlpha = HIGHLIGHT_ALPHA[theme];
-			ctx.fillStyle = palette[a.color];
-			ctx.fill(highlighterShape(a, Math.max(view.s, 1)));
-			ctx.globalAlpha = 1;
-			return;
-		}
 		var detail = Math.max(view.s, 1);
-		if (!a.shape || needsRebuild(a, view.s)) {
+		if (a.tool === "pen" && (!a.shape || needsRebuild(a, view.s))) {
 			a.shape = penShape(a, null, true, detail);
 			a.detail = detail;
 		}
-		fillShape(ctx, a, a.shape);
+		drawCut(ctx, a, cutsOf(a), function (c) {
+			if (a.tool === "image") {
+				drawImageAction(c, a);
+			} else if (a.tool === "graph") {
+				drawGraph(c, a, sel ? sel.res || view.s : view.s);
+			} else if (a.tool === "highlighter") {
+				// A flat see-through fill. It's drawn into the page properly, blending with
+				// what's under it, as soon as the selection is put down.
+				c.globalCompositeOperation = "source-over";
+				c.globalAlpha = HIGHLIGHT_ALPHA[theme];
+				c.fillStyle = palette[a.color];
+				c.fill(highlighterShape(a, detail));
+				c.globalAlpha = 1;
+			} else {
+				fillShape(c, a, a.shape);
+			}
+		});
 	}
 
 	function makeSelection(list) {
@@ -2257,9 +2447,10 @@
 				flipX: a.flipX, flipY: a.flipY, box: a.box,
 				// A graph is mirrored by turning its numbers round, so they go back too.
 				x0: a.x0, x1: a.x1, y0: a.y0, y1: a.y1, size: a.size,
+				cuts: a.cuts,
 			};
 		}
-		return { points: a.points, size: a.size, scale: a.scale, box: a.box, shape: a.shape, detail: a.detail };
+		return { points: a.points, size: a.size, scale: a.scale, box: a.box, shape: a.shape, detail: a.detail, cuts: a.cuts };
 	}
 
 	function restore(a, state) {
@@ -2271,6 +2462,19 @@
 	// Moves one stroke or picture for real. map: where a page point goes. k: how much
 	// bigger it gets. turn: how far it turns. mirror: the map is a reflection.
 	function applyMap(a, map, k, turn, mirrorX, mirrorY) {
+		// What's been rubbed out of it goes with it, new swipes so the old ones stay for Undo.
+		if (a.cuts) {
+			a.cuts = a.cuts.map(function (c) {
+				return makeCut(
+					c.points.map(function (p) {
+						var q = map(p.x, p.y);
+						return { x: q.x, y: q.y, p: p.p, v: p.v, d: (p.d || 0) * k };
+					}),
+					c.size * k,
+					(c.scale || 1) / k
+				);
+			});
+		}
 		if (isFramed(a)) {
 			var c = map(a.cx, a.cy);
 			a.cx = c.x;
@@ -2318,11 +2522,79 @@
 		a.box = bounds(a.points, a.size * 1.5);
 	}
 
+	// Takes these out of the page's running order and puts them on the end, in the order
+	// they were in. Gives back what's needed to put them back again, or null if they were
+	// already the last things on the page.
+	function moveToEnd(list) {
+		var pairs = list
+			.map(function (a) {
+				return { a: a, i: actions.indexOf(a) };
+			})
+			.filter(function (p) {
+				return p.i >= 0;
+			})
+			.sort(function (p, q) {
+				return p.i - q.i;
+			});
+		if (!pairs.length) return null;
+		var n = actions.length;
+		var already = pairs.every(function (p, k) {
+			return p.i === n - pairs.length + k;
+		});
+		if (already) return null;
+		var move = {
+			list: pairs.map(function (p) {
+				return p.a;
+			}),
+			at: pairs.map(function (p) {
+				return p.i;
+			}),
+		};
+		sendToEnd(move);
+		return move;
+	}
+
+	function sendToEnd(move) {
+		for (var k = move.at.length - 1; k >= 0; k--) actions.splice(move.at[k], 1);
+		for (k = 0; k < move.list.length; k++) actions.push(move.list[k]);
+		reordered(move.at[0]);
+	}
+
+	// Steps are taken back in order, so when this runs they're the last things on the page.
+	function putBack(move) {
+		actions.length -= move.list.length;
+		for (var k = 0; k < move.at.length; k++) actions.splice(move.at[k], 0, move.list[k]);
+		reordered(move.at[0]);
+	}
+
+	// Tiles count how far through the page they've drawn, so a tile partway through it when
+	// the order changed starts again. A finished tile is still right unless one of the
+	// things moved is on it, and those are drawn again by whoever moved them.
+	function reordered(from) {
+		forEachTile(function (t) {
+			if (t.next > from && !ready(t)) emptyTile(t);
+		});
+		urgent = true;
+		requestRender(true);
+	}
+
 	// Changes the selected strokes and pictures for real, as one step that Undo can take back.
+	//
+	// The page is drawn in the order things were put on it, and an eraser swipe cuts
+	// everything drawn before it. So something moved can't stay where it was in that order:
+	// every swipe made after it was first written - over bare page, anywhere - would cut
+	// it again wherever it landed, and it would vanish from some spots and not others.
+	// Instead it takes its rubbed-out parts along as cuts of its own and goes on the end,
+	// on top of everything, as anything just put down should be.
 	function transformSelection(map, k, turn, mirrorX, mirrorY) {
 		var list = sel.list.slice();
 		var before = list.map(snapshot);
 		var oldBox = listBox(list);
+		list.forEach(function (a) {
+			var cuts = cutsOf(a);
+			a.cuts = cuts.length ? cuts : null;
+		});
+		var moved = moveToEnd(list);
 		list.forEach(function (a) {
 			applyMap(a, map, k, turn, mirrorX, mirrorY);
 		});
@@ -2336,9 +2608,11 @@
 
 		recordOp({
 			redo: function () {
+				if (moved) sendToEnd(moved);
 				set(after);
 			},
 			undo: function () {
+				if (moved) putBack(moved);
 				set(before);
 			},
 		});
@@ -2396,6 +2670,10 @@
 		c.lifted = false;
 		c.deleted = false;
 		c.box = { x0: a.box.x0, y0: a.box.y0, x1: a.box.x1, y1: a.box.y1 };
+		// The copy goes on the end of the page, past the swipes that rubbed bits out of the
+		// original, so it carries those bits as cuts of its own.
+		var cuts = cutsOf(a);
+		c.cuts = cuts.length ? cuts.slice() : null;
 		// A graph's sums are its own, or editing the copy would change the original too.
 		if (a.funcs) {
 			c.funcs = a.funcs.map(function (f) {
@@ -2944,8 +3222,8 @@
 
 	// ⌘V, and the paste menu on an iPad with a keyboard attached.
 	document.addEventListener("paste", function (e) {
-		// Inside the code box, paste belongs to the text.
-		if (codeDialog.open) return;
+		// Inside a dialog, paste belongs to the text.
+		if (codeDialog.open || graphDialog.open) return;
 		var data = e.clipboardData;
 		if (!data) return;
 		var sources = imageSources(data);
@@ -4074,7 +4352,9 @@
 
 		var pad = 24;
 		var w = box.x1 - box.x0 + pad * 2;
-		var h = box.y1 - box.y0 + pad * 2;
+		// A strip along the bottom for the watermark, so it never sits on the writing.
+		var markRoom = watermarkReady() ? MARK_SIZE + MARK_GAP : 0;
+		var h = box.y1 - box.y0 + pad * 2 + markRoom;
 		// 4 pixels per page unit, kept under Safari's canvas size limits.
 		var scale = Math.min(4, 8192 / Math.max(w, h), Math.sqrt(16e6 / (w * h)));
 		var pw = Math.max(1, Math.round(w * scale));
@@ -4089,30 +4369,30 @@
 		ctx.lineCap = "round";
 		ctx.lineJoin = "round";
 		list.forEach(function (a) {
-			if (a.tool === "image") {
-				drawImageAction(ctx, a);
-				return;
-			}
-			if (a.tool === "graph") {
-				// The theme's own colours, so a graph copied as light really is light.
-				ctx.__colors = colors;
-				drawGraph(ctx, a, scale);
-				ctx.__colors = null;
-				return;
-			}
 			if (a.tool === "eraser") {
 				eraseShape(ctx, a, a.shape || (a.shape = eraserShape(a)));
 				return;
 			}
 			if (a.tool === "highlighter") {
-				drawHighlight(ctx, a, highlighterShape(a, scale), colors, themeName);
+				drawHighlight(ctx, a, highlighterShape(a, scale), colors, themeName, a.cuts);
 				return;
 			}
-			var shape = penShape(a, null, true, scale);
-			ctx.globalCompositeOperation = "source-over";
-			ctx.fillStyle = colors[a.color];
-			ctx.fill(shape.body);
-			ctx.fill(shape.round);
+			var shape = a.tool === "pen" ? penShape(a, null, true, scale) : null;
+			// The theme's own colours, so a graph copied as light really is light.
+			ctx.__colors = colors;
+			drawCut(ctx, a, a.cuts, function (c) {
+				if (a.tool === "image") {
+					drawImageAction(c, a);
+				} else if (a.tool === "graph") {
+					drawGraph(c, a, scale);
+				} else {
+					c.globalCompositeOperation = "source-over";
+					c.fillStyle = colors[a.color];
+					c.fill(shape.body);
+					c.fill(shape.round);
+				}
+			});
+			ctx.__colors = null;
 		});
 
 		var out = document.createElement("canvas");
@@ -4123,9 +4403,52 @@
 		octx.fillRect(0, 0, pw, ph);
 		octx.drawImage(layer, 0, 0);
 		layer.width = layer.height = 0;
-		// A big picture can grow the spare canvas a lot; let it go back to tile size.
+		if (markRoom) drawWatermark(octx, pw, ph, scale, colors);
+		// A big picture can grow the spare canvases a lot; let them go back to tile size.
 		spare.width = spare.height = 0;
+		cutCanvas.width = cutCanvas.height = 0;
 		return out;
+	}
+
+	// ---------- Watermark ----------
+	//
+	// A copied picture carries a small mark in its bottom right corner: the pixel star
+	// that is sleepywndud.github.io's icon, see-through so it doesn't take over. It's a
+	// copy kept here beside the app rather than fetched from that site, so copying works
+	// offline and the canvas never holds another site's picture (which would stop it
+	// being read back). Only its shape is used: it's filled with the copy's own ink
+	// colour, so it shows dark on a light page and light on a dark one or a chalkboard.
+	var MARK_SIZE = 24;
+	var MARK_GAP = 10;
+	var MARK_ALPHA = 0.3;
+	var watermark = new Image();
+	watermark.src = "watermark.png";
+
+	// Copying has to happen straight from the tap, so there's no waiting for the picture;
+	// if it hasn't loaded (or won't), the copy simply goes without.
+	function watermarkReady() {
+		return watermark.complete && watermark.naturalWidth > 0;
+	}
+
+	// In the bottom right, inside the page's margin. scale: pixels per page unit, so the
+	// mark is the same size on any copy. colors: the copy's theme.
+	function drawWatermark(ctx, pw, ph, scale, colors) {
+		var size = Math.max(1, Math.round(MARK_SIZE * scale));
+		var inset = 16 * scale;
+		// The star's shape, filled with the ink colour, on a canvas of its own.
+		var c = document.createElement("canvas");
+		c.width = c.height = size;
+		var cx = c.getContext("2d");
+		cx.imageSmoothingQuality = "high";
+		cx.drawImage(watermark, 0, 0, size, size);
+		cx.globalCompositeOperation = "source-in";
+		cx.fillStyle = colors.ink;
+		cx.fillRect(0, 0, size, size);
+		ctx.save();
+		ctx.globalAlpha = MARK_ALPHA;
+		ctx.drawImage(c, Math.round(pw - inset - size), Math.round(ph - inset - size));
+		ctx.restore();
+		c.width = c.height = 0;
 	}
 
 	// If the clipboard says no, save the picture as a file instead.
@@ -4163,7 +4486,7 @@
 		if (navigator.clipboard && navigator.clipboard.write && window.ClipboardItem) {
 			navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]).then(
 				function () {
-					toast(themeName === "dark" ? "Copied on dark" : "Copied on light");
+					toast(themeName === "dark" ? "Copied on dark" : themeName === "chalk" ? "Copied on chalkboard" : "Copied on light");
 				},
 				function () {
 					saveImage(blob, themeName);
@@ -4197,8 +4520,17 @@
 	zoomBtn.addEventListener("click", resetZoom);
 
 	// Escape lets a selection go; Delete gets rid of what's selected.
+	// Typing in a dialog (a notes code, a graph's sums) is typing, not editing the page.
+	// The graph dialog opens with the graph still held, so without this Backspace in it
+	// would delete the graph, and ⌘Z would undo the page instead of the text.
+	function typing(e) {
+		if (codeDialog.open || graphDialog.open) return true;
+		var t = e.target;
+		return !!(t && t.closest && t.closest("input, textarea, dialog"));
+	}
+
 	document.addEventListener("keydown", function (e) {
-		if (e.metaKey || e.ctrlKey || e.altKey || codeDialog.open) return;
+		if (e.metaKey || e.ctrlKey || e.altKey || typing(e)) return;
 		if (e.key === "Escape" && sel) clearSelection();
 		else if ((e.key === "Backspace" || e.key === "Delete") && sel) deleteSelection();
 		else return;
@@ -4208,13 +4540,13 @@
 	// Hardware keyboard shortcuts.
 	document.addEventListener("keydown", function (e) {
 		if (!(e.metaKey || e.ctrlKey)) return;
-		// Inside the code box, copy, paste and undo work on the text as usual.
-		if (codeDialog.open) return;
+		// Inside the dialogs, copy, paste and undo work on the text as usual.
+		if (typing(e)) return;
 		var k = e.key.toLowerCase();
 		if (k === "z" && e.shiftKey) redo();
 		else if (k === "z") undo();
 		else if (k === "y") redo();
-		else if (k === "c") copyImage(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+		else if (k === "c") copyImage(themeName());
 		else if (k === "0") resetZoom();
 		else if (k === "=" || k === "+") zoomAt(width / 2, height / 2, 1.25);
 		else if (k === "-") zoomAt(width / 2, height / 2, 0.8);
@@ -4563,65 +4895,88 @@
 		return out;
 	}
 
+	// Version 4 is version 3 with one thing on the end: the cuts carried by anything that
+	// was rubbed out and then moved (see transformSelection). They're written as eraser
+	// swipes, listed against the thing they belong to. A page with none costs one byte.
 	function packPage() {
 		var list = codeActions();
-		var out = [3];
+		var out = [4];
 		writeNum(out, list.length);
 		list.forEach(function (a) {
-			if (a.tool === "graph") {
-				packGraph(out, a);
-				return;
-			}
-			var sizes = SIZES[a.tool] || [];
-			var sizeIx = sizes.indexOf(a.size);
-			if (sizeIx < 0) sizeIx = 3;
-			var feel = hasFeel(a);
-			var scaleCode = packScale(a.scale);
-			// Two bytes for everything that was a choice from a list: the tool, which pen,
-			// the colour, which of the three thicknesses, and the zoom it was written at.
-			// Each is masked to the bits it's given, so an unknown one can't spill into
-			// the next field and turn a stroke into something else.
-			out.push((Math.max(0, TOOLS.indexOf(a.tool)) & 3) | ((Math.max(0, PEN_TYPES.indexOf(a.pen)) & 3) << 2) | ((Math.max(0, COLOR_KEYS.indexOf(a.color)) & 15) << 4));
-			out.push(sizeIx | (feel ? 4 : 0) | (scaleCode << 3));
-			// A thickness that isn't one of the three is written out in full.
-			if (sizeIx === 3) writeNum(out, Math.round(a.size * 10));
-			var size = sizeIx === 3 ? Math.round(a.size * 10) / 10 : sizes[sizeIx];
-			var scale = unpackScale(scaleCode);
-			var grid = codeGrid(size, scale);
-			// Only the points the curve needs. Measured in screen pixels at the zoom it
-			// was written at, which is what the hand was working to.
-			var keep = curveIndices(a.points, grid, codeTol(size) / scale, codeStep(scale));
-			var pts = keep.map(function (i) {
-				return a.points[i];
-			});
-			writeNum(out, pts.length);
-			// Positions, each as a step from the one before.
-			var x = 0;
-			var y = 0;
-			pts.forEach(function (p) {
-				var qx = Math.round(p.x * grid);
-				var qy = Math.round(p.y * grid);
-				writeNum(out, qx - x);
-				writeNum(out, qy - y);
-				x = qx;
-				y = qy;
-			});
-			if (!feel) return;
-			// Then the feel of it, all together on the end: pressure to a sixteenth,
-			// speed to an eighth off a curve so slow writing, where it shows, is finer.
-			feelAt(pts.length).forEach(function (i) {
-				var p = pts[i];
-				var press = Math.round(clamp(p.p, 0, 1) * 15);
-				var speed = Math.round(Math.sqrt(clamp((p.v || 0) / 6, 0, 1)) * 7);
-				out.push(press | (speed << 4));
+			if (a.tool === "graph") packGraph(out, a);
+			else packStroke(out, a);
+		});
+		var withCuts = [];
+		list.forEach(function (a, i) {
+			if (a.cuts && a.cuts.length) withCuts.push(i);
+		});
+		writeNum(out, withCuts.length);
+		var last = 0;
+		withCuts.forEach(function (i) {
+			var cuts = list[i].cuts;
+			writeNum(out, i - last);
+			last = i;
+			writeNum(out, cuts.length);
+			cuts.forEach(function (c) {
+				packStroke(out, c);
 			});
 		});
 		return new Uint8Array(out);
 	}
 
+	function packStroke(out, a) {
+		var sizes = SIZES[a.tool] || [];
+		var sizeIx = sizes.indexOf(a.size);
+		if (sizeIx < 0) sizeIx = 3;
+		var feel = hasFeel(a);
+		var scaleCode = packScale(a.scale);
+		// Two bytes for everything that was a choice from a list: the tool, which pen,
+		// the colour, which of the three thicknesses, and the zoom it was written at.
+		// Each is masked to the bits it's given, so an unknown one can't spill into
+		// the next field and turn a stroke into something else.
+		out.push((Math.max(0, TOOLS.indexOf(a.tool)) & 3) | ((Math.max(0, PEN_TYPES.indexOf(a.pen)) & 3) << 2) | ((Math.max(0, COLOR_KEYS.indexOf(a.color)) & 15) << 4));
+		out.push(sizeIx | (feel ? 4 : 0) | (scaleCode << 3));
+		// A thickness that isn't one of the three is written out in full.
+		// Never written as nothing: a line shrunk right down with the lasso is still a line,
+		// and a size of 0 would be read back as a damaged code.
+		var tenths = Math.max(1, Math.round(a.size * 10));
+		if (sizeIx === 3) writeNum(out, tenths);
+		var size = sizeIx === 3 ? tenths / 10 : sizes[sizeIx];
+		var scale = unpackScale(scaleCode);
+		var grid = codeGrid(size, scale);
+		// Only the points the curve needs. Measured in screen pixels at the zoom it
+		// was written at, which is what the hand was working to.
+		var keep = curveIndices(a.points, grid, codeTol(size) / scale, codeStep(scale));
+		var pts = keep.map(function (i) {
+			return a.points[i];
+		});
+		writeNum(out, pts.length);
+		// Positions, each as a step from the one before.
+		var x = 0;
+		var y = 0;
+		pts.forEach(function (p) {
+			var qx = Math.round(p.x * grid);
+			var qy = Math.round(p.y * grid);
+			writeNum(out, qx - x);
+			writeNum(out, qy - y);
+			x = qx;
+			y = qy;
+		});
+		if (!feel) return;
+		// Then the feel of it, all together on the end: pressure to a sixteenth,
+		// speed to an eighth off a curve so slow writing, where it shows, is finer.
+		feelAt(pts.length).forEach(function (i) {
+			var p = pts[i];
+			var press = Math.round(clamp(p.p, 0, 1) * 15);
+			var speed = Math.round(Math.sqrt(clamp((p.v || 0) / 6, 0, 1)) * 7);
+			out.push(press | (speed << 4));
+		});
+	}
+
 	function unpackPage(bytes) {
 		var r = new Reader(bytes);
 		var version = r.byte();
+		if (version === 4) return unpackCuts(r, unpackV2(r, true, true));
 		if (version === 3) return unpackV2(r, true);
 		if (version === 2) return unpackV2(r, false);
 		if (version !== 1) throw new Error("This code is from a newer version");
@@ -4696,78 +5051,107 @@
 		return a;
 	}
 
-	function unpackV2(r, curve) {
+	// keepSlots: give back one entry for every thing written, even a stroke with no
+	// points (as null), so the cuts at the end of a version 4 code can find theirs.
+	function unpackV2(r, curve, keepSlots) {
 		var count = r.num();
 		var list = [];
 		for (var j = 0; j < count; j++) {
 			var kind = r.byte();
-			if ((kind & 3) === 3) {
-				list.push(unpackGraph(r, kind));
-				continue;
-			}
-			var rest = r.byte();
-			var tool = TOOLS[kind & 3];
-			var sizeIx = rest & 3;
-			var feel = !!(rest & 4);
-			var scale = unpackScale(rest >> 3);
-			var size = sizeIx === 3 ? r.num() / 10 : (SIZES[tool] || [])[sizeIx];
-			var s = {
-				tool: tool,
-				pen: PEN_TYPES[(kind >> 2) & 3] || "fountain",
-				color: COLOR_KEYS[(kind >> 4) & 15] || "ink",
-				size: size,
-				scale: scale,
-				points: [],
-			};
-			if (!s.tool || !(s.size > 0)) throw new Error("The code is damaged");
-			var grid = codeGrid(size, scale);
-			var n = r.num();
-			var kept = [];
-			var x = 0;
-			var y = 0;
-			for (var i = 0; i < n; i++) {
-				x += r.num();
-				y += r.num();
-				kept.push({ x: x / grid, y: y / grid, p: 0.5, v: 0 });
-			}
-			if (feel) {
-				// Read what was kept of how hard and fast the hand was going, then fill
-				// in the points between by running from one to the next.
-				var at = feelAt(n);
-				var press = [];
-				var speed = [];
-				for (i = 0; i < at.length; i++) {
-					var b = r.byte();
-					press.push((b & 15) / 15);
-					var q = ((b >> 4) & 7) / 7;
-					speed.push(q * q * 6);
-				}
-				for (i = 0; i + 1 < at.length; i++) {
-					var from = at[i];
-					var to = at[i + 1];
-					for (var k = from; k <= to; k++) {
-						var t = to === from ? 0 : (k - from) / (to - from);
-						kept[k].p = press[i] + (press[i + 1] - press[i]) * t;
-						kept[k].v = speed[i] + (speed[i + 1] - speed[i]) * t;
-					}
-				}
-				if (at.length === 1 && n) {
-					kept[0].p = press[0];
-					kept[0].v = speed[0];
-				}
-			}
-			// Version 3 keeps only the points a curve needs, so the curve is run through
-			// them again here. Version 2 wrote the line out point by point.
-			s.points = curve ? throughPoints(kept, codeStep(scale)) : kept;
-			// How far along the line each point sits: the pens use it to taper the ends.
-			var d = 0;
-			for (i = 0; i < s.points.length; i++) {
-				if (i) d += Math.hypot(s.points[i].x - s.points[i - 1].x, s.points[i].y - s.points[i - 1].y);
-				s.points[i].d = d;
-			}
-			if (n) list.push(s);
+			var s = (kind & 3) === 3 ? unpackGraph(r, kind) : unpackStroke(r, kind, curve);
+			if (s || keepSlots) list.push(s);
 		}
 		return list;
+	}
+
+	// The cuts on the end of a version 4 code, put on the things they belong to.
+	function unpackCuts(r, slots) {
+		var n = r.num();
+		var at = 0;
+		for (var i = 0; i < n; i++) {
+			at += r.num();
+			var count = r.num();
+			if (at < 0 || at >= slots.length || count < 0) throw new Error("The code is damaged");
+			var cuts = [];
+			for (var k = 0; k < count; k++) {
+				var kind = r.byte();
+				var c = unpackStroke(r, kind, true);
+				if (!c || c.tool !== "eraser") throw new Error("The code is damaged");
+				c.box = bounds(c.points, c.size * 1.5);
+				c.shape = null;
+				cuts.push(c);
+			}
+			if (slots[at] && cuts.length) slots[at].cuts = cuts;
+		}
+		return slots.filter(function (s) {
+			return s;
+		});
+	}
+
+	// One stroke, after the byte that says what kind it is. Null if it has no points.
+	function unpackStroke(r, kind, curve) {
+		var rest = r.byte();
+		var tool = TOOLS[kind & 3];
+		var sizeIx = rest & 3;
+		var feel = !!(rest & 4);
+		var scale = unpackScale(rest >> 3);
+		var size = sizeIx === 3 ? r.num() / 10 : (SIZES[tool] || [])[sizeIx];
+		var s = {
+			tool: tool,
+			pen: PEN_TYPES[(kind >> 2) & 3] || "fountain",
+			color: COLOR_KEYS[(kind >> 4) & 15] || "ink",
+			size: size,
+			scale: scale,
+			points: [],
+		};
+		if (!s.tool || !(s.size > 0)) throw new Error("The code is damaged");
+		var grid = codeGrid(size, scale);
+		var n = r.num();
+		var kept = [];
+		var x = 0;
+		var y = 0;
+		var i;
+		for (i = 0; i < n; i++) {
+			x += r.num();
+			y += r.num();
+			kept.push({ x: x / grid, y: y / grid, p: 0.5, v: 0 });
+		}
+		if (feel) {
+			// Read what was kept of how hard and fast the hand was going, then fill
+			// in the points between by running from one to the next.
+			var at = feelAt(n);
+			var press = [];
+			var speed = [];
+			for (i = 0; i < at.length; i++) {
+				var b = r.byte();
+				press.push((b & 15) / 15);
+				var q = ((b >> 4) & 7) / 7;
+				speed.push(q * q * 6);
+			}
+			for (i = 0; i + 1 < at.length; i++) {
+				var from = at[i];
+				var to = at[i + 1];
+				for (var k = from; k <= to; k++) {
+					var t = to === from ? 0 : (k - from) / (to - from);
+					kept[k].p = press[i] + (press[i + 1] - press[i]) * t;
+					kept[k].v = speed[i] + (speed[i + 1] - speed[i]) * t;
+				}
+			}
+			if (at.length === 1 && n) {
+				kept[0].p = press[0];
+				kept[0].v = speed[0];
+			}
+		}
+		// Version 3 on keeps only the points a curve needs, so the curve is run through
+		// them again here. Version 2 wrote the line out point by point.
+		s.points = curve ? throughPoints(kept, codeStep(scale)) : kept;
+		// How far along the line each point sits: the pens use it to taper the ends.
+		var d = 0;
+		for (i = 0; i < s.points.length; i++) {
+			if (i) d += Math.hypot(s.points[i].x - s.points[i - 1].x, s.points[i].y - s.points[i - 1].y);
+			s.points[i].d = d;
+		}
+		return n ? s : null;
 	}
 
 	// Codes written before the format was shortened. Kept so old codes still open.
@@ -4982,6 +5366,7 @@
 							size: s.size,
 							scale: s.scale,
 							points: s.points,
+							cuts: s.cuts || null,
 							box: bounds(s.points, s.size * 1.5),
 							// No shape yet: each is built the first time a tile draws it.
 							shape: null,
@@ -5157,8 +5542,6 @@
 		moreMenu.querySelectorAll('[data-more="clear"], [data-more^="copy"], [data-more="save"]').forEach(function (b) {
 			b.disabled = empty;
 		});
-		moreMenu.querySelector('[data-more="theme"] span').textContent =
-			themeName() === "dark" ? "Switch to light" : "Switch to dark";
 		placeMenu(moreMenu, moreBtn);
 	});
 
@@ -5170,8 +5553,8 @@
 			else if (what === "paste") pasteFromClipboard();
 			else if (what === "copy-light") copyImage("light");
 			else if (what === "copy-dark") copyImage("dark");
+			else if (what === "copy-chalk") copyImage("chalk");
 			else if (what === "save" || what === "open") showDialog(what);
-			else if (what === "theme") document.getElementById("theme").click();
 		});
 	});
 
@@ -5181,13 +5564,14 @@
 	resize();
 	openFromAddress();
 	window.addEventListener("resize", resize);
-	// ---------- Light / dark ----------
+	// ---------- Light, dark or chalkboard ----------
 
 	var themeMeta = document.querySelector('meta[name="theme-color"]');
 
 	function setTheme(name) {
+		if (!THEMES[name]) name = "light";
 		document.documentElement.dataset.theme = name;
-		themeMeta.content = name === "dark" ? "#000000" : "#fbfaf7";
+		themeMeta.content = THEME_BAR[name];
 		// Ink colours change with the theme, so redraw every stroke in the new colours.
 		readPalette();
 		// Including anything the lasso is holding.
@@ -5200,12 +5584,26 @@
 		requestRender(true);
 	}
 
-	document.getElementById("theme").addEventListener("click", function () {
-		var next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
-		try {
-			localStorage.setItem("wbts:theme", next);
-		} catch (e) {}
-		setTheme(next);
+	// The theme button opens a menu of the three pages; the more menu has them too.
+	var themeBtn = document.getElementById("theme");
+	themeBtn.addEventListener("click", function () {
+		if (!themeMenu.hidden) {
+			themeMenu.hidden = true;
+			return;
+		}
+		closeMenus();
+		placeMenu(themeMenu, themeBtn);
+	});
+
+	document.querySelectorAll("[data-theme-pick]").forEach(function (b) {
+		b.addEventListener("click", function () {
+			var next = b.dataset.themePick;
+			closeMenus();
+			try {
+				localStorage.setItem("wbts:theme", next);
+			} catch (e) {}
+			if (next !== themeName()) setTheme(next);
+		});
 	});
 
 	// Follow the iPad's setting until a choice has been made with the button.
